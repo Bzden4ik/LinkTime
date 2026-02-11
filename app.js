@@ -202,6 +202,8 @@ function startTimer() {
         state.timerRunning = true;
         state.currentSessionStart = Date.now();
         state.totalPausedTime = 0;
+        manualPause = false;
+        autoPauseActive = false;
         
         // Создаём новую сессию
         const session = {
@@ -313,13 +315,15 @@ function pauseTimer(isAutoPause = false) {
         
         saveTodaySessions(sessions);
         
-        // Обновляем текст кнопки в зависимости от типа паузы
+        // Обновляем текст кнопки и флаги в зависимости от типа паузы
         if (isAutoPause) {
             document.getElementById('pauseBtn').textContent = 'Продолжить (Авто-Пауза)';
             autoPauseActive = true;
+            manualPause = false;
         } else {
             document.getElementById('pauseBtn').textContent = 'Продолжить';
             autoPauseActive = false;
+            manualPause = true;
         }
         
         // Синхронизируем паузу таймера
@@ -1061,6 +1065,7 @@ function stopHeartbeat() {
 
 function handleAgentStatus(connected) {
     console.log(`Desktop Agent ${connected ? 'connected' : 'disconnected'}`);
+    agentConnected = connected;
     
     const indicator = document.getElementById('activityIndicator');
     if (connected) {
@@ -1069,17 +1074,34 @@ function handleAgentStatus(connected) {
     } else {
         indicator.textContent = '⚪ Ожидание Desktop Agent...';
         indicator.className = 'activity-indicator';
+        agentStatus = null;
     }
 }
 
 function handleActivityStatus(status, windowTitle) {
     console.log(`Activity status received: ${status} (${windowTitle})`);
+    agentStatus = status; // Сохраняем статус агента
     
-    // Обновляем UI с информацией об источнике активности
+    // Обновляем UI
     updateActivityIndicator(status, windowTitle);
     
-    // Если статус не working и таймер активен - будет вызвана force_pause
-    // Ничего не делаем здесь, ждем команды от сервера
+    // Если агент говорит distracted/idle и таймер идёт — ставим авто-паузу
+    if (status !== 'working' && state.timerRunning && !state.timerPaused) {
+        console.log(`Agent reports ${status} — auto-pausing`);
+        pauseTimer(true);
+        
+        let message = 'Авто-Пауза';
+        if (status === 'distracted') message = `Авто-Пауза: обнаружена нецелевая активность (${windowTitle})`;
+        if (status === 'idle') message = 'Авто-Пауза: неактивность';
+        showToast(message, 'info');
+    }
+    
+    // Если агент говорит working и была авто-пауза — возобновляем
+    if (status === 'working' && state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
+        console.log('Agent reports working — auto-resuming');
+        startTimer();
+        showToast(`Таймер возобновлён: ${windowTitle}`, 'success');
+    }
 }
 
 function handleForcePause(reason) {
