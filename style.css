@@ -210,6 +210,13 @@ main {
     color: #ef4444;
 }
 
+.activity-indicator:not(.working):not(.distracted):not(.idle) {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.6);
+    animation: none;
+}
+
 .timer-controls {
     display: flex;
     gap: 20px;
