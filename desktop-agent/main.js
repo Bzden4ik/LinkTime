@@ -1,7 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const activeWin = require('active-win');
 const WebSocket = require('ws');
 
 // Конфигурация
@@ -17,6 +16,7 @@ let config = {
     checkInterval: 5000, // 5 секунд
     idleTimeout: 30000, // 30 секунд для определения idle
     whiteList: [
+        'LinkTime',
         'Visual Studio Code',
         'Code.exe',
         'Terminal',
@@ -62,11 +62,15 @@ function loadConfig() {
             const data = fs.readFileSync(CONFIG_FILE, 'utf8');
             const savedConfig = JSON.parse(data);
             config = { ...config, ...savedConfig };
-            console.log('Config loaded:', config);
         }
     } catch (error) {
         console.error('Error loading config:', error);
     }
+    // LinkTime всегда в белом списке
+    if (!config.whiteList.some(a => a.toLowerCase() === 'linktime')) {
+        config.whiteList.unshift('LinkTime');
+    }
+    console.log('WhiteList:', config.whiteList);
 }
 
 // Сохранение конфигурации
@@ -272,57 +276,101 @@ function connectWebSocket() {
 function determineStatus(windowTitle) {
     if (!windowTitle) return 'idle';
 
+    const lower = windowTitle.toLowerCase();
+    console.log(`[DETERMINE] Checking: "${lower}"`);
+
     // Проверка белого списка (рабочие приложения)
-    const isWorking = config.whiteList.some(app => 
-        windowTitle.toLowerCase().includes(app.toLowerCase())
-    );
-    
-    if (isWorking) {
-        return 'working';
+    for (const app of config.whiteList) {
+        if (lower.includes(app.toLowerCase())) {
+            console.log(`[DETERMINE] MATCH whiteList: "${app}"`);
+            return 'working';
+        }
     }
 
     // Проверка черного списка (отвлекающие приложения)
-    const isDistracted = config.blackList.some(app => 
-        windowTitle.toLowerCase().includes(app.toLowerCase())
-    );
-    
-    if (isDistracted) {
-        return 'distracted';
+    for (const app of config.blackList) {
+        if (lower.includes(app.toLowerCase())) {
+            console.log(`[DETERMINE] MATCH blackList: "${app}"`);
+            return 'distracted';
+        }
     }
 
-    // По умолчанию: если не в белом списке — отвлечение
+    console.log(`[DETERMINE] No match — distracted by default`);
     return 'distracted';
 }
 
 // Проверка активного окна
 async function checkActiveWindow() {
     try {
-        const window = await activeWin();
+        const { execFile } = require('child_process');
         
-        if (!window) {
-            console.log('No active window detected');
-            const idleTime = Date.now() - lastActivity;
-            if (idleTime > config.idleTimeout) {
-                updateStatus('idle', 'Нет активного окна');
-            }
+        const windowInfo = await new Promise((resolve, reject) => {
+            const script = `
+$code = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+public class WinHelper {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    public static string GetActiveWindow() {
+        IntPtr hwnd = GetForegroundWindow();
+        uint pid;
+        GetWindowThreadProcessId(hwnd, out pid);
+        try {
+            Process p = Process.GetProcessById((int)pid);
+            return p.ProcessName + "|||" + p.MainWindowTitle;
+        } catch { return ""; }
+    }
+}
+"@
+Add-Type -TypeDefinition $code
+[WinHelper]::GetActiveWindow()
+`;
+            execFile('powershell.exe', ['-NoProfile', '-Command', '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ' + script], { timeout: 4000, encoding: 'utf8' }, (error, stdout) => {
+                if (error) return reject(error);
+                const output = stdout.trim();
+                if (!output) return resolve(null);
+                const parts = output.split('|||');
+                resolve({ processName: parts[0] || '', title: parts[1] || '' });
+            });
+        });
+
+        if (!windowInfo) {
+            console.log('[MONITOR] No active window');
+            updateStatus('idle', 'Нет активного окна');
             return;
         }
 
         lastActivity = Date.now();
-
-        const windowTitle = window.title || '';
-        const windowOwner = (window.owner && window.owner.name) ? window.owner.name : '';
-        const fullTitle = windowOwner ? `${windowOwner} - ${windowTitle}` : windowTitle;
-
-        console.log(`[MONITOR] Active window: "${fullTitle}" | Owner: "${windowOwner}" | Title: "${windowTitle}"`);
+        
+        // Парсим название вкладки из заголовка браузера
+        let displayTitle = windowInfo.title;
+        const pName = windowInfo.processName.toLowerCase();
+        
+        // Для браузеров берём только название вкладки (до " — " или " - " с именем браузера)
+        if (['msedge', 'chrome', 'firefox', 'opera', 'brave'].includes(pName)) {
+            // "YouTube - Google Chrome" → "YouTube"
+            // "LinkTime - Таймер работы и еще 7 страниц — Личный: Microsoft Edge" → "LinkTime - Таймер работы"
+            displayTitle = windowInfo.title
+                .replace(/\s*и еще \d+ страниц?/gi, '')
+                .replace(/\s*—\s*(Личный|Personal|InPrivate):?\s*Microsoft Edge/gi, '')
+                .replace(/\s*-\s*(Google Chrome|Mozilla Firefox|Opera|Brave)/gi, '')
+                .trim();
+        }
+        
+        // Для определения статуса используем полный заголовок
+        const fullTitle = `${windowInfo.processName} - ${windowInfo.title}`;
+        console.log(`[MONITOR] Active: "${fullTitle}"`);
 
         const status = determineStatus(fullTitle);
         console.log(`[MONITOR] Status: ${status}`);
-        updateStatus(status, fullTitle);
+        updateStatus(status, displayTitle);
 
     } catch (error) {
-        console.error('[MONITOR] ERROR reading active window:', error.message);
-        // При ошибке НЕ отправляем working — лучше idle
+        console.error('[MONITOR] ERROR:', error.message);
         updateStatus('idle', 'Ошибка мониторинга');
     }
 }
