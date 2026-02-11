@@ -14,12 +14,19 @@ let state = {
 let timerInterval = null;
 let ws = null;
 let reconnectInterval = null;
+let heartbeatInterval = null;
 const WS_URL = 'https://linktime.onrender.com';
+
+// Состояние видимости и фокуса
+let isTabVisible = true;
+let hasWindowFocus = true;
+let autoPauseActive = false; // Флаг авто-паузы
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
     setupEventListeners();
+    setupVisibilityHandlers();
     loadSelectedDateData();
     renderCalendar();
 });
@@ -69,6 +76,64 @@ function setupEventListeners() {
     // Календарь
     document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
     document.getElementById('nextMonth').addEventListener('click', () => changeMonth(1));
+}
+
+// Настройка обработчиков видимости и фокуса
+function setupVisibilityHandlers() {
+    // Visibility API - отслеживание скрытия/показа вкладки
+    document.addEventListener('visibilitychange', () => {
+        isTabVisible = !document.hidden;
+        
+        if (isTabVisible) {
+            console.log('Tab became visible');
+            // При возвращении на вкладку запрашиваем актуальное состояние
+            requestServerState();
+        } else {
+            console.log('Tab hidden');
+            // Вкладка скрыта - перестаем считать время локально
+            if (state.timerRunning && !state.timerPaused) {
+                // Отправляем на сервер что вкладка скрыта
+                sendBrowserEvent('tab_hidden');
+            }
+        }
+    });
+    
+    // Отслеживание фокуса окна браузера
+    window.addEventListener('blur', () => {
+        hasWindowFocus = false;
+        console.log('Window lost focus');
+        if (state.timerRunning && !state.timerPaused) {
+            sendBrowserEvent('browser_blur');
+        }
+    });
+    
+    window.addEventListener('focus', () => {
+        hasWindowFocus = true;
+        console.log('Window gained focus');
+        if (state.timerRunning) {
+            sendBrowserEvent('browser_focus');
+            requestServerState();
+        }
+    });
+}
+
+function sendBrowserEvent(eventType) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'browser_event',
+            sessionKey: state.sessionKey,
+            event: eventType
+        }));
+    }
+}
+
+function requestServerState() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'request_state',
+            sessionKey: state.sessionKey
+        }));
+    }
 }
 
 // === ТАЙМЕР ===
@@ -136,11 +201,14 @@ function startTimer() {
             sessionStart: state.currentSessionStart,
             totalPausedTime: state.totalPausedTime
         });
+        
+        // Сбрасываем флаг авто-паузы
+        autoPauseActive = false;
     }
 }
 
-function pauseTimer() {
-    if (state.timerPaused) {
+function pauseTimer(isAutoPause = false) {
+    if (state.timerPaused && !isAutoPause) {
         // Возобновление после паузы
         const pauseDuration = Date.now() - state.currentPauseStart;
         const sessions = getTodaySessions();
@@ -187,18 +255,27 @@ function pauseTimer() {
         const sessions = getTodaySessions();
         const currentSession = sessions[sessions.length - 1];
         currentSession.pauses.push({
-            start: state.currentPauseStart
+            start: state.currentPauseStart,
+            isAuto: isAutoPause
         });
         
         saveTodaySessions(sessions);
         
-        document.getElementById('pauseBtn').textContent = 'Продолжить';
+        // Обновляем текст кнопки в зависимости от типа паузы
+        if (isAutoPause) {
+            document.getElementById('pauseBtn').textContent = 'Продолжить (Авто-Пауза)';
+            autoPauseActive = true;
+        } else {
+            document.getElementById('pauseBtn').textContent = 'Продолжить';
+            autoPauseActive = false;
+        }
         
         // Синхронизируем паузу таймера
         syncTimerState('pause', {
             sessionStart: state.currentSessionStart,
             pauseStart: state.currentPauseStart,
-            totalPausedTime: state.totalPausedTime
+            totalPausedTime: state.totalPausedTime,
+            isAuto: isAutoPause
         });
     }
 }
@@ -655,6 +732,9 @@ function connectWebSocket() {
                 clearInterval(reconnectInterval);
                 reconnectInterval = null;
             }
+            
+            // Запускаем heartbeat (каждые 5 секунд)
+            startHeartbeat();
         };
         
         ws.onmessage = (event) => {
@@ -675,6 +755,18 @@ function connectWebSocket() {
                     // Получаем обновление состояния таймера
                     applyTimerState(message.data);
                     break;
+                case 'activity_status':
+                    // Получаем статус активности от сервера
+                    handleActivityStatus(message.status, message.windowTitle);
+                    break;
+                case 'force_pause':
+                    // Сервер принудительно ставит на паузу
+                    handleForcePause(message.reason);
+                    break;
+                case 'heartbeat_ack':
+                    // Подтверждение heartbeat от сервера
+                    console.log('Heartbeat acknowledged');
+                    break;
             }
         };
         
@@ -684,6 +776,10 @@ function connectWebSocket() {
         
         ws.onclose = () => {
             console.log('WebSocket disconnected');
+            
+            // Останавливаем heartbeat
+            stopHeartbeat();
+            
             // Пытаемся переподключиться через 5 секунд
             if (!reconnectInterval) {
                 reconnectInterval = setInterval(() => {
@@ -875,6 +971,105 @@ function applyTimerState(data) {
             break;
         }
     }
+    
+    // Сбрасываем флаг авто-паузы при синхронизации состояния
+    if (data.action === 'resume' || data.action === 'start') {
+        autoPauseActive = false;
+        document.getElementById('pauseBtn').textContent = 'Пауза';
+    }
+}
+
+function startHeartbeat() {
+    // Останавливаем предыдущий heartbeat если есть
+    stopHeartbeat();
+    
+    // Отправляем heartbeat каждые 5 секунд
+    heartbeatInterval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'heartbeat',
+                sessionKey: state.sessionKey,
+                tabVisible: isTabVisible,
+                hasFocus: hasWindowFocus
+            }));
+        }
+    }, 5000);
+}
+
+function stopHeartbeat() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+}
+
+function handleActivityStatus(status, windowTitle) {
+    console.log(`Activity status received: ${status} (${windowTitle})`);
+    
+    // Обновляем UI с информацией об источнике активности
+    updateActivityIndicator(status, windowTitle);
+    
+    // Если статус не working и таймер активен - будет вызвана force_pause
+    // Ничего не делаем здесь, ждем команды от сервера
+}
+
+function handleForcePause(reason) {
+    console.log(`Force pause received: ${reason}`);
+    
+    if (state.timerRunning && !state.timerPaused) {
+        // Вызываем паузу с флагом авто-паузы
+        pauseTimer(true);
+        
+        // Показываем уведомление
+        let message = 'Таймер приостановлен';
+        if (reason === 'distracted') {
+            message = 'Авто-Пауза: отвлечение обнаружено';
+        } else if (reason === 'idle') {
+            message = 'Авто-Пауза: неактивность';
+        } else if (reason === 'timeout') {
+            message = 'Авто-Пауза: потеря соединения';
+        }
+        
+        showToast(message, 'info');
+    }
+}
+
+function updateActivityIndicator(status, windowTitle) {
+    // Создаем или обновляем индикатор активности в UI
+    let indicator = document.getElementById('activityIndicator');
+    
+    if (!indicator) {
+        // Создаем индикатор если его нет
+        indicator = document.createElement('div');
+        indicator.id = 'activityIndicator';
+        indicator.className = 'activity-indicator';
+        
+        // Вставляем после timerDisplay
+        const timerDisplay = document.getElementById('timerDisplay');
+        timerDisplay.parentNode.insertBefore(indicator, timerDisplay.nextSibling);
+    }
+    
+    // Обновляем содержимое
+    let statusText = '';
+    let statusClass = '';
+    
+    if (status === 'working') {
+        statusText = '🟢 Работа';
+        statusClass = 'working';
+    } else if (status === 'distracted') {
+        statusText = '🟡 Отвлечение';
+        statusClass = 'distracted';
+    } else if (status === 'idle') {
+        statusText = '🔴 Неактивен';
+        statusClass = 'idle';
+    }
+    
+    if (windowTitle) {
+        statusText += `: ${windowTitle}`;
+    }
+    
+    indicator.textContent = statusText;
+    indicator.className = `activity-indicator ${statusClass}`;
 }
 
 function applyRemoteData(data) {
@@ -911,3 +1106,7 @@ function showToast(message, type = 'info') {
         toast.classList.remove('show');
     }, 3000);
 }
+
+// Экспорт функций для глобального доступа (для onclick в HTML)
+window.toggleTask = toggleTask;
+window.deleteTask = deleteTask;

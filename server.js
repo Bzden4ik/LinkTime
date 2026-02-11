@@ -6,7 +6,7 @@ const wss = new WebSocket.Server({ port: PORT });
 // Хранилище активных сессий: { sessionKey: [connections] }
 const sessions = new Map();
 
-// Хранилище данных сессий: { sessionKey: { tasks, sessions, lastUpdate } }
+// Хранилище данных сессий: { sessionKey: { tasks, sessions, lastUpdate, timerState, lastTickTimestamp, activityStatus, lastHeartbeat } }
 const sessionData = new Map();
 
 console.log(`WebSocket server running on port ${PORT}`);
@@ -27,6 +27,18 @@ wss.on('connection', (ws) => {
                     break;
                 case 'timer_sync':
                     handleTimerSync(ws, data);
+                    break;
+                case 'activity_update':
+                    handleActivityUpdate(ws, data);
+                    break;
+                case 'heartbeat':
+                    handleHeartbeat(ws, data);
+                    break;
+                case 'request_state':
+                    handleRequestState(ws, data);
+                    break;
+                case 'browser_event':
+                    handleBrowserEvent(ws, data);
                     break;
                 case 'disconnect':
                     handleDisconnect(ws);
@@ -108,8 +120,22 @@ wss.on('connection', (ws) => {
 
         // Обновляем состояние таймера в сессии
         const currentData = sessionData.get(sessionKey) || {};
+        const now = Date.now();
+        
+        // Центральный расчет времени на сервере
+        if (action === 'start' || action === 'resume') {
+            currentData.lastTickTimestamp = now;
+        } else if (action === 'stop' || action === 'pause') {
+            if (currentData.lastTickTimestamp) {
+                const elapsed = now - currentData.lastTickTimestamp;
+                currentData.totalWorkTime = (currentData.totalWorkTime || 0) + elapsed;
+            }
+            currentData.lastTickTimestamp = null;
+        }
+        
         currentData.timerState = { action, ...timerData };
-        currentData.lastUpdate = Date.now();
+        currentData.lastUpdate = now;
+        currentData.lastHeartbeat = now;
         sessionData.set(sessionKey, currentData);
 
         // Рассылаем обновление таймера всем подключенным клиентам в этой сессии
@@ -129,6 +155,141 @@ wss.on('connection', (ws) => {
         console.log(`Timer sync (${action}) for session: ${sessionKey}`);
     }
 
+    function handleActivityUpdate(ws, data) {
+        const { sessionKey, status, windowTitle } = data;
+
+        // Обновляем статус активности в сессии
+        const currentData = sessionData.get(sessionKey) || {};
+        currentData.activityStatus = status; // working / distracted / idle
+        currentData.activeWindow = windowTitle;
+        currentData.lastUpdate = Date.now();
+        currentData.lastHeartbeat = Date.now();
+        sessionData.set(sessionKey, currentData);
+
+        // Рассылаем статус активности всем участникам сессии
+        if (sessions.has(sessionKey)) {
+            const message = JSON.stringify({
+                type: 'activity_status',
+                status: status,
+                windowTitle: windowTitle
+            });
+
+            sessions.get(sessionKey).forEach((client) => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(message);
+                }
+            });
+        }
+
+        console.log(`Activity update for session ${sessionKey}: ${status} (${windowTitle})`);
+        
+        // Если статус distracted или idle, отправляем команду force_pause через 5 секунд
+        if (status === 'distracted' || status === 'idle') {
+            setTimeout(() => {
+                const latestData = sessionData.get(sessionKey);
+                // Проверяем что статус всё ещё не working
+                if (latestData && latestData.activityStatus !== 'working') {
+                    sendForcePause(sessionKey, status);
+                }
+            }, 5000);
+        }
+    }
+
+    function handleHeartbeat(ws, data) {
+        const { sessionKey } = data;
+        
+        const currentData = sessionData.get(sessionKey) || {};
+        currentData.lastHeartbeat = Date.now();
+        sessionData.set(sessionKey, currentData);
+        
+        // Отправляем подтверждение heartbeat
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'heartbeat_ack',
+                timestamp: Date.now()
+            }));
+        }
+    }
+
+    function sendForcePause(sessionKey, reason) {
+        if (sessions.has(sessionKey)) {
+            const message = JSON.stringify({
+                type: 'force_pause',
+                reason: reason // distracted / idle
+            });
+
+            sessions.get(sessionKey).forEach((client) => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(message);
+                }
+            });
+            
+            console.log(`Force pause sent to session ${sessionKey} (reason: ${reason})`);
+        }
+    }
+
+    function handleRequestState(ws, data) {
+        const { sessionKey } = data;
+        
+        // Отправляем текущее состояние сессии клиенту
+        if (sessionData.has(sessionKey)) {
+            const currentData = sessionData.get(sessionKey);
+            
+            // Отправляем все данные сессии
+            ws.send(JSON.stringify({
+                type: 'init',
+                data: currentData
+            }));
+            
+            // Отправляем состояние таймера отдельно
+            if (currentData.timerState) {
+                ws.send(JSON.stringify({
+                    type: 'timer_state',
+                    data: currentData.timerState
+                }));
+            }
+            
+            // Отправляем статус активности если есть
+            if (currentData.activityStatus) {
+                ws.send(JSON.stringify({
+                    type: 'activity_status',
+                    status: currentData.activityStatus,
+                    windowTitle: currentData.activeWindow || ''
+                }));
+            }
+            
+            console.log(`State sent to client for session ${sessionKey}`);
+        }
+    }
+
+    function handleBrowserEvent(ws, data) {
+        const { sessionKey, event } = data;
+        
+        console.log(`Browser event for session ${sessionKey}: ${event}`);
+        
+        // Обновляем информацию о состоянии браузера в данных сессии
+        const currentData = sessionData.get(sessionKey) || {};
+        currentData.browserEvent = event;
+        currentData.lastUpdate = Date.now();
+        sessionData.set(sessionKey, currentData);
+        
+        // Можно добавить дополнительную логику для разных событий
+        // Например, при tab_hidden или browser_blur можно установить статус idle
+        if (event === 'tab_hidden' || event === 'browser_blur') {
+            // Только если нет Desktop-агента, который подтверждает работу
+            if (!currentData.activityStatus || currentData.activityStatus === 'idle') {
+                // Ставим задержку перед паузой
+                setTimeout(() => {
+                    const latestData = sessionData.get(sessionKey);
+                    if (latestData && latestData.browserEvent === event) {
+                        // Всё ещё скрыто/без фокуса
+                        sendForcePause(sessionKey, 'browser_inactive');
+                    }
+                }, 30000); // 30 секунд задержка
+            }
+        }
+    }
+
     function handleDisconnect(ws) {
         if (currentSessionKey && sessions.has(currentSessionKey)) {
             sessions.get(currentSessionKey).delete(ws);
@@ -144,6 +305,38 @@ wss.on('connection', (ws) => {
         }
     }
 });
+
+// Мониторинг heartbeat - проверка каждые 5 секунд
+setInterval(() => {
+    const now = Date.now();
+    const heartbeatTimeout = 15000; // 15 секунд
+    
+    for (const [sessionKey, data] of sessionData.entries()) {
+        // Если есть активная сессия и нет heartbeat больше 15 секунд
+        if (data.lastHeartbeat && (now - data.lastHeartbeat) > heartbeatTimeout) {
+            // Проверяем что таймер был активен
+            if (data.timerState && data.timerState.action === 'start') {
+                console.log(`Heartbeat timeout for session ${sessionKey}, forcing pause`);
+                
+                // Обновляем статус на паузу
+                data.timerState.action = 'pause';
+                data.activityStatus = 'idle';
+                
+                // Рассчитываем время
+                if (data.lastTickTimestamp) {
+                    const elapsed = now - data.lastTickTimestamp;
+                    data.totalWorkTime = (data.totalWorkTime || 0) + elapsed;
+                    data.lastTickTimestamp = null;
+                }
+                
+                sessionData.set(sessionKey, data);
+                
+                // Отправляем force_pause всем клиентам сессии
+                sendForcePause(sessionKey, 'timeout');
+            }
+        }
+    }
+}, 5000); // Проверка каждые 5 секунд
 
 // Очистка старых данных сессий (старше 7 дней)
 setInterval(() => {

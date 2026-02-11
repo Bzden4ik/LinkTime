@@ -1,0 +1,433 @@
+const { app, BrowserWindow, Tray, Menu, ipcMain } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const activeWin = require('active-win');
+const WebSocket = require('ws');
+
+// Конфигурация
+const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
+const WS_URL = 'wss://linktime.onrender.com';
+
+// Состояние приложения
+let mainWindow = null;
+let tray = null;
+let ws = null;
+let config = {
+    sessionKey: '',
+    checkInterval: 5000, // 5 секунд
+    idleTimeout: 30000, // 30 секунд для определения idle
+    whiteList: [
+        'Visual Studio Code',
+        'Code.exe',
+        'Terminal',
+        'cmd.exe',
+        'PowerShell',
+        'Figma',
+        'Adobe Photoshop',
+        'Sublime Text',
+        'WebStorm',
+        'PyCharm',
+        'IntelliJ IDEA',
+        'Eclipse',
+        'Postman',
+        'Docker',
+        'Git',
+        'GitHub Desktop'
+    ],
+    blackList: [
+        'YouTube',
+        'Netflix',
+        'Facebook',
+        'Twitter',
+        'Instagram',
+        'TikTok',
+        'Reddit',
+        'Twitch',
+        'Steam',
+        'Discord - ',
+        'Telegram',
+        'WhatsApp'
+    ]
+};
+
+let lastActivity = Date.now();
+let currentStatus = 'idle';
+let checkIntervalId = null;
+
+// Загрузка конфигурации
+function loadConfig() {
+    try {
+        if (fs.existsSync(CONFIG_FILE)) {
+            const data = fs.readFileSync(CONFIG_FILE, 'utf8');
+            const savedConfig = JSON.parse(data);
+            config = { ...config, ...savedConfig };
+            console.log('Config loaded:', config);
+        }
+    } catch (error) {
+        console.error('Error loading config:', error);
+    }
+}
+
+// Сохранение конфигурации
+function saveConfig() {
+    try {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+        console.log('Config saved');
+    } catch (error) {
+        console.error('Error saving config:', error);
+    }
+}
+
+// Создание главного окна
+function createWindow() {
+    mainWindow = new BrowserWindow({
+        width: 500,
+        height: 600,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false
+        },
+        icon: path.join(__dirname, 'icon.png'),
+        skipTaskbar: false
+    });
+
+    mainWindow.loadFile('index.html');
+
+    mainWindow.on('close', (event) => {
+        if (!app.isQuitting) {
+            event.preventDefault();
+            mainWindow.hide();
+        }
+    });
+
+    mainWindow.on('closed', () => {
+        mainWindow = null;
+    });
+}
+
+// Создание системного трея
+function createTray() {
+    tray = new Tray(path.join(__dirname, 'icon.png'));
+    
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: 'Статус: Запуск...',
+            enabled: false
+        },
+        { type: 'separator' },
+        {
+            label: 'Открыть настройки',
+            click: () => {
+                if (mainWindow) {
+                    mainWindow.show();
+                } else {
+                    createWindow();
+                }
+            }
+        },
+        { type: 'separator' },
+        {
+            label: 'Выход',
+            click: () => {
+                app.isQuitting = true;
+                app.quit();
+            }
+        }
+    ]);
+
+    tray.setToolTip('LinkTime Agent');
+    tray.setContextMenu(contextMenu);
+
+    tray.on('click', () => {
+        if (mainWindow) {
+            mainWindow.show();
+        } else {
+            createWindow();
+        }
+    });
+}
+
+// Обновление статуса в трее
+function updateTrayStatus(status, windowTitle = '') {
+    if (!tray) return;
+
+    let statusText = '';
+    let statusIcon = '';
+
+    switch (status) {
+        case 'working':
+            statusText = '🟢 Работа';
+            statusIcon = 'working';
+            break;
+        case 'distracted':
+            statusText = '🟡 Отвлечение';
+            statusIcon = 'distracted';
+            break;
+        case 'idle':
+            statusText = '🔴 Неактивен';
+            statusIcon = 'idle';
+            break;
+    }
+
+    if (windowTitle) {
+        statusText += `: ${windowTitle}`;
+    }
+
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: statusText,
+            enabled: false
+        },
+        { type: 'separator' },
+        {
+            label: 'Открыть настройки',
+            click: () => {
+                if (mainWindow) {
+                    mainWindow.show();
+                } else {
+                    createWindow();
+                }
+            }
+        },
+        { type: 'separator' },
+        {
+            label: 'Выход',
+            click: () => {
+                app.isQuitting = true;
+                app.quit();
+            }
+        }
+    ]);
+
+    tray.setContextMenu(contextMenu);
+}
+
+// Подключение к WebSocket
+function connectWebSocket() {
+    if (!config.sessionKey) {
+        console.log('No session key configured');
+        return;
+    }
+
+    try {
+        ws = new WebSocket(WS_URL);
+
+        ws.on('open', () => {
+            console.log('WebSocket connected');
+            
+            // Присоединяемся к сессии
+            ws.send(JSON.stringify({
+                type: 'join',
+                sessionKey: config.sessionKey
+            }));
+
+            // Запускаем мониторинг активности
+            startActivityMonitoring();
+        });
+
+        ws.on('message', (data) => {
+            try {
+                const message = JSON.parse(data);
+                console.log('Received from server:', message.type);
+            } catch (error) {
+                console.error('Error parsing message:', error);
+            }
+        });
+
+        ws.on('error', (error) => {
+            console.error('WebSocket error:', error);
+        });
+
+        ws.on('close', () => {
+            console.log('WebSocket disconnected');
+            stopActivityMonitoring();
+            
+            // Переподключение через 5 секунд
+            setTimeout(() => {
+                console.log('Reconnecting...');
+                connectWebSocket();
+            }, 5000);
+        });
+    } catch (error) {
+        console.error('Failed to connect WebSocket:', error);
+    }
+}
+
+// Определение статуса на основе заголовка окна
+function determineStatus(windowTitle) {
+    if (!windowTitle) return 'idle';
+
+    // Проверка белого списка (рабочие приложения)
+    const isWorking = config.whiteList.some(app => 
+        windowTitle.toLowerCase().includes(app.toLowerCase())
+    );
+    
+    if (isWorking) {
+        return 'working';
+    }
+
+    // Проверка черного списка (отвлекающие приложения)
+    const isDistracted = config.blackList.some(app => 
+        windowTitle.toLowerCase().includes(app.toLowerCase())
+    );
+    
+    if (isDistracted) {
+        return 'distracted';
+    }
+
+    // По умолчанию считаем неопределенное окно как работу
+    return 'working';
+}
+
+// Проверка активного окна
+async function checkActiveWindow() {
+    try {
+        const window = await activeWin();
+        
+        if (!window) {
+            // Нет активного окна - проверяем idle
+            const idleTime = Date.now() - lastActivity;
+            if (idleTime > config.idleTimeout) {
+                updateStatus('idle', '');
+            }
+            return;
+        }
+
+        // Обновляем время последней активности
+        lastActivity = Date.now();
+
+        // Получаем заголовок окна
+        const windowTitle = window.title;
+        const windowOwner = window.owner.name;
+        const fullTitle = `${windowOwner} - ${windowTitle}`;
+
+        console.log(`Active window: ${fullTitle}`);
+
+        // Определяем статус
+        const status = determineStatus(fullTitle);
+        updateStatus(status, fullTitle);
+
+    } catch (error) {
+        console.error('Error checking active window:', error);
+    }
+}
+
+// Обновление и отправка статуса
+function updateStatus(status, windowTitle) {
+    if (status !== currentStatus) {
+        currentStatus = status;
+        console.log(`Status changed: ${status} (${windowTitle})`);
+        
+        // Обновляем UI
+        updateTrayStatus(status, windowTitle);
+        
+        // Отправляем на сервер
+        sendActivityUpdate(status, windowTitle);
+        
+        // Уведомляем окно настроек если оно открыто
+        if (mainWindow) {
+            mainWindow.webContents.send('status-update', {
+                status,
+                windowTitle
+            });
+        }
+    }
+}
+
+// Отправка обновления активности на сервер
+function sendActivityUpdate(status, windowTitle) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'activity_update',
+            sessionKey: config.sessionKey,
+            status: status,
+            windowTitle: windowTitle
+        }));
+        
+        console.log(`Activity update sent: ${status}`);
+    }
+}
+
+// Запуск мониторинга активности
+function startActivityMonitoring() {
+    if (checkIntervalId) {
+        clearInterval(checkIntervalId);
+    }
+
+    console.log('Activity monitoring started');
+    
+    // Первая проверка сразу
+    checkActiveWindow();
+    
+    // Проверка каждые 5 секунд
+    checkIntervalId = setInterval(() => {
+        checkActiveWindow();
+    }, config.checkInterval);
+}
+
+// Остановка мониторинга активности
+function stopActivityMonitoring() {
+    if (checkIntervalId) {
+        clearInterval(checkIntervalId);
+        checkIntervalId = null;
+    }
+    console.log('Activity monitoring stopped');
+}
+
+// IPC обработчики для связи с окном настроек
+ipcMain.on('get-config', (event) => {
+    event.reply('config-data', config);
+});
+
+ipcMain.on('save-config', (event, newConfig) => {
+    config = { ...config, ...newConfig };
+    saveConfig();
+    
+    // Переподключаемся если изменился sessionKey
+    if (ws) {
+        ws.close();
+    }
+    connectWebSocket();
+    
+    event.reply('config-saved');
+});
+
+ipcMain.on('test-connection', (event) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        event.reply('connection-status', { connected: true });
+    } else {
+        event.reply('connection-status', { connected: false });
+    }
+});
+
+// Инициализация приложения
+app.whenReady().then(() => {
+    loadConfig();
+    createTray();
+    createWindow();
+    
+    // Подключаемся к WebSocket если есть sessionKey
+    if (config.sessionKey) {
+        connectWebSocket();
+    }
+
+    app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+            createWindow();
+        }
+    });
+});
+
+app.on('window-all-closed', () => {
+    // Не закрываем приложение на macOS
+    if (process.platform !== 'darwin') {
+        // На других платформах продолжаем работать в фоне
+    }
+});
+
+app.on('before-quit', () => {
+    stopActivityMonitoring();
+    if (ws) {
+        ws.close();
+    }
+});
