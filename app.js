@@ -671,7 +671,7 @@ function applyTimerState(data) {
     const { action, ...timerData } = data;
     
     switch (action) {
-        case 'start':
+        case 'start': {
             // Запускаем таймер, даже если он уже был запущен
             if (timerInterval) clearInterval(timerInterval);
             
@@ -701,8 +701,9 @@ function applyTimerState(data) {
             document.getElementById('pauseBtn').textContent = 'Пауза';
             document.getElementById('stopBtn').disabled = false;
             break;
+        }
             
-        case 'pause':
+        case 'pause': {
             // Ставим на паузу независимо от текущего состояния
             state.timerPaused = true;
             state.currentPauseStart = timerData.pauseStart;
@@ -737,8 +738,9 @@ function applyTimerState(data) {
             document.getElementById('pauseBtn').textContent = 'Продолжить';
             document.getElementById('stopBtn').disabled = false;
             break;
+        }
             
-        case 'resume':
+        case 'resume': {
             // Возобновляем таймер независимо от текущего состояния
             state.timerRunning = true;
             state.timerPaused = false;
@@ -769,8 +771,9 @@ function applyTimerState(data) {
             document.getElementById('pauseBtn').textContent = 'Пауза';
             document.getElementById('stopBtn').disabled = false;
             break;
+        }
             
-        case 'stop':
+        case 'stop': {
             // Останавливаем таймер независимо от текущего состояния
             if (timerInterval) clearInterval(timerInterval);
             
@@ -800,6 +803,7 @@ function applyTimerState(data) {
             
             updateTodayStats();
             break;
+        }
     }
 }
 
