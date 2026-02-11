@@ -24,16 +24,16 @@
                 </div>
                 <div class="session-info">
                     <div class="info-item">
-                        <span class="label">Рабочее время сегодня:</span>
+                        <span class="label" id="workTimeLabel">Рабочее время:</span>
                         <span class="value" id="totalWorkTime">00:00:00</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">Время пауз:</span>
-                        <span class="value" id="totalPauseTime">00:00:00</span>
                     </div>
                     <div class="info-item">
                         <span class="label">Сессий:</span>
                         <span class="value" id="sessionCount">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Задач выполнено:</span>
+                        <span class="value" id="tasksCompleted">0 из 0</span>
                     </div>
                 </div>
             </section>
@@ -41,7 +41,7 @@
             <!-- Задачи -->
             <section class="tasks-section glass-card">
                 <div class="tasks-header">
-                    <h2>Задачи на сегодня</h2>
+                    <h2 id="tasksTitle">Задачи на сегодня</h2>
                     <button class="btn btn-add" id="addTaskBtn">+ Добавить</button>
                 </div>
                 <div class="task-input" id="taskInput" style="display: none;">
@@ -100,18 +100,6 @@
 
     <!-- Toast notification -->
     <div class="toast" id="toast"></div>
-
-    <!-- Confirmation Modal -->
-    <div class="confirm-modal" id="confirmModal">
-        <div class="confirm-content">
-            <h3 id="confirmTitle">Подтверждение</h3>
-            <p id="confirmMessage">Вы уверены?</p>
-            <div class="confirm-buttons">
-                <button class="btn btn-cancel" id="confirmCancel">Отмена</button>
-                <button class="btn btn-stop" id="confirmOk">Да</button>
-            </div>
-        </div>
-    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>

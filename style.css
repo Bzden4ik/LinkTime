@@ -577,9 +577,15 @@ main {
 }
 
 .calendar-day.today {
-    border-color: white;
-    background: rgba(255, 255, 255, 0.15);
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+    border-color: #10b981;
+    background: rgba(16, 185, 129, 0.25);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.calendar-day.selected {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.25);
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
 }
 
 .calendar-day.has-data {

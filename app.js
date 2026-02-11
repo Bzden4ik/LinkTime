@@ -7,6 +7,7 @@ let state = {
     elapsedTime: 0,
     sessionKey: null,
     currentDate: new Date().toISOString().split('T')[0],
+    selectedDate: new Date().toISOString().split('T')[0], // Добавлена выбранная дата
     totalPausedTime: 0
 };
 
@@ -19,7 +20,7 @@ const WS_URL = 'https://linktime.onrender.com';
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
     setupEventListeners();
-    loadTodayData();
+    loadSelectedDateData();
     renderCalendar();
 });
 
@@ -74,6 +75,13 @@ function setupEventListeners() {
 
 function startTimer() {
     if (!state.timerRunning) {
+        // При запуске таймера автоматически выбираем сегодняшнюю дату
+        state.selectedDate = state.currentDate;
+        renderCalendar();
+        updateTasksTitle();
+        renderTasks();
+        updateSelectedDateStats();
+        
         state.timerRunning = true;
         state.currentSessionStart = Date.now();
         state.totalPausedTime = 0;
@@ -121,7 +129,7 @@ function startTimer() {
         document.getElementById('pauseBtn').textContent = 'Пауза';
         document.getElementById('stopBtn').disabled = false;
         
-        updateTodayStats();
+        updateSelectedDateStats();
         
         // Синхронизируем продолжение таймера
         syncTimerState('resume', {
@@ -157,7 +165,7 @@ function pauseTimer() {
         document.getElementById('pauseBtn').textContent = 'Пауза';
         document.getElementById('stopBtn').disabled = false;
         
-        updateTodayStats();
+        updateSelectedDateStats();
         
         // Синхронизируем продолжение таймера
         syncTimerState('resume', {
@@ -229,7 +237,7 @@ function stopTimer() {
         document.getElementById('pauseBtn').textContent = 'Пауза';
         document.getElementById('stopBtn').disabled = true;
         
-        updateTodayStats();
+        updateSelectedDateStats();
         showToast('Сессия завершена!', 'success');
         
         // Синхронизируем остановку таймера
@@ -273,7 +281,7 @@ function saveTask() {
             id: Date.now(),
             text: taskText,
             completed: false,
-            date: state.currentDate
+            date: state.selectedDate // Сохраняем задачу для выбранной даты
         };
         
         const tasks = getTasks();
@@ -282,6 +290,7 @@ function saveTask() {
         
         hideTaskInput();
         renderTasks();
+        updateSelectedDateStats();
         showToast('Задача добавлена!', 'success');
     }
 }
@@ -293,6 +302,7 @@ function toggleTask(taskId) {
         task.completed = !task.completed;
         saveTasks(tasks);
         renderTasks();
+        updateSelectedDateStats();
         if (task.completed) {
             showToast('Задача выполнена! 🎉', 'success');
         }
@@ -307,17 +317,18 @@ function deleteTask(taskId) {
             const tasks = getTasks().filter(t => t.id !== taskId);
             saveTasks(tasks);
             renderTasks();
+            updateSelectedDateStats();
             showToast('Задача удалена', 'info');
         }, 300);
     }
 }
 
 function renderTasks() {
-    const tasks = getTasks().filter(t => t.date === state.currentDate);
+    const tasks = getTasks().filter(t => t.date === state.selectedDate);
     const tasksList = document.getElementById('tasksList');
     
     if (tasks.length === 0) {
-        tasksList.innerHTML = '<li style="text-align: center; color: rgba(255, 255, 255, 0.5); padding: 20px;">Нет задач на сегодня</li>';
+        tasksList.innerHTML = '<li style="text-align: center; color: rgba(255, 255, 255, 0.5); padding: 20px;">Нет задач на эту дату</li>';
         return;
     }
     
@@ -328,6 +339,20 @@ function renderTasks() {
             <button onclick="deleteTask(${task.id})">Удалить</button>
         </li>
     `).join('');
+}
+
+function updateTasksTitle() {
+    const dateObj = new Date(state.selectedDate + 'T00:00:00');
+    const today = new Date().toISOString().split('T')[0];
+    
+    let titleText;
+    if (state.selectedDate === today) {
+        titleText = 'Задачи на сегодня';
+    } else {
+        titleText = 'Задачи на ' + dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    }
+    
+    document.getElementById('tasksTitle').textContent = titleText;
 }
 
 // === КАЛЕНДАРЬ ===
@@ -373,8 +398,14 @@ function renderCalendar() {
         const div = document.createElement('div');
         div.className = 'calendar-day';
         
+        // Зелёным - сегодняшний день
         if (dateStr === todayStr) {
             div.classList.add('today');
+        }
+        
+        // Жёлтым - выбранный день
+        if (dateStr === state.selectedDate) {
+            div.classList.add('selected');
         }
         
         if (dayData.totalWorkTime > 0) {
@@ -386,7 +417,7 @@ function renderCalendar() {
             ${dayData.totalWorkTime > 0 ? `<div class="day-time">${formatTime(dayData.totalWorkTime)}</div>` : ''}
         `;
         
-        div.addEventListener('click', () => showDayDetails(dateStr));
+        div.addEventListener('click', () => selectDate(dateStr));
         calendar.appendChild(div);
     }
 }
@@ -394,6 +425,14 @@ function renderCalendar() {
 function changeMonth(direction) {
     currentMonth.setMonth(currentMonth.getMonth() + direction);
     renderCalendar();
+}
+
+function selectDate(dateStr) {
+    state.selectedDate = dateStr;
+    renderCalendar();
+    updateTasksTitle();
+    renderTasks();
+    updateSelectedDateStats();
 }
 
 function getDataForDate(dateStr) {
@@ -424,34 +463,33 @@ function getDataForDate(dateStr) {
     };
 }
 
-function showDayDetails(dateStr) {
-    const data = getDataForDate(dateStr);
-    const date = new Date(dateStr);
-    
-    showConfirm(
-        date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }),
-        `Рабочее время: ${formatTime(data.totalWorkTime)}<br>
-        Время пауз: ${formatTime(data.totalPauseTime)}<br>
-        Сессий: ${data.sessionCount}<br>
-        Задач выполнено: ${data.tasks.filter(t => t.completed).length} из ${data.tasks.length}`,
-        () => {},
-        true
-    );
-}
-
 // === СТАТИСТИКА ===
 
-function updateTodayStats() {
-    const data = getDataForDate(state.currentDate);
+function updateSelectedDateStats() {
+    const data = getDataForDate(state.selectedDate);
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Обновляем метку рабочего времени
+    const workTimeLabel = document.getElementById('workTimeLabel');
+    if (state.selectedDate === today) {
+        workTimeLabel.textContent = 'Рабочее время:';
+    } else {
+        const dateObj = new Date(state.selectedDate + 'T00:00:00');
+        workTimeLabel.textContent = 'Рабочее время (' + dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + '):';
+    }
     
     document.getElementById('totalWorkTime').textContent = formatTime(data.totalWorkTime);
-    document.getElementById('totalPauseTime').textContent = formatTime(data.totalPauseTime);
     document.getElementById('sessionCount').textContent = data.sessionCount;
+    
+    const completedTasks = data.tasks.filter(t => t.completed).length;
+    const totalTasks = data.tasks.length;
+    document.getElementById('tasksCompleted').textContent = `${completedTasks} из ${totalTasks}`;
 }
 
-function loadTodayData() {
+function loadSelectedDateData() {
+    updateTasksTitle();
     renderTasks();
-    updateTodayStats();
+    updateSelectedDateStats();
 }
 
 // === НАСТРОЙКИ ===
@@ -540,22 +578,15 @@ function scanQRCode(video, canvas, ctx, stream) {
 function handleQRCodeScanned(key) {
     document.getElementById('scanQRSection').style.display = 'none';
     
-    showConfirm(
-        'Подключение к сессии',
-        'Вы действительно хотите подключиться к этой сессии?',
-        () => {
-            state.sessionKey = key;
-            localStorage.setItem('sessionKey', key);
-            showToast('Устройство успешно подключено!', 'success');
-            closeSettings();
-            // Переподключаемся к WebSocket с новым ключом
-            if (ws) {
-                ws.close();
-            }
-            connectWebSocket();
-        },
-        false
-    );
+    state.sessionKey = key;
+    localStorage.setItem('sessionKey', key);
+    showToast('Устройство успешно подключено!', 'success');
+    closeSettings();
+    // Переподключаемся к WebSocket с новым ключом
+    if (ws) {
+        ws.close();
+    }
+    connectWebSocket();
 }
 
 function showKeyInput() {
@@ -705,6 +736,12 @@ function applyTimerState(data) {
     
     switch (action) {
         case 'start': {
+            // При получении старта от другого устройства тоже выбираем сегодняшнюю дату
+            state.selectedDate = state.currentDate;
+            renderCalendar();
+            updateTasksTitle();
+            renderTasks();
+            
             // Запускаем таймер, даже если он уже был запущен
             if (timerInterval) clearInterval(timerInterval);
             
@@ -834,7 +871,7 @@ function applyTimerState(data) {
             document.getElementById('pauseBtn').textContent = 'Пауза';
             document.getElementById('stopBtn').disabled = true;
             
-            updateTodayStats();
+            updateSelectedDateStats();
             break;
         }
     }
@@ -858,12 +895,12 @@ function applyRemoteData(data) {
         Object.keys(data.sessions).forEach(key => {
             localStorage.setItem(key, JSON.stringify(data.sessions[key]));
         });
-        updateTodayStats();
+        updateSelectedDateStats();
         renderCalendar();
     }
 }
 
-// === УВЕДОМЛЕНИЯ И МОДАЛЬНЫЕ ОКНА ===
+// === УВЕДОМЛЕНИЯ ===
 
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
@@ -873,47 +910,4 @@ function showToast(message, type = 'info') {
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
-}
-
-function showConfirm(title, message, onConfirm, infoOnly = false) {
-    const modal = document.getElementById('confirmModal');
-    const titleEl = document.getElementById('confirmTitle');
-    const messageEl = document.getElementById('confirmMessage');
-    const okBtn = document.getElementById('confirmOk');
-    const cancelBtn = document.getElementById('confirmCancel');
-    
-    titleEl.textContent = title;
-    messageEl.innerHTML = message;
-    
-    if (infoOnly) {
-        okBtn.textContent = 'Закрыть';
-        cancelBtn.style.display = 'none';
-    } else {
-        okBtn.textContent = 'Да';
-        cancelBtn.style.display = 'block';
-    }
-    
-    modal.classList.add('active');
-    
-    const handleOk = () => {
-        modal.classList.remove('active');
-        if (onConfirm) onConfirm();
-        okBtn.removeEventListener('click', handleOk);
-        cancelBtn.removeEventListener('click', handleCancel);
-    };
-    
-    const handleCancel = () => {
-        modal.classList.remove('active');
-        okBtn.removeEventListener('click', handleOk);
-        cancelBtn.removeEventListener('click', handleCancel);
-    };
-    
-    okBtn.addEventListener('click', handleOk);
-    cancelBtn.addEventListener('click', handleCancel);
-    
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            handleCancel();
-        }
-    });
 }
