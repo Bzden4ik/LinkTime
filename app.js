@@ -57,7 +57,7 @@ function generateSessionKey() {
 function setupEventListeners() {
     // Таймер
     document.getElementById('startBtn').addEventListener('click', startTimer);
-    document.getElementById('pauseBtn').addEventListener('click', pauseTimer);
+    document.getElementById('pauseBtn').addEventListener('click', () => pauseTimer(false));
     document.getElementById('stopBtn').addEventListener('click', stopTimer);
 
     // Задачи
@@ -363,6 +363,9 @@ function stopTimer() {
         state.currentPauseStart = null;
         state.elapsedTime = 0;
         state.totalPausedTime = 0;
+        autoPauseActive = false;
+        manualPause = false;
+        if (autoPauseTimeout) { clearTimeout(autoPauseTimeout); autoPauseTimeout = null; }
         
         document.getElementById('timerDisplay').textContent = '00:00:00';
         document.getElementById('startBtn').disabled = false;
