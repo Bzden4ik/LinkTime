@@ -132,7 +132,40 @@ function startTimer() {
 }
 
 function pauseTimer() {
-    if (state.timerRunning && !state.timerPaused) {
+    if (state.timerPaused) {
+        // Возобновление после паузы
+        const pauseDuration = Date.now() - state.currentPauseStart;
+        const sessions = getTodaySessions();
+        const currentSession = sessions[sessions.length - 1];
+        currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
+        currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
+        
+        state.totalPausedTime += pauseDuration;
+        
+        saveTodaySessions(sessions);
+        
+        state.timerPaused = false;
+        state.currentPauseStart = null;
+        
+        // Запускаем таймер снова
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(updateTimer, 1000);
+        
+        // Обновляем кнопки
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('pauseBtn').disabled = false;
+        document.getElementById('pauseBtn').textContent = 'Пауза';
+        document.getElementById('stopBtn').disabled = false;
+        
+        updateTodayStats();
+        
+        // Синхронизируем продолжение таймера
+        syncTimerState('resume', {
+            sessionStart: state.currentSessionStart,
+            totalPausedTime: state.totalPausedTime
+        });
+    } else if (state.timerRunning && !state.timerPaused) {
+        // Ставим на паузу
         state.timerPaused = true;
         state.currentPauseStart = Date.now();
         
