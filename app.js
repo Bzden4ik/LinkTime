@@ -21,6 +21,10 @@ const WS_URL = 'https://linktime.onrender.com';
 let isTabVisible = true;
 let hasWindowFocus = true;
 let autoPauseActive = false; // Флаг авто-паузы
+let autoPauseTimeout = null; // Таймер отложенной авто-паузы
+let agentConnected = false; // Подключён ли Desktop Agent
+let agentStatus = null; // Последний статус от агента
+let manualPause = false; // Ручная пауза (приоритет над авто)
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
@@ -86,15 +90,10 @@ function setupVisibilityHandlers() {
         
         if (isTabVisible) {
             console.log('Tab became visible');
-            // При возвращении на вкладку запрашиваем актуальное состояние
-            requestServerState();
+            onUserReturned();
         } else {
             console.log('Tab hidden');
-            // Вкладка скрыта - перестаем считать время локально
-            if (state.timerRunning && !state.timerPaused) {
-                // Отправляем на сервер что вкладка скрыта
-                sendBrowserEvent('tab_hidden');
-            }
+            onUserLeft('tab_hidden');
         }
     });
     
@@ -102,19 +101,72 @@ function setupVisibilityHandlers() {
     window.addEventListener('blur', () => {
         hasWindowFocus = false;
         console.log('Window lost focus');
-        if (state.timerRunning && !state.timerPaused) {
-            sendBrowserEvent('browser_blur');
-        }
+        onUserLeft('browser_blur');
     });
     
     window.addEventListener('focus', () => {
         hasWindowFocus = true;
         console.log('Window gained focus');
-        if (state.timerRunning) {
-            sendBrowserEvent('browser_focus');
-            requestServerState();
-        }
+        onUserReturned();
     });
+}
+
+// Пользователь ушёл с вкладки — запускаем обратный отсчёт авто-паузы
+function onUserLeft(reason) {
+    // Не делаем ничего если таймер не запущен или уже на паузе
+    if (!state.timerRunning || state.timerPaused) return;
+    
+    // Если агент подключён и говорит что пользователь работает — не ставим на паузу
+    if (agentConnected && agentStatus === 'working') {
+        console.log('Tab lost focus but agent confirms working — timer continues');
+        sendBrowserEvent(reason);
+        return;
+    }
+    
+    sendBrowserEvent(reason);
+    
+    // Отменяем предыдущий таймер если есть
+    if (autoPauseTimeout) clearTimeout(autoPauseTimeout);
+    
+    // Запускаем обратный отсчёт: 5 секунд
+    const delay = 5000;
+    console.log(`Auto-pause in ${delay/1000}s (reason: ${reason})...`);
+    
+    autoPauseTimeout = setTimeout(() => {
+        // Перепроверяем: может пользователь уже вернулся
+        if (isTabVisible && hasWindowFocus) return;
+        // Перепроверяем агент
+        if (agentConnected && agentStatus === 'working') return;
+        // Таймер всё ещё идёт и не на паузе
+        if (!state.timerRunning || state.timerPaused) return;
+        
+        console.log(`Auto-pausing timer (reason: ${reason})`);
+        pauseTimer(true); // true = это авто-пауза
+        
+        let message = 'Таймер приостановлен';
+        if (reason === 'tab_hidden') message = 'Авто-Пауза: вкладка скрыта';
+        if (reason === 'browser_blur') message = 'Авто-Пауза: окно не в фокусе';
+        showToast(message, 'info');
+    }, delay);
+}
+
+// Пользователь вернулся на вкладку
+function onUserReturned() {
+    // Отменяем обратный отсчёт авто-паузы
+    if (autoPauseTimeout) {
+        clearTimeout(autoPauseTimeout);
+        autoPauseTimeout = null;
+    }
+    
+    sendBrowserEvent('browser_focus');
+    requestServerState();
+    
+    // Если была авто-пауза (не ручная) — автоматически возобновляем
+    if (state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
+        console.log('User returned — auto-resuming timer');
+        startTimer(); // возобновление
+        showToast('Таймер возобновлён', 'success');
+    }
 }
 
 function sendBrowserEvent(eventType) {

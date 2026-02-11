@@ -216,29 +216,28 @@ function connectWebSocket() {
         ws.on('open', () => {
             console.log('WebSocket connected');
             
-            // Присоединяемся к сессии
-            ws.send(JSON.stringify({
-                type: 'join',
-                sessionKey: config.sessionKey
-            }));
+            // Отправляем с небольшой задержкой чтобы соединение точно было готово
+            setTimeout(() => {
+                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                
+                // Присоединяемся к сессии
+                wsSend({ type: 'join', sessionKey: config.sessionKey });
 
-            // Сообщаем серверу что Desktop Agent подключён
-            ws.send(JSON.stringify({
-                type: 'agent_connected',
-                sessionKey: config.sessionKey
-            }));
+                // Сообщаем серверу что Desktop Agent подключён
+                wsSend({ type: 'agent_connected', sessionKey: config.sessionKey });
 
-            // Обновляем UI агента
-            if (mainWindow) {
-                mainWindow.webContents.send('status-update', {
-                    status: 'working',
-                    windowTitle: 'Подключено, мониторинг запущен'
-                });
-            }
+                // Обновляем UI агента
+                if (mainWindow) {
+                    mainWindow.webContents.send('status-update', {
+                        status: 'working',
+                        windowTitle: 'Подключено, мониторинг запущен'
+                    });
+                }
 
-            // Запускаем мониторинг активности
-            isFirstCheck = true;
-            startActivityMonitoring();
+                // Запускаем мониторинг активности
+                isFirstCheck = true;
+                startActivityMonitoring();
+            }, 500);
         });
 
         ws.on('message', (data) => {
@@ -357,16 +356,27 @@ function updateStatus(status, windowTitle) {
     }
 }
 
+// Безопасная отправка через WebSocket
+function wsSend(data) {
+    try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(data));
+            return true;
+        }
+    } catch (error) {
+        console.error('WebSocket send error:', error.message);
+    }
+    return false;
+}
+
 // Отправка обновления активности на сервер
 function sendActivityUpdate(status, windowTitle) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: 'activity_update',
-            sessionKey: config.sessionKey,
-            status: status,
-            windowTitle: windowTitle
-        }));
-        
+    if (wsSend({
+        type: 'activity_update',
+        sessionKey: config.sessionKey,
+        status: status,
+        windowTitle: windowTitle
+    })) {
         console.log(`Activity update sent: ${status}`);
     }
 }
