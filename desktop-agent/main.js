@@ -301,7 +301,6 @@ async function checkActiveWindow() {
         
         if (!window) {
             console.log('No active window detected');
-            // Нет активного окна - проверяем idle
             const idleTime = Date.now() - lastActivity;
             if (idleTime > config.idleTimeout) {
                 updateStatus('idle', 'Нет активного окна');
@@ -309,50 +308,43 @@ async function checkActiveWindow() {
             return;
         }
 
-        // Обновляем время последней активности
         lastActivity = Date.now();
 
-        // Получаем заголовок окна
         const windowTitle = window.title || '';
         const windowOwner = (window.owner && window.owner.name) ? window.owner.name : '';
         const fullTitle = windowOwner ? `${windowOwner} - ${windowTitle}` : windowTitle;
 
-        console.log(`Active window: ${fullTitle}`);
+        console.log(`[MONITOR] Active window: "${fullTitle}" | Owner: "${windowOwner}" | Title: "${windowTitle}"`);
 
-        // Определяем статус
         const status = determineStatus(fullTitle);
+        console.log(`[MONITOR] Status: ${status}`);
         updateStatus(status, fullTitle);
 
     } catch (error) {
-        console.error('Error checking active window:', error.message);
-        // Даже при ошибке отправляем статус при первой проверке
-        if (isFirstCheck) {
-            updateStatus('working', 'Мониторинг активен');
-        }
+        console.error('[MONITOR] ERROR reading active window:', error.message);
+        // При ошибке НЕ отправляем working — лучше idle
+        updateStatus('idle', 'Ошибка мониторинга');
     }
 }
 
 // Обновление и отправка статуса
 function updateStatus(status, windowTitle) {
-    // Отправляем всегда при первой проверке или при изменении статуса
-    if (status !== currentStatus || isFirstCheck) {
-        currentStatus = status;
-        isFirstCheck = false;
-        console.log(`Status changed: ${status} (${windowTitle})`);
-        
-        // Обновляем UI
-        updateTrayStatus(status, windowTitle);
-        
-        // Отправляем на сервер
-        sendActivityUpdate(status, windowTitle);
-        
-        // Уведомляем окно настроек если оно открыто
-        if (mainWindow) {
-            mainWindow.webContents.send('status-update', {
-                status,
-                windowTitle
-            });
-        }
+    const changed = status !== currentStatus || isFirstCheck;
+    currentStatus = status;
+    isFirstCheck = false;
+    
+    if (changed) {
+        console.log(`[STATUS] Changed: ${status} (${windowTitle})`);
+    }
+    
+    // Всегда обновляем UI
+    updateTrayStatus(status, windowTitle);
+    
+    // Всегда отправляем на сервер (чтобы браузер знал актуальный статус)
+    sendActivityUpdate(status, windowTitle);
+    
+    if (mainWindow) {
+        mainWindow.webContents.send('status-update', { status, windowTitle });
     }
 }
 
