@@ -290,8 +290,8 @@ function determineStatus(windowTitle) {
         return 'distracted';
     }
 
-    // По умолчанию считаем неопределенное окно как работу
-    return 'working';
+    // По умолчанию: если не в белом списке — отвлечение
+    return 'distracted';
 }
 
 // Проверка активного окна
