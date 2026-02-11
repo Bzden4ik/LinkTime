@@ -12,7 +12,7 @@ let state = {
 let timerInterval = null;
 let ws = null;
 let reconnectInterval = null;
-const WS_URL = 'wss://linktime-sync.onrender.com'; // Замените на ваш WebSocket сервер
+const WS_URL = 'https://linktime.onrender.com';
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
