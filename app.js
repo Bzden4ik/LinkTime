@@ -154,7 +154,8 @@ function onUserReturned() {
     // Если была авто-пауза (не ручная) — автоматически возобновляем
     if (state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
         console.log('User returned — auto-resuming timer');
-        startTimer(); // возобновление
+        autoPauseActive = false;
+        pauseTimer(false); // вызов pauseTimer при паузе = возобновление
         showToast('Таймер возобновлён', 'success');
     }
 }
