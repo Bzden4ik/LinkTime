@@ -10,6 +10,9 @@ let state = {
 };
 
 let timerInterval = null;
+let ws = null;
+let reconnectInterval = null;
+const WS_URL = 'wss://linktime-sync.onrender.com'; // Замените на ваш WebSocket сервер
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
@@ -27,6 +30,9 @@ function initializeApp() {
         state.sessionKey = generateSessionKey();
         localStorage.setItem('sessionKey', state.sessionKey);
     }
+    
+    // Подключаемся к WebSocket серверу
+    connectWebSocket();
 }
 
 // Генерация уникального ключа сессии
@@ -152,6 +158,7 @@ function stopTimer() {
         document.getElementById('stopBtn').disabled = true;
         
         updateTodayStats();
+        showToast('Сессия завершена!', 'success');
     }
 }
 
@@ -212,6 +219,7 @@ function saveTask() {
         
         hideTaskInput();
         renderTasks();
+        showToast('Задача добавлена!', 'success');
     }
 }
 
@@ -222,13 +230,23 @@ function toggleTask(taskId) {
         task.completed = !task.completed;
         saveTasks(tasks);
         renderTasks();
+        if (task.completed) {
+            showToast('Задача выполнена! 🎉', 'success');
+        }
     }
 }
 
 function deleteTask(taskId) {
-    const tasks = getTasks().filter(t => t.id !== taskId);
-    saveTasks(tasks);
-    renderTasks();
+    const taskItem = document.querySelector(`[data-task-id="${taskId}"]`);
+    if (taskItem) {
+        taskItem.classList.add('removing');
+        setTimeout(() => {
+            const tasks = getTasks().filter(t => t.id !== taskId);
+            saveTasks(tasks);
+            renderTasks();
+            showToast('Задача удалена', 'info');
+        }, 300);
+    }
 }
 
 function renderTasks() {
@@ -241,7 +259,7 @@ function renderTasks() {
     }
     
     tasksList.innerHTML = tasks.map(task => `
-        <li class="task-item ${task.completed ? 'completed' : ''}">
+        <li class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
             <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask(${task.id})">
             <span>${task.text}</span>
             <button onclick="deleteTask(${task.id})">Удалить</button>
@@ -345,12 +363,15 @@ function showDayDetails(dateStr) {
     const data = getDataForDate(dateStr);
     const date = new Date(dateStr);
     
-    alert(`${date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
-
-Рабочее время: ${formatTime(data.totalWorkTime)}
-Время пауз: ${formatTime(data.totalPauseTime)}
-Сессий: ${data.sessionCount}
-Задач выполнено: ${data.tasks.filter(t => t.completed).length} из ${data.tasks.length}`);
+    showConfirm(
+        date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }),
+        `Рабочее время: ${formatTime(data.totalWorkTime)}<br>
+        Время пауз: ${formatTime(data.totalPauseTime)}<br>
+        Сессий: ${data.sessionCount}<br>
+        Задач выполнено: ${data.tasks.filter(t => t.completed).length} из ${data.tasks.length}`,
+        () => {},
+        true
+    );
 }
 
 // === СТАТИСТИКА ===
@@ -412,7 +433,7 @@ function connectWithKey() {
     if (key) {
         state.sessionKey = key;
         localStorage.setItem('sessionKey', key);
-        alert('Устройство подключено к сессии!');
+        showToast('Устройство успешно подключено!', 'success');
         closeSettings();
     }
 }
@@ -425,6 +446,7 @@ function getTasks() {
 
 function saveTasks(tasks) {
     localStorage.setItem('tasks', JSON.stringify(tasks));
+    syncData();
 }
 
 function getTodaySessions() {
@@ -433,10 +455,165 @@ function getTodaySessions() {
 
 function saveTodaySessions(sessions) {
     localStorage.setItem(`sessions_${state.currentDate}`, JSON.stringify(sessions));
+    syncData();
 }
 
 function saveTodaySession(session) {
     const sessions = getTodaySessions();
     sessions.push(session);
     saveTodaySessions(sessions);
+}
+
+// === WEBSOCKET СИНХРОНИЗАЦИЯ ===
+
+function connectWebSocket() {
+    try {
+        ws = new WebSocket(WS_URL);
+        
+        ws.onopen = () => {
+            console.log('WebSocket connected');
+            // Присоединяемся к сессии
+            ws.send(JSON.stringify({
+                type: 'join',
+                sessionKey: state.sessionKey
+            }));
+            
+            // Останавливаем попытки переподключения
+            if (reconnectInterval) {
+                clearInterval(reconnectInterval);
+                reconnectInterval = null;
+            }
+        };
+        
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            
+            switch (message.type) {
+                case 'init':
+                    // Получаем начальные данные при подключении
+                    applyRemoteData(message.data);
+                    break;
+                case 'update':
+                    // Получаем обновления от других устройств
+                    if (message.from !== 'self') {
+                        applyRemoteData(message.data);
+                    }
+                    break;
+            }
+        };
+        
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+        
+        ws.onclose = () => {
+            console.log('WebSocket disconnected');
+            // Пытаемся переподключиться через 5 секунд
+            if (!reconnectInterval) {
+                reconnectInterval = setInterval(() => {
+                    console.log('Attempting to reconnect...');
+                    connectWebSocket();
+                }, 5000);
+            }
+        };
+    } catch (error) {
+        console.error('Failed to connect WebSocket:', error);
+    }
+}
+
+function syncData() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        const tasks = getTasks();
+        const allSessions = {};
+        
+        // Собираем все сессии со всех дат
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key.startsWith('sessions_')) {
+                allSessions[key] = JSON.parse(localStorage.getItem(key));
+            }
+        }
+        
+        ws.send(JSON.stringify({
+            type: 'sync',
+            sessionKey: state.sessionKey,
+            tasks: tasks,
+            sessions: allSessions,
+            date: state.currentDate
+        }));
+    }
+}
+
+function applyRemoteData(data) {
+    if (!data) return;
+    
+    // Применяем задачи
+    if (data.tasks) {
+        localStorage.setItem('tasks', JSON.stringify(data.tasks));
+        renderTasks();
+    }
+    
+    // Применяем сессии
+    if (data.sessions) {
+        Object.keys(data.sessions).forEach(key => {
+            localStorage.setItem(key, JSON.stringify(data.sessions[key]));
+        });
+        updateTodayStats();
+        renderCalendar();
+    }
+}
+
+// === УВЕДОМЛЕНИЯ И МОДАЛЬНЫЕ ОКНА ===
+
+function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `toast ${type} show`;
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
+}
+
+function showConfirm(title, message, onConfirm, infoOnly = false) {
+    const modal = document.getElementById('confirmModal');
+    const titleEl = document.getElementById('confirmTitle');
+    const messageEl = document.getElementById('confirmMessage');
+    const okBtn = document.getElementById('confirmOk');
+    const cancelBtn = document.getElementById('confirmCancel');
+    
+    titleEl.textContent = title;
+    messageEl.innerHTML = message;
+    
+    if (infoOnly) {
+        okBtn.textContent = 'Закрыть';
+        cancelBtn.style.display = 'none';
+    } else {
+        okBtn.textContent = 'Да';
+        cancelBtn.style.display = 'block';
+    }
+    
+    modal.classList.add('active');
+    
+    const handleOk = () => {
+        modal.classList.remove('active');
+        if (onConfirm) onConfirm();
+        okBtn.removeEventListener('click', handleOk);
+        cancelBtn.removeEventListener('click', handleCancel);
+    };
+    
+    const handleCancel = () => {
+        modal.classList.remove('active');
+        okBtn.removeEventListener('click', handleOk);
+        cancelBtn.removeEventListener('click', handleCancel);
+    };
+    
+    okBtn.addEventListener('click', handleOk);
+    cancelBtn.addEventListener('click', handleCancel);
+    
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            handleCancel();
+        }
+    });
 }

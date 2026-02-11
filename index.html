@@ -15,7 +15,7 @@
 
         <main>
             <!-- Таймер -->
-            <section class="timer-section">
+            <section class="timer-section glass-card">
                 <div class="timer-display" id="timerDisplay">00:00:00</div>
                 <div class="timer-controls">
                     <button class="btn btn-start" id="startBtn">Старт</button>
@@ -39,7 +39,7 @@
             </section>
 
             <!-- Задачи -->
-            <section class="tasks-section">
+            <section class="tasks-section glass-card">
                 <div class="tasks-header">
                     <h2>Задачи на сегодня</h2>
                     <button class="btn btn-add" id="addTaskBtn">+ Добавить</button>
@@ -55,7 +55,7 @@
             </section>
 
             <!-- Календарь -->
-            <section class="calendar-section">
+            <section class="calendar-section glass-card">
                 <div class="calendar-header">
                     <button class="btn btn-small" id="prevMonth">◀</button>
                     <h2 id="currentMonth"></h2>
@@ -88,6 +88,21 @@
                     <input type="text" id="keyInput" placeholder="Введите ключ доступа">
                     <button class="btn" id="connectKey">Подключиться</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Confirmation Modal -->
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-content">
+            <h3 id="confirmTitle">Подтверждение</h3>
+            <p id="confirmMessage">Вы уверены?</p>
+            <div class="confirm-buttons">
+                <button class="btn btn-cancel" id="confirmCancel">Отмена</button>
+                <button class="btn btn-stop" id="confirmOk">Да</button>
             </div>
         </div>
     </div>
