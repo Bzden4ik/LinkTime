@@ -113,35 +113,25 @@ function setupVisibilityHandlers() {
 
 // Пользователь ушёл с вкладки — запускаем обратный отсчёт авто-паузы
 function onUserLeft(reason) {
-    // Не делаем ничего если таймер не запущен или уже на паузе
     if (!state.timerRunning || state.timerPaused) return;
-    
-    // Если агент подключён и говорит что пользователь работает — не ставим на паузу
-    if (agentConnected && agentStatus === 'working') {
-        console.log('Tab lost focus but agent confirms working — timer continues');
-        sendBrowserEvent(reason);
-        return;
-    }
     
     sendBrowserEvent(reason);
     
-    // Отменяем предыдущий таймер если есть
     if (autoPauseTimeout) clearTimeout(autoPauseTimeout);
     
-    // Запускаем обратный отсчёт: 5 секунд
     const delay = 5000;
     console.log(`Auto-pause in ${delay/1000}s (reason: ${reason})...`);
     
     autoPauseTimeout = setTimeout(() => {
-        // Перепроверяем: может пользователь уже вернулся
         if (isTabVisible && hasWindowFocus) return;
-        // Перепроверяем агент
-        if (agentConnected && agentStatus === 'working') return;
-        // Таймер всё ещё идёт и не на паузе
+        if (agentConnected && agentStatus === 'working') {
+            console.log('Agent confirms working — skip auto-pause');
+            return;
+        }
         if (!state.timerRunning || state.timerPaused) return;
         
         console.log(`Auto-pausing timer (reason: ${reason})`);
-        pauseTimer(true); // true = это авто-пауза
+        pauseTimer(true);
         
         let message = 'Таймер приостановлен';
         if (reason === 'tab_hidden') message = 'Авто-Пауза: вкладка скрыта';
