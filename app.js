@@ -6,7 +6,8 @@ let state = {
     currentPauseStart: null,
     elapsedTime: 0,
     sessionKey: null,
-    currentDate: new Date().toISOString().split('T')[0]
+    currentDate: new Date().toISOString().split('T')[0],
+    totalPausedTime: 0
 };
 
 let timerInterval = null;
@@ -60,6 +61,7 @@ function setupEventListeners() {
     document.getElementById('closeSettings').addEventListener('click', closeSettings);
     document.getElementById('generateQR').addEventListener('click', generateQRCode);
     document.getElementById('showKey').addEventListener('click', showSessionKey);
+    document.getElementById('scanQR').addEventListener('click', startQRScanner);
     document.getElementById('enterKey').addEventListener('click', showKeyInput);
     document.getElementById('connectKey').addEventListener('click', connectWithKey);
 
@@ -74,6 +76,7 @@ function startTimer() {
     if (!state.timerRunning) {
         state.timerRunning = true;
         state.currentSessionStart = Date.now();
+        state.totalPausedTime = 0;
         
         // Создаём новую сессию
         const session = {
@@ -88,6 +91,11 @@ function startTimer() {
         document.getElementById('startBtn').disabled = true;
         document.getElementById('pauseBtn').disabled = false;
         document.getElementById('stopBtn').disabled = false;
+        
+        // Синхронизируем старт таймера
+        syncTimerState('start', {
+            sessionStart: state.currentSessionStart
+        });
     } else if (state.timerPaused) {
         // Возобновление после паузы
         const pauseDuration = Date.now() - state.currentPauseStart;
@@ -96,13 +104,26 @@ function startTimer() {
         currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
         currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
         
+        state.totalPausedTime += pauseDuration;
+        
         saveTodaySessions(sessions);
         
         state.timerPaused = false;
         state.currentPauseStart = null;
         
         document.getElementById('pauseBtn').textContent = 'Пауза';
+        
+        // Запускаем таймер снова
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(updateTimer, 1000);
+        
         updateTodayStats();
+        
+        // Синхронизируем продолжение таймера
+        syncTimerState('resume', {
+            sessionStart: state.currentSessionStart,
+            totalPausedTime: state.totalPausedTime
+        });
     }
 }
 
@@ -110,6 +131,12 @@ function pauseTimer() {
     if (state.timerRunning && !state.timerPaused) {
         state.timerPaused = true;
         state.currentPauseStart = Date.now();
+        
+        // Останавливаем таймер
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
         
         // Добавляем паузу к текущей сессии
         const sessions = getTodaySessions();
@@ -121,6 +148,13 @@ function pauseTimer() {
         saveTodaySessions(sessions);
         
         document.getElementById('pauseBtn').textContent = 'Продолжить';
+        
+        // Синхронизируем паузу таймера
+        syncTimerState('pause', {
+            sessionStart: state.currentSessionStart,
+            pauseStart: state.currentPauseStart,
+            totalPausedTime: state.totalPausedTime
+        });
     }
 }
 
@@ -150,6 +184,7 @@ function stopTimer() {
         state.currentSessionStart = null;
         state.currentPauseStart = null;
         state.elapsedTime = 0;
+        state.totalPausedTime = 0;
         
         document.getElementById('timerDisplay').textContent = '00:00:00';
         document.getElementById('startBtn').disabled = false;
@@ -159,25 +194,16 @@ function stopTimer() {
         
         updateTodayStats();
         showToast('Сессия завершена!', 'success');
+        
+        // Синхронизируем остановку таймера
+        syncTimerState('stop', {});
     }
 }
 
 function updateTimer() {
     if (state.timerRunning && !state.timerPaused) {
         state.elapsedTime = Date.now() - state.currentSessionStart;
-        
-        // Вычитаем время пауз
-        const sessions = getTodaySessions();
-        const currentSession = sessions[sessions.length - 1];
-        let totalPauseTime = 0;
-        
-        currentSession.pauses.forEach(pause => {
-            if (pause.end) {
-                totalPauseTime += pause.duration;
-            }
-        });
-        
-        const displayTime = state.elapsedTime - totalPauseTime;
+        const displayTime = state.elapsedTime - state.totalPausedTime;
         document.getElementById('timerDisplay').textContent = formatTime(displayTime);
     }
 }
@@ -254,7 +280,7 @@ function renderTasks() {
     const tasksList = document.getElementById('tasksList');
     
     if (tasks.length === 0) {
-        tasksList.innerHTML = '<li style="text-align: center; color: #6b7280; padding: 20px;">Нет задач на сегодня</li>';
+        tasksList.innerHTML = '<li style="text-align: center; color: rgba(255, 255, 255, 0.5); padding: 20px;">Нет задач на сегодня</li>';
         return;
     }
     
@@ -300,15 +326,17 @@ function renderCalendar() {
     }
     
     // Дни месяца
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
     for (let day = 1; day <= lastDay.getDate(); day++) {
-        const date = new Date(year, month, day);
-        const dateStr = date.toISOString().split('T')[0];
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dayData = getDataForDate(dateStr);
         
         const div = document.createElement('div');
         div.className = 'calendar-day';
         
-        if (dateStr === new Date().toISOString().split('T')[0]) {
+        if (dateStr === todayStr) {
             div.classList.add('today');
         }
         
@@ -399,6 +427,7 @@ function closeSettings() {
     document.getElementById('settingsModal').classList.remove('active');
     document.getElementById('qrSection').style.display = 'none';
     document.getElementById('keyInputSection').style.display = 'none';
+    document.getElementById('scanQRSection').style.display = 'none';
 }
 
 function generateQRCode() {
@@ -415,6 +444,8 @@ function generateQRCode() {
     
     document.getElementById('keyDisplay').textContent = state.sessionKey;
     qrSection.style.display = 'block';
+    document.getElementById('scanQRSection').style.display = 'none';
+    document.getElementById('keyInputSection').style.display = 'none';
 }
 
 function showSessionKey() {
@@ -422,10 +453,78 @@ function showSessionKey() {
     document.getElementById('qrcode').innerHTML = '';
     document.getElementById('keyDisplay').textContent = state.sessionKey;
     qrSection.style.display = 'block';
+    document.getElementById('scanQRSection').style.display = 'none';
+    document.getElementById('keyInputSection').style.display = 'none';
+}
+
+function startQRScanner() {
+    const scanSection = document.getElementById('scanQRSection');
+    scanSection.style.display = 'block';
+    document.getElementById('qrSection').style.display = 'none';
+    document.getElementById('keyInputSection').style.display = 'none';
+    
+    const video = document.getElementById('qrVideo');
+    const canvas = document.getElementById('qrCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(stream => {
+            video.srcObject = stream;
+            video.play();
+            scanQRCode(video, canvas, ctx, stream);
+        })
+        .catch(err => {
+            showToast('Не удалось получить доступ к камере', 'error');
+            console.error('Camera error:', err);
+        });
+}
+
+function scanQRCode(video, canvas, ctx, stream) {
+    const scan = () => {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            
+            if (code) {
+                stream.getTracks().forEach(track => track.stop());
+                handleQRCodeScanned(code.data);
+                return;
+            }
+        }
+        requestAnimationFrame(scan);
+    };
+    scan();
+}
+
+function handleQRCodeScanned(key) {
+    document.getElementById('scanQRSection').style.display = 'none';
+    
+    showConfirm(
+        'Подключение к сессии',
+        'Вы действительно хотите подключиться к этой сессии?',
+        () => {
+            state.sessionKey = key;
+            localStorage.setItem('sessionKey', key);
+            showToast('Устройство успешно подключено!', 'success');
+            closeSettings();
+            // Переподключаемся к WebSocket с новым ключом
+            if (ws) {
+                ws.close();
+            }
+            connectWebSocket();
+        },
+        false
+    );
 }
 
 function showKeyInput() {
     document.getElementById('keyInputSection').style.display = 'block';
+    document.getElementById('qrSection').style.display = 'none';
+    document.getElementById('scanQRSection').style.display = 'none';
 }
 
 function connectWithKey() {
@@ -435,6 +534,11 @@ function connectWithKey() {
         localStorage.setItem('sessionKey', key);
         showToast('Устройство успешно подключено!', 'success');
         closeSettings();
+        // Переподключаемся к WebSocket с новым ключом
+        if (ws) {
+            ws.close();
+        }
+        connectWebSocket();
     }
 }
 
@@ -499,6 +603,10 @@ function connectWebSocket() {
                         applyRemoteData(message.data);
                     }
                     break;
+                case 'timer_state':
+                    // Получаем обновление состояния таймера
+                    applyTimerState(message.data);
+                    break;
             }
         };
         
@@ -541,6 +649,100 @@ function syncData() {
             sessions: allSessions,
             date: state.currentDate
         }));
+    }
+}
+
+function syncTimerState(action, data) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'timer_sync',
+            sessionKey: state.sessionKey,
+            action: action,
+            data: data
+        }));
+    }
+}
+
+function applyTimerState(data) {
+    const { action, ...timerData } = data;
+    
+    switch (action) {
+        case 'start':
+            // Запускаем таймер, даже если он уже был запущен
+            if (timerInterval) clearInterval(timerInterval);
+            
+            state.timerRunning = true;
+            state.timerPaused = false;
+            state.currentSessionStart = timerData.sessionStart;
+            state.totalPausedTime = 0;
+            
+            timerInterval = setInterval(updateTimer, 1000);
+            
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('pauseBtn').disabled = false;
+            document.getElementById('pauseBtn').textContent = 'Пауза';
+            document.getElementById('stopBtn').disabled = false;
+            break;
+            
+        case 'pause':
+            // Ставим на паузу независимо от текущего состояния
+            state.timerPaused = true;
+            state.currentPauseStart = timerData.pauseStart;
+            state.totalPausedTime = timerData.totalPausedTime;
+            
+            // Убеждаемся что таймер работает для паузы
+            if (!state.timerRunning) {
+                state.timerRunning = true;
+                state.currentSessionStart = timerData.sessionStart || Date.now();
+            }
+            
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('pauseBtn').disabled = false;
+            document.getElementById('pauseBtn').textContent = 'Продолжить';
+            document.getElementById('stopBtn').disabled = false;
+            break;
+            
+        case 'resume':
+            // Возобновляем таймер независимо от текущего состояния
+            state.timerRunning = true;
+            state.timerPaused = false;
+            state.currentPauseStart = null;
+            state.currentSessionStart = timerData.sessionStart;
+            state.totalPausedTime = timerData.totalPausedTime;
+            
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(updateTimer, 1000);
+            
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('pauseBtn').disabled = false;
+            document.getElementById('pauseBtn').textContent = 'Пауза';
+            document.getElementById('stopBtn').disabled = false;
+            break;
+            
+        case 'stop':
+            // Останавливаем таймер независимо от текущего состояния
+            if (timerInterval) clearInterval(timerInterval);
+            
+            state.timerRunning = false;
+            state.timerPaused = false;
+            state.currentSessionStart = null;
+            state.currentPauseStart = null;
+            state.elapsedTime = 0;
+            state.totalPausedTime = 0;
+            
+            document.getElementById('timerDisplay').textContent = '00:00:00';
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('pauseBtn').disabled = true;
+            document.getElementById('pauseBtn').textContent = 'Пауза';
+            document.getElementById('stopBtn').disabled = true;
+            
+            updateTodayStats();
+            break;
     }
 }
 

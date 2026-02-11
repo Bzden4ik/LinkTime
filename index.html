@@ -78,11 +78,17 @@
                     <h3>Синхронизация устройств</h3>
                     <button class="btn" id="generateQR">Подключить устройство (QR-код)</button>
                     <button class="btn" id="showKey">Показать ключ доступа</button>
+                    <button class="btn btn-add" id="scanQR">Отсканировать QR-код</button>
                     <button class="btn" id="enterKey">Ввести ключ доступа</button>
                 </div>
                 <div class="setting-group" id="qrSection" style="display: none;">
                     <div id="qrcode"></div>
                     <p class="key-display" id="keyDisplay"></p>
+                </div>
+                <div class="setting-group" id="scanQRSection" style="display: none;">
+                    <p style="text-align: center; margin-bottom: 15px;">Наведите камеру на QR-код</p>
+                    <video id="qrVideo" style="width: 100%; border-radius: 14px; display: block;"></video>
+                    <canvas id="qrCanvas" style="display: none;"></canvas>
                 </div>
                 <div class="setting-group" id="keyInputSection" style="display: none;">
                     <input type="text" id="keyInput" placeholder="Введите ключ доступа">
@@ -108,6 +114,7 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

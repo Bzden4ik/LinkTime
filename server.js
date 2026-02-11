@@ -25,6 +25,9 @@ wss.on('connection', (ws) => {
                 case 'sync':
                     handleSync(ws, data);
                     break;
+                case 'timer_sync':
+                    handleTimerSync(ws, data);
+                    break;
                 case 'disconnect':
                     handleDisconnect(ws);
                     break;
@@ -50,10 +53,19 @@ wss.on('connection', (ws) => {
 
         // Отправляем текущие данные сессии новому подключению
         if (sessionData.has(sessionKey)) {
+            const data = sessionData.get(sessionKey);
             ws.send(JSON.stringify({
                 type: 'init',
-                data: sessionData.get(sessionKey)
+                data: data
             }));
+            
+            // Отправляем состояние таймера отдельно, если оно есть
+            if (data.timerState) {
+                ws.send(JSON.stringify({
+                    type: 'timer_state',
+                    data: data.timerState
+                }));
+            }
         }
 
         console.log(`Client joined session: ${sessionKey}`);
@@ -89,6 +101,32 @@ wss.on('connection', (ws) => {
         }
 
         console.log(`Sync received for session: ${sessionKey}`);
+    }
+
+    function handleTimerSync(ws, data) {
+        const { sessionKey, action, data: timerData } = data;
+
+        // Обновляем состояние таймера в сессии
+        const currentData = sessionData.get(sessionKey) || {};
+        currentData.timerState = { action, ...timerData };
+        currentData.lastUpdate = Date.now();
+        sessionData.set(sessionKey, currentData);
+
+        // Рассылаем обновление таймера всем подключенным клиентам в этой сессии
+        if (sessions.has(sessionKey)) {
+            const message = JSON.stringify({
+                type: 'timer_state',
+                data: { action, ...timerData }
+            });
+
+            sessions.get(sessionKey).forEach((client) => {
+                if (client !== ws && client.readyState === WebSocket.OPEN) {
+                    client.send(message);
+                }
+            });
+        }
+
+        console.log(`Timer sync (${action}) for session: ${sessionKey}`);
     }
 
     function handleDisconnect(ws) {
