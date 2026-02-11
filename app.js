@@ -111,11 +111,15 @@ function startTimer() {
         state.timerPaused = false;
         state.currentPauseStart = null;
         
-        document.getElementById('pauseBtn').textContent = 'Пауза';
-        
         // Запускаем таймер снова
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 1000);
+        
+        // Обновляем кнопки
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('pauseBtn').disabled = false;
+        document.getElementById('pauseBtn').textContent = 'Пауза';
+        document.getElementById('stopBtn').disabled = false;
         
         updateTodayStats();
         
@@ -382,7 +386,7 @@ function getDataForDate(dateStr) {
     return {
         totalWorkTime,
         totalPauseTime,
-        sessionCount: sessions.length,
+        sessionCount: sessions.filter(s => s.end).length,
         tasks: tasks
     };
 }
@@ -678,6 +682,20 @@ function applyTimerState(data) {
             
             timerInterval = setInterval(updateTimer, 1000);
             
+            // Создаём сессию если её нет
+            const sessions = getTodaySessions();
+            const hasActiveSession = sessions.length > 0 && 
+                                      !sessions[sessions.length - 1].end &&
+                                      sessions[sessions.length - 1].start === timerData.sessionStart;
+            
+            if (!hasActiveSession && (sessions.length === 0 || sessions[sessions.length - 1].end)) {
+                const session = {
+                    start: timerData.sessionStart,
+                    pauses: []
+                };
+                saveTodaySession(session);
+            }
+            
             document.getElementById('startBtn').disabled = true;
             document.getElementById('pauseBtn').disabled = false;
             document.getElementById('pauseBtn').textContent = 'Пауза';
@@ -701,6 +719,19 @@ function applyTimerState(data) {
                 timerInterval = null;
             }
             
+            // Сохраняем паузу в сессии
+            const sessions = getTodaySessions();
+            if (sessions.length > 0) {
+                const currentSession = sessions[sessions.length - 1];
+                // Проверяем что пауза ещё не добавлена
+                if (!currentSession.pauses.some(p => p.start === timerData.pauseStart)) {
+                    currentSession.pauses.push({
+                        start: timerData.pauseStart
+                    });
+                    saveTodaySessions(sessions);
+                }
+            }
+            
             document.getElementById('startBtn').disabled = true;
             document.getElementById('pauseBtn').disabled = false;
             document.getElementById('pauseBtn').textContent = 'Продолжить';
@@ -718,6 +749,21 @@ function applyTimerState(data) {
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(updateTimer, 1000);
             
+            // Завершаем последнюю паузу в сессии
+            const sessions = getTodaySessions();
+            if (sessions.length > 0) {
+                const currentSession = sessions[sessions.length - 1];
+                if (currentSession.pauses.length > 0) {
+                    const lastPause = currentSession.pauses[currentSession.pauses.length - 1];
+                    if (!lastPause.end) {
+                        const pauseDuration = Date.now() - lastPause.start;
+                        lastPause.end = Date.now();
+                        lastPause.duration = pauseDuration;
+                        saveTodaySessions(sessions);
+                    }
+                }
+            }
+            
             document.getElementById('startBtn').disabled = true;
             document.getElementById('pauseBtn').disabled = false;
             document.getElementById('pauseBtn').textContent = 'Пауза';
@@ -727,6 +773,17 @@ function applyTimerState(data) {
         case 'stop':
             // Останавливаем таймер независимо от текущего состояния
             if (timerInterval) clearInterval(timerInterval);
+            
+            // Завершаем текущую сессию если она есть
+            const sessions = getTodaySessions();
+            if (sessions.length > 0) {
+                const currentSession = sessions[sessions.length - 1];
+                if (!currentSession.end) {
+                    currentSession.end = Date.now();
+                    currentSession.duration = currentSession.end - currentSession.start;
+                    saveTodaySessions(sessions);
+                }
+            }
             
             state.timerRunning = false;
             state.timerPaused = false;
@@ -749,10 +806,14 @@ function applyTimerState(data) {
 function applyRemoteData(data) {
     if (!data) return;
     
-    // Применяем задачи
+    // Применяем задачи только если они изменились
     if (data.tasks) {
-        localStorage.setItem('tasks', JSON.stringify(data.tasks));
-        renderTasks();
+        const currentTasks = localStorage.getItem('tasks');
+        const newTasks = JSON.stringify(data.tasks);
+        if (currentTasks !== newTasks) {
+            localStorage.setItem('tasks', newTasks);
+            renderTasks();
+        }
     }
     
     // Применяем сессии
