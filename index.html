@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkTime - Таймер работы</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>LinkTime</h1>
+            <button class="settings-btn" id="settingsBtn">⚙️</button>
+        </header>
+
+        <main>
+            <!-- Таймер -->
+            <section class="timer-section">
+                <div class="timer-display" id="timerDisplay">00:00:00</div>
+                <div class="timer-controls">
+                    <button class="btn btn-start" id="startBtn">Старт</button>
+                    <button class="btn btn-pause" id="pauseBtn" disabled>Пауза</button>
+                    <button class="btn btn-stop" id="stopBtn" disabled>Стоп</button>
+                </div>
+                <div class="session-info">
+                    <div class="info-item">
+                        <span class="label">Рабочее время сегодня:</span>
+                        <span class="value" id="totalWorkTime">00:00:00</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Время пауз:</span>
+                        <span class="value" id="totalPauseTime">00:00:00</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Сессий:</span>
+                        <span class="value" id="sessionCount">0</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Задачи -->
+            <section class="tasks-section">
+                <div class="tasks-header">
+                    <h2>Задачи на сегодня</h2>
+                    <button class="btn btn-add" id="addTaskBtn">+ Добавить</button>
+                </div>
+                <div class="task-input" id="taskInput" style="display: none;">
+                    <input type="text" id="taskText" placeholder="Введите задачу...">
+                    <div class="task-input-controls">
+                        <button class="btn btn-small" id="saveTaskBtn">Сохранить</button>
+                        <button class="btn btn-small btn-cancel" id="cancelTaskBtn">Отмена</button>
+                    </div>
+                </div>
+                <ul class="tasks-list" id="tasksList"></ul>
+            </section>
+
+            <!-- Календарь -->
+            <section class="calendar-section">
+                <div class="calendar-header">
+                    <button class="btn btn-small" id="prevMonth">◀</button>
+                    <h2 id="currentMonth"></h2>
+                    <button class="btn btn-small" id="nextMonth">▶</button>
+                </div>
+                <div class="calendar" id="calendar"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Модальное окно настроек -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Настройки</h2>
+                <button class="close-btn" id="closeSettings">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <h3>Синхронизация устройств</h3>
+                    <button class="btn" id="generateQR">Подключить устройство (QR-код)</button>
+                    <button class="btn" id="showKey">Показать ключ доступа</button>
+                    <button class="btn" id="enterKey">Ввести ключ доступа</button>
+                </div>
+                <div class="setting-group" id="qrSection" style="display: none;">
+                    <div id="qrcode"></div>
+                    <p class="key-display" id="keyDisplay"></p>
+                </div>
+                <div class="setting-group" id="keyInputSection" style="display: none;">
+                    <input type="text" id="keyInput" placeholder="Введите ключ доступа">
+                    <button class="btn" id="connectKey">Подключиться</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
