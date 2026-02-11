@@ -51,8 +51,9 @@ let config = {
 };
 
 let lastActivity = Date.now();
-let currentStatus = 'idle';
+let currentStatus = null; // null = ещё не определён, чтобы первый статус всегда отправлялся
 let checkIntervalId = null;
+let isFirstCheck = true;
 
 // Загрузка конфигурации
 function loadConfig() {
@@ -221,7 +222,22 @@ function connectWebSocket() {
                 sessionKey: config.sessionKey
             }));
 
+            // Сообщаем серверу что Desktop Agent подключён
+            ws.send(JSON.stringify({
+                type: 'agent_connected',
+                sessionKey: config.sessionKey
+            }));
+
+            // Обновляем UI агента
+            if (mainWindow) {
+                mainWindow.webContents.send('status-update', {
+                    status: 'working',
+                    windowTitle: 'Подключено, мониторинг запущен'
+                });
+            }
+
             // Запускаем мониторинг активности
+            isFirstCheck = true;
             startActivityMonitoring();
         });
 
@@ -285,10 +301,11 @@ async function checkActiveWindow() {
         const window = await activeWin();
         
         if (!window) {
+            console.log('No active window detected');
             // Нет активного окна - проверяем idle
             const idleTime = Date.now() - lastActivity;
             if (idleTime > config.idleTimeout) {
-                updateStatus('idle', '');
+                updateStatus('idle', 'Нет активного окна');
             }
             return;
         }
@@ -297,9 +314,9 @@ async function checkActiveWindow() {
         lastActivity = Date.now();
 
         // Получаем заголовок окна
-        const windowTitle = window.title;
-        const windowOwner = window.owner.name;
-        const fullTitle = `${windowOwner} - ${windowTitle}`;
+        const windowTitle = window.title || '';
+        const windowOwner = (window.owner && window.owner.name) ? window.owner.name : '';
+        const fullTitle = windowOwner ? `${windowOwner} - ${windowTitle}` : windowTitle;
 
         console.log(`Active window: ${fullTitle}`);
 
@@ -308,14 +325,20 @@ async function checkActiveWindow() {
         updateStatus(status, fullTitle);
 
     } catch (error) {
-        console.error('Error checking active window:', error);
+        console.error('Error checking active window:', error.message);
+        // Даже при ошибке отправляем статус при первой проверке
+        if (isFirstCheck) {
+            updateStatus('working', 'Мониторинг активен');
+        }
     }
 }
 
 // Обновление и отправка статуса
 function updateStatus(status, windowTitle) {
-    if (status !== currentStatus) {
+    // Отправляем всегда при первой проверке или при изменении статуса
+    if (status !== currentStatus || isFirstCheck) {
         currentStatus = status;
+        isFirstCheck = false;
         console.log(`Status changed: ${status} (${windowTitle})`);
         
         // Обновляем UI

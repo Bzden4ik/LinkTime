@@ -767,6 +767,10 @@ function connectWebSocket() {
                     // Подтверждение heartbeat от сервера
                     console.log('Heartbeat acknowledged');
                     break;
+                case 'agent_status':
+                    // Desktop Agent подключился/отключился
+                    handleAgentStatus(message.connected);
+                    break;
             }
         };
         
@@ -1000,6 +1004,19 @@ function stopHeartbeat() {
     if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
+    }
+}
+
+function handleAgentStatus(connected) {
+    console.log(`Desktop Agent ${connected ? 'connected' : 'disconnected'}`);
+    
+    const indicator = document.getElementById('activityIndicator');
+    if (connected) {
+        indicator.textContent = '🟢 Desktop Agent подключён';
+        indicator.className = 'activity-indicator working';
+    } else {
+        indicator.textContent = '⚪ Ожидание Desktop Agent...';
+        indicator.className = 'activity-indicator';
     }
 }
 

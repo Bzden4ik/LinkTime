@@ -40,6 +40,9 @@ wss.on('connection', (ws) => {
                 case 'browser_event':
                     handleBrowserEvent(ws, data);
                     break;
+                case 'agent_connected':
+                    handleAgentConnected(ws, data);
+                    break;
                 case 'disconnect':
                     handleDisconnect(ws);
                     break;
@@ -76,6 +79,14 @@ wss.on('connection', (ws) => {
                 ws.send(JSON.stringify({
                     type: 'timer_state',
                     data: data.timerState
+                }));
+            }
+            
+            // Отправляем статус агента
+            if (data.agentConnected) {
+                ws.send(JSON.stringify({
+                    type: 'agent_status',
+                    connected: true
                 }));
             }
         }
@@ -287,6 +298,32 @@ wss.on('connection', (ws) => {
                     }
                 }, 30000); // 30 секунд задержка
             }
+        }
+    }
+
+    function handleAgentConnected(ws, data) {
+        const { sessionKey } = data;
+        
+        console.log(`Desktop Agent connected for session ${sessionKey}`);
+        
+        // Отмечаем в данных сессии что агент подключён
+        const currentData = sessionData.get(sessionKey) || {};
+        currentData.agentConnected = true;
+        currentData.lastUpdate = Date.now();
+        sessionData.set(sessionKey, currentData);
+        
+        // Рассылаем всем клиентам в сессии
+        if (sessions.has(sessionKey)) {
+            const message = JSON.stringify({
+                type: 'agent_status',
+                connected: true
+            });
+
+            sessions.get(sessionKey).forEach((client) => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(message);
+                }
+            });
         }
     }
 
