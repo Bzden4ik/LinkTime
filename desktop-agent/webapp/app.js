@@ -124,6 +124,8 @@ function setupVisibilityHandlers() {
 
 // Пользователь ушёл с вкладки — запускаем обратный отсчёт авто-паузы
 function onUserLeft(reason) {
+    // В Electron idle-паузой управляет main.js через powerMonitor
+    if (window.__electronApp) return;
     if (!state.timerRunning || state.timerPaused) return;
     if (Date.now() < resumeGraceUntil) {
         console.log('Grace period active — skip auto-pause');
@@ -157,6 +159,9 @@ function onUserLeft(reason) {
 
 // Пользователь вернулся на вкладку
 function onUserReturned() {
+    // В Electron idle-паузой управляет main.js через powerMonitor
+    if (window.__electronApp) return;
+
     // Отменяем обратный отсчёт авто-паузы
     if (autoPauseTimeout) {
         clearTimeout(autoPauseTimeout);
@@ -1052,7 +1057,10 @@ function applyTimerState(data) {
             
             document.getElementById('startBtn').disabled = true;
             document.getElementById('pauseBtn').disabled = false;
-            document.getElementById('pauseBtn').textContent = 'Продолжить';
+            // Сохраняем текст кнопки если авто-пауза активна
+            if (!autoPauseActive) {
+                document.getElementById('pauseBtn').textContent = 'Продолжить';
+            }
             document.getElementById('stopBtn').disabled = false;
             
             // Показываем время на момент паузы
@@ -1064,6 +1072,11 @@ function applyTimerState(data) {
         }
             
         case 'resume': {
+            // Не возобновляем если системная idle-пауза активна
+            if (window.__idlePaused) {
+                console.log('[TIMER_STATE] Ignoring resume — system idle pause active');
+                break;
+            }
             // Возобновляем таймер независимо от текущего состояния
             state.timerRunning = true;
             state.timerPaused = false;
@@ -1177,15 +1190,20 @@ function handleAgentStatus(connected) {
 }
 
 function handleActivityStatus(status, windowTitle) {
-    console.log(`Activity status received: ${status} (${windowTitle})`);
-    agentStatus = status; // Сохраняем статус агента
+    console.log(`[ACTIVITY] status=${status}, window="${windowTitle}", idle=${window.__idlePaused || false}`);
+    agentStatus = status;
     
-    // Обновляем UI
     updateActivityIndicator(status, windowTitle);
+    
+    // Если системная idle-пауза — не даём activity менять таймер
+    if (window.__idlePaused) {
+        console.log('[ACTIVITY] System idle pause active — ignoring activity status');
+        return;
+    }
     
     // Если агент говорит distracted/idle и таймер идёт — ставим авто-паузу
     if (status !== 'working' && state.timerRunning && !state.timerPaused && Date.now() >= resumeGraceUntil) {
-        console.log(`Agent reports ${status} — auto-pausing`);
+        console.log(`[ACTIVITY] Agent reports ${status} — auto-pausing`);
         pauseTimer(true);
         
         let message = 'Авто-Пауза';
@@ -1196,7 +1214,7 @@ function handleActivityStatus(status, windowTitle) {
     
     // Если агент говорит working и была авто-пауза — возобновляем
     if (status === 'working' && state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
-        console.log('Agent reports working — auto-resuming');
+        console.log('[ACTIVITY] Agent reports working — auto-resuming');
         startTimer();
         showToast(`Таймер возобновлён: ${windowTitle}`, 'success');
     }

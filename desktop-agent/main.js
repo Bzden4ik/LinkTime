@@ -111,6 +111,11 @@ function createWindow() {
 
     mainWindow.loadFile(path.join(__dirname, 'webapp', 'index.html'));
 
+    // Помечаем что это Electron — web-код не будет управлять авто-паузой
+    mainWindow.webContents.on('did-finish-load', () => {
+        mainWindow.webContents.executeJavaScript('window.__electronApp = true;').catch(() => {});
+    });
+
     mainWindow.on('close', (event) => {
         if (!app.isQuitting) {
             event.preventDefault();
@@ -515,30 +520,28 @@ function startIdleMonitoring() {
             isUserIdle = true;
             console.log(`[IDLE] User idle for ${idleTime}s — triggering auto-pause`);
             mainWindow.webContents.executeJavaScript(`
+                window.__idlePaused = true;
+                console.log('[IDLE-JS] Setting idle pause');
                 if (typeof state !== 'undefined' && state.timerRunning && !state.timerPaused) {
                     pauseTimer(true);
                     showToast('Авто-Пауза: нет активности ${IDLE_THRESHOLD} сек', 'info');
                 }
             `).catch(() => {});
-        } else if (idleTime < 5 && isUserIdle) {
+        } else if (idleTime < IDLE_THRESHOLD && isUserIdle) {
             // Пользователь вернулся — авто-возобновление
             isUserIdle = false;
             console.log('[IDLE] User returned — triggering auto-resume');
             mainWindow.webContents.executeJavaScript(`
+                window.__idlePaused = false;
+                console.log('[IDLE-JS] Clearing idle pause, timerPaused=' + state.timerPaused + ', autoPauseActive=' + autoPauseActive + ', manualPause=' + manualPause);
                 if (typeof state !== 'undefined' && state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
-                    resumeGraceUntil = Date.now() + 7000;
-                    const pauseDuration = Date.now() - state.currentPauseStart;
-                    state.totalPausedTime += pauseDuration;
-                    state.timerPaused = false;
-                    state.currentPauseStart = null;
-                    autoPauseActive = false;
-                    updateTimerDisplay();
-                    syncTimerState('resume', { totalPausedTime: state.totalPausedTime });
+                    console.log('[IDLE-JS] Calling pauseTimer() to resume');
+                    pauseTimer(false);
                     showToast('Таймер возобновлён', 'success');
                 }
             `).catch(() => {});
         }
-    }, 5000); // проверяем каждые 5 секунд
+    }, 2000); // проверяем каждые 2 секунды
 }
 
 // Остановка мониторинга
