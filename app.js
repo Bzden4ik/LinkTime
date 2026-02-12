@@ -154,7 +154,6 @@ function onUserReturned() {
     }
     
     sendBrowserEvent('browser_focus');
-    requestServerState();
     
     // Если была авто-пауза (не ручная) — автоматически возобновляем
     if (state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
@@ -188,6 +187,9 @@ function onUserReturned() {
         });
         
         showToast('Таймер возобновлён', 'success');
+    } else {
+        // Запрашиваем состояние только если не было авто-возобновления
+        requestServerState();
     }
 }
 
@@ -962,6 +964,11 @@ function applyTimerState(data) {
         }
             
         case 'pause': {
+            // Игнорируем если мы только что возобновили (grace period)
+            if (Date.now() < resumeGraceUntil) {
+                console.log('applyTimerState: ignoring pause during grace period');
+                break;
+            }
             // Ставим на паузу независимо от текущего состояния
             state.timerPaused = true;
             state.currentPauseStart = timerData.pauseStart;
@@ -1139,7 +1146,19 @@ function handleActivityStatus(status, windowTitle) {
 function handleForcePause(reason) {
     console.log(`Force pause received: ${reason}`);
     
-    if (state.timerRunning && !state.timerPaused && Date.now() >= resumeGraceUntil) {
+    // Если вкладка активна и в фокусе — игнорируем
+    if (isTabVisible && hasWindowFocus) {
+        console.log('Tab is active — ignoring force_pause');
+        return;
+    }
+    
+    // Если в grace period — игнорируем
+    if (Date.now() < resumeGraceUntil) {
+        console.log('Grace period — ignoring force_pause');
+        return;
+    }
+    
+    if (state.timerRunning && !state.timerPaused) {
         pauseTimer(true);
         
         // Показываем уведомление

@@ -56,6 +56,17 @@ wss.on('connection', (ws) => {
         handleDisconnect(ws);
     });
 
+    // Проверяет есть ли живой агент в сессии
+    function isAgentAlive(sessionKey) {
+        if (!sessions.has(sessionKey)) return false;
+        for (const client of sessions.get(sessionKey)) {
+            if (client.isAgent && client.readyState === WebSocket.OPEN) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function handleJoin(ws, data) {
         const { sessionKey } = data;
         currentSessionKey = sessionKey;
@@ -82,13 +93,14 @@ wss.on('connection', (ws) => {
                 }));
             }
             
-            // Отправляем статус агента
-            if (data.agentConnected) {
-                ws.send(JSON.stringify({
-                    type: 'agent_status',
-                    connected: true
-                }));
-            }
+            // Отправляем статус агента (проверяем реальное подключение)
+            const agentAlive = isAgentAlive(sessionKey);
+            data.agentConnected = agentAlive;
+            sessionData.set(sessionKey, data);
+            ws.send(JSON.stringify({
+                type: 'agent_status',
+                connected: agentAlive
+            }));
         }
 
         console.log(`Client joined session: ${sessionKey}`);
@@ -269,7 +281,20 @@ wss.on('connection', (ws) => {
                 }));
             }
             
-            console.log(`State sent to client for session ${sessionKey}`);
+            // Отправляем реальный статус агента
+            const agentAlive = isAgentAlive(sessionKey);
+            currentData.agentConnected = agentAlive;
+            if (!agentAlive) {
+                currentData.activityStatus = null;
+                currentData.activeWindow = null;
+            }
+            sessionData.set(sessionKey, currentData);
+            ws.send(JSON.stringify({
+                type: 'agent_status',
+                connected: agentAlive
+            }));
+            
+            console.log(`State sent to client for session ${sessionKey}, agent: ${agentAlive}`);
         }
     }
 
@@ -342,6 +367,8 @@ wss.on('connection', (ws) => {
                 
                 const currentData = sessionData.get(key) || {};
                 currentData.agentConnected = false;
+                currentData.activityStatus = null;
+                currentData.activeWindow = null;
                 sessionData.set(key, currentData);
                 
                 if (sessions.has(key)) {
