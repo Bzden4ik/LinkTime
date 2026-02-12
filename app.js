@@ -482,13 +482,30 @@ function toggleTask(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (task) {
         task.completed = !task.completed;
+        if (task.completed) {
+            task.completedAt = Date.now();
+            task.timeSpent = getTotalWorkTimeForDate(task.date);
+            showToast('Задача выполнена! 🎉', 'success');
+        } else {
+            task.completedAt = null;
+            task.timeSpent = null;
+        }
         saveTasks(tasks);
         renderTasks();
         updateSelectedDateStats();
-        if (task.completed) {
-            showToast('Задача выполнена! 🎉', 'success');
-        }
     }
+}
+
+function getTotalWorkTimeForDate(dateStr) {
+    const data = getDataForDate(dateStr);
+    if (dateStr === state.currentDate && state.timerRunning && state.currentSessionStart) {
+        let currentWork = Date.now() - state.currentSessionStart - state.totalPausedTime;
+        if (state.timerPaused && state.currentPauseStart) {
+            currentWork -= (Date.now() - state.currentPauseStart);
+        }
+        return data.totalWorkTime + Math.max(0, currentWork);
+    }
+    return data.totalWorkTime;
 }
 
 function deleteTask(taskId) {
@@ -517,7 +534,10 @@ function renderTasks() {
     tasksList.innerHTML = tasks.map(task => `
         <li class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
             <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask(${task.id})">
-            <span>${task.text}</span>
+            <div class="task-content">
+                <span class="task-text">${task.text}</span>
+                ${task.completed && task.timeSpent ? `<span class="task-time">⏱ ${formatTime(task.timeSpent)}</span>` : ''}
+            </div>
             <button onclick="deleteTask(${task.id})">Удалить</button>
         </li>
     `).join('');
@@ -840,6 +860,9 @@ function connectWebSocket() {
             
             // Запускаем heartbeat (каждые 5 секунд)
             startHeartbeat();
+            
+            // Синхронизируем локальные данные на сервер (чтобы другие клиенты получили)
+            setTimeout(() => syncData(), 500);
         };
         
         ws.onmessage = (event) => {
@@ -1239,20 +1262,26 @@ function updateActivityIndicator(status, windowTitle) {
 function applyRemoteData(data) {
     if (!data) return;
     
-    // Применяем задачи только если они изменились
-    if (data.tasks) {
-        const currentTasks = localStorage.getItem('tasks');
-        const newTasks = JSON.stringify(data.tasks);
-        if (currentTasks !== newTasks) {
-            localStorage.setItem('tasks', newTasks);
-            renderTasks();
-        }
+    // Объединяем задачи (по id, без дубликатов)
+    if (data.tasks && Array.isArray(data.tasks)) {
+        const localTasks = getTasks();
+        const mergedMap = new Map();
+        localTasks.forEach(t => mergedMap.set(t.id, t));
+        data.tasks.forEach(t => mergedMap.set(t.id, t));
+        const merged = Array.from(mergedMap.values());
+        localStorage.setItem('tasks', JSON.stringify(merged));
+        renderTasks();
     }
     
-    // Применяем сессии
+    // Объединяем сессии (по дате, берём больший набор)
     if (data.sessions) {
         Object.keys(data.sessions).forEach(key => {
-            localStorage.setItem(key, JSON.stringify(data.sessions[key]));
+            const remote = data.sessions[key];
+            const localRaw = localStorage.getItem(key);
+            const local = localRaw ? JSON.parse(localRaw) : [];
+            if (!localRaw || remote.length > local.length) {
+                localStorage.setItem(key, JSON.stringify(remote));
+            }
         });
         updateSelectedDateStats();
         renderCalendar();

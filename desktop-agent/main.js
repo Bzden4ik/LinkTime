@@ -3,6 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const WebSocket = require('ws');
 
+// Отключаем GPU ускорение (убирает ошибки gpu_process и повышает FPS)
+app.disableHardwareAcceleration();
+
 // Конфигурация
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
 const WS_URL = 'wss://linktime.onrender.com';
