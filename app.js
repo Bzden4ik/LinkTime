@@ -219,12 +219,13 @@ function startTimer() {
         const pauseDuration = Date.now() - state.currentPauseStart;
         const sessions = getTodaySessions();
         const currentSession = sessions[sessions.length - 1];
-        currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
-        currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
+        if (currentSession && currentSession.pauses && currentSession.pauses.length > 0) {
+            currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
+            currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
+            saveTodaySessions(sessions);
+        }
         
         state.totalPausedTime += pauseDuration;
-        
-        saveTodaySessions(sessions);
         
         state.timerPaused = false;
         state.currentPauseStart = null;
@@ -258,8 +259,11 @@ function pauseTimer(isAutoPause = false) {
         const pauseDuration = Date.now() - state.currentPauseStart;
         const sessions = getTodaySessions();
         const currentSession = sessions[sessions.length - 1];
-        currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
-        currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
+        if (currentSession && currentSession.pauses.length > 0) {
+            currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
+            currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
+            saveTodaySessions(sessions);
+        }
         
         state.totalPausedTime += pauseDuration;
         
@@ -299,12 +303,13 @@ function pauseTimer(isAutoPause = false) {
         // Добавляем паузу к текущей сессии
         const sessions = getTodaySessions();
         const currentSession = sessions[sessions.length - 1];
-        currentSession.pauses.push({
-            start: state.currentPauseStart,
-            isAuto: isAutoPause
-        });
-        
-        saveTodaySessions(sessions);
+        if (currentSession) {
+            currentSession.pauses.push({
+                start: state.currentPauseStart,
+                isAuto: isAutoPause
+            });
+            saveTodaySessions(sessions);
+        }
         
         // Обновляем текст кнопки и флаги в зависимости от типа паузы
         if (isAutoPause) {
@@ -333,19 +338,22 @@ function stopTimer() {
         if (state.timerPaused) {
             const sessions = getTodaySessions();
             const currentSession = sessions[sessions.length - 1];
-            const pauseDuration = Date.now() - state.currentPauseStart;
-            currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
-            currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
-            saveTodaySessions(sessions);
+            if (currentSession && currentSession.pauses.length > 0) {
+                const pauseDuration = Date.now() - state.currentPauseStart;
+                currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
+                currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
+                saveTodaySessions(sessions);
+            }
         }
         
         // Завершаем сессию
         const sessions = getTodaySessions();
         const currentSession = sessions[sessions.length - 1];
-        currentSession.end = Date.now();
-        currentSession.duration = currentSession.end - currentSession.start;
-        
-        saveTodaySessions(sessions);
+        if (currentSession && !currentSession.end) {
+            currentSession.end = Date.now();
+            currentSession.duration = currentSession.end - currentSession.start;
+            saveTodaySessions(sessions);
+        }
         
         clearInterval(timerInterval);
         state.timerRunning = false;
