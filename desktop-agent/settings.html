@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkTime Agent - Настройки</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 { font-size: 22px; margin-bottom: 6px; color: #667eea; }
+        .subtitle { color: #999; font-size: 13px; margin-bottom: 20px; }
+        .status-indicator {
+            padding: 12px; background: #f5f5f5; border-radius: 10px;
+            margin-bottom: 20px; display: flex; align-items: center; gap: 10px;
+        }
+        .status-dot {
+            width: 12px; height: 12px; border-radius: 50%; background: #ccc;
+        }
+        .status-dot.working { background: #10b981; box-shadow: 0 0 10px rgba(16,185,129,0.5); }
+        .status-dot.distracted { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
+        .status-dot.idle { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.5); }
+        .status-text { flex: 1; font-size: 13px; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
+        input {
+            width: 100%; padding: 10px; border: 2px solid #e5e5e5;
+            border-radius: 8px; font-size: 13px; transition: border 0.3s;
+        }
+        input:focus { outline: none; border-color: #667eea; }
+        textarea {
+            width: 100%; padding: 10px; border: 2px solid #e5e5e5;
+            border-radius: 8px; font-size: 12px; font-family: monospace;
+            resize: vertical; min-height: 80px; transition: border 0.3s;
+        }
+        textarea:focus { outline: none; border-color: #667eea; }
+        .hint { font-size: 11px; color: #999; margin-top: 4px; }
+        button {
+            width: 100%; padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; border: none; border-radius: 8px;
+            font-size: 15px; font-weight: 600; cursor: pointer; transition: transform 0.2s;
+        }
+        button:hover { transform: translateY(-2px); }
+        button:active { transform: translateY(0); }
+        .success-message {
+            background: #10b981; color: white; padding: 10px;
+            border-radius: 8px; margin-top: 12px; display: none; font-size: 13px;
+        }
+        .success-message.show { display: block; }
+        .connection-status {
+            display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px;
+        }
+        .connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
+        .connection-dot.connected { background: #10b981; }
+        .section-title { font-size: 15px; font-weight: 700; color: #667eea; margin: 20px 0 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LinkTime Agent</h1>
+        <p class="subtitle">Настройки мониторинга активности</p>
+
+        <div class="status-indicator" id="statusIndicator">
+            <div class="status-dot" id="statusDot"></div>
+            <div class="status-text" id="statusText">Ожидание подключения...</div>
+        </div>
+
+        <form id="configForm">
+            <div class="form-group">
+                <label for="sessionKey">Ключ сессии</label>
+                <input type="text" id="sessionKey" placeholder="session_xxxxx_xxxxx">
+                <div class="hint">Автоматически синхронизируется из веб-страницы LinkTime</div>
+            </div>
+
+            <div class="section-title">Рабочие приложения (белый список)</div>
+            <div class="form-group">
+                <textarea id="whiteList" rows="5"></textarea>
+                <div class="hint">По одному на строку. Если заголовок окна содержит текст — считается работой.</div>
+            </div>
+
+            <div class="section-title">Отвлекающие приложения (чёрный список)</div>
+            <div class="form-group">
+                <textarea id="blackList" rows="5"></textarea>
+                <div class="hint">По одному на строку. Если заголовок окна содержит текст — считается отвлечением.</div>
+            </div>
+
+            <button type="submit">Сохранить настройки</button>
+        </form>
+
+        <div class="connection-status">
+            <div class="connection-dot" id="connectionDot"></div>
+            <span id="connectionText">Не подключено</span>
+        </div>
+
+        <div class="success-message" id="successMessage">
+            ✓ Настройки сохранены!
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        ipcRenderer.send('get-config');
+
+        ipcRenderer.on('config-data', (event, config) => {
+            document.getElementById('sessionKey').value = config.sessionKey || '';
+            document.getElementById('whiteList').value = (config.whiteList || []).join('\n');
+            document.getElementById('blackList').value = (config.blackList || []).join('\n');
+
+            if (config.sessionKey) {
+                ipcRenderer.send('test-connection');
+            }
+        });
+
+        ipcRenderer.on('status-update', (event, data) => {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            statusDot.className = `status-dot ${data.status}`;
+            let label = '';
+            switch (data.status) {
+                case 'working': label = '🟢 Работа'; break;
+                case 'distracted': label = '🟡 Отвлечение'; break;
+                case 'idle': label = '🔴 Неактивен'; break;
+            }
+            statusText.textContent = `${label}: ${data.windowTitle}`;
+        });
+
+        ipcRenderer.on('connection-status', (event, data) => {
+            const dot = document.getElementById('connectionDot');
+            const text = document.getElementById('connectionText');
+            if (data.connected) {
+                dot.classList.add('connected');
+                text.textContent = 'Подключено к серверу';
+            } else {
+                dot.classList.remove('connected');
+                text.textContent = 'Не подключено';
+            }
+        });
+
+        document.getElementById('configForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const sessionKey = document.getElementById('sessionKey').value.trim();
+            const whiteList = document.getElementById('whiteList').value
+                .split('\n').map(s => s.trim()).filter(Boolean);
+            const blackList = document.getElementById('blackList').value
+                .split('\n').map(s => s.trim()).filter(Boolean);
+
+            ipcRenderer.send('save-config', { sessionKey, whiteList, blackList });
+        });
+
+        ipcRenderer.on('config-saved', () => {
+            const msg = document.getElementById('successMessage');
+            msg.classList.add('show');
+            setTimeout(() => msg.classList.remove('show'), 3000);
+            setTimeout(() => ipcRenderer.send('test-connection'), 1000);
+        });
+
+        setInterval(() => ipcRenderer.send('test-connection'), 5000);
+    </script>
+</body>
+</html>

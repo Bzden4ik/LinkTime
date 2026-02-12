@@ -9,12 +9,13 @@ const WS_URL = 'wss://linktime.onrender.com';
 
 // Состояние приложения
 let mainWindow = null;
+let settingsWindow = null;
 let tray = null;
 let ws = null;
 let config = {
     sessionKey: '',
-    checkInterval: 5000, // 5 секунд
-    idleTimeout: 30000, // 30 секунд для определения idle
+    checkInterval: 5000,
+    idleTimeout: 30000,
     whiteList: [
         'LinkTime',
         'Visual Studio Code',
@@ -51,9 +52,10 @@ let config = {
 };
 
 let lastActivity = Date.now();
-let currentStatus = null; // null = ещё не определён, чтобы первый статус всегда отправлялся
+let currentStatus = null;
 let checkIntervalId = null;
 let isFirstCheck = true;
+let sessionKeySyncInterval = null;
 
 // Загрузка конфигурации
 function loadConfig() {
@@ -66,7 +68,6 @@ function loadConfig() {
     } catch (error) {
         console.error('Error loading config:', error);
     }
-    // LinkTime всегда в белом списке
     if (!config.whiteList.some(a => a.toLowerCase() === 'linktime')) {
         config.whiteList.unshift('LinkTime');
     }
@@ -83,20 +84,23 @@ function saveConfig() {
     }
 }
 
-// Создание главного окна
+// Создание главного окна (веб-приложение LinkTime)
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 500,
-        height: 600,
+        width: 1300,
+        height: 850,
+        minWidth: 800,
+        minHeight: 600,
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true
         },
         icon: path.join(__dirname, 'icon.png'),
-        skipTaskbar: false
+        skipTaskbar: false,
+        title: 'LinkTime'
     });
 
-    mainWindow.loadFile('index.html');
+    mainWindow.loadFile(path.join(__dirname, 'webapp', 'index.html'));
 
     mainWindow.on('close', (event) => {
         if (!app.isQuitting) {
@@ -107,28 +111,125 @@ function createWindow() {
 
     mainWindow.on('closed', () => {
         mainWindow = null;
+        stopSessionKeySync();
     });
+
+    // Запускаем синхронизацию ключа сессии из веб-страницы
+    startSessionKeySync();
+}
+
+// Создание окна настроек агента
+function createSettingsWindow() {
+    if (settingsWindow) {
+        settingsWindow.show();
+        settingsWindow.focus();
+        return;
+    }
+
+    settingsWindow = new BrowserWindow({
+        width: 500,
+        height: 650,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false
+        },
+        icon: path.join(__dirname, 'icon.png'),
+        skipTaskbar: false,
+        title: 'LinkTime Agent - Настройки',
+        parent: mainWindow || undefined,
+        modal: false
+    });
+
+    settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
+
+    settingsWindow.on('closed', () => {
+        settingsWindow = null;
+    });
+}
+
+// Синхронизация ключа сессии из веб-страницы
+function startSessionKeySync() {
+    // Первая проверка через 2 секунды (дать странице загрузиться)
+    setTimeout(() => syncSessionKeyFromWeb(), 2000);
+
+    // Проверяем каждые 3 секунды
+    sessionKeySyncInterval = setInterval(() => syncSessionKeyFromWeb(), 3000);
+}
+
+function stopSessionKeySync() {
+    if (sessionKeySyncInterval) {
+        clearInterval(sessionKeySyncInterval);
+        sessionKeySyncInterval = null;
+    }
+}
+
+async function syncSessionKeyFromWeb() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    try {
+        const webSessionKey = await mainWindow.webContents.executeJavaScript(
+            "localStorage.getItem('sessionKey')"
+        );
+
+        if (webSessionKey && webSessionKey !== config.sessionKey) {
+            console.log(`Session key synced from web: ${webSessionKey}`);
+            config.sessionKey = webSessionKey;
+            saveConfig();
+
+            // Переподключаем WebSocket агента с новым ключом
+            if (ws) {
+                ws.close();
+            }
+            connectWebSocket();
+
+            // Обновляем settings window если открыто
+            if (settingsWindow && !settingsWindow.isDestroyed()) {
+                settingsWindow.webContents.send('config-data', config);
+            }
+        }
+    } catch (error) {
+        // Страница ещё не загрузилась — игнорируем
+    }
 }
 
 // Создание системного трея
 function createTray() {
     tray = new Tray(path.join(__dirname, 'icon.png'));
-    
+    updateTrayMenu('Запуск...');
+
+    tray.setToolTip('LinkTime Agent');
+
+    tray.on('click', () => {
+        if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+        } else {
+            createWindow();
+        }
+    });
+}
+
+// Обновление меню трея
+function updateTrayMenu(statusLabel) {
+    if (!tray) return;
+
     const contextMenu = Menu.buildFromTemplate([
-        {
-            label: 'Статус: Запуск...',
-            enabled: false
-        },
+        { label: `Статус: ${statusLabel}`, enabled: false },
         { type: 'separator' },
         {
-            label: 'Открыть настройки',
+            label: 'Открыть LinkTime',
             click: () => {
                 if (mainWindow) {
                     mainWindow.show();
+                    mainWindow.focus();
                 } else {
                     createWindow();
                 }
             }
+        },
+        {
+            label: 'Настройки агента',
+            click: () => createSettingsWindow()
         },
         { type: 'separator' },
         {
@@ -140,16 +241,7 @@ function createTray() {
         }
     ]);
 
-    tray.setToolTip('LinkTime Agent');
     tray.setContextMenu(contextMenu);
-
-    tray.on('click', () => {
-        if (mainWindow) {
-            mainWindow.show();
-        } else {
-            createWindow();
-        }
-    });
 }
 
 // Обновление статуса в трее
@@ -157,54 +249,20 @@ function updateTrayStatus(status, windowTitle = '') {
     if (!tray) return;
 
     let statusText = '';
-    let statusIcon = '';
-
     switch (status) {
         case 'working':
             statusText = '🟢 Работа';
-            statusIcon = 'working';
             break;
         case 'distracted':
             statusText = '🟡 Отвлечение';
-            statusIcon = 'distracted';
             break;
         case 'idle':
             statusText = '🔴 Неактивен';
-            statusIcon = 'idle';
             break;
     }
+    if (windowTitle) statusText += `: ${windowTitle}`;
 
-    if (windowTitle) {
-        statusText += `: ${windowTitle}`;
-    }
-
-    const contextMenu = Menu.buildFromTemplate([
-        {
-            label: statusText,
-            enabled: false
-        },
-        { type: 'separator' },
-        {
-            label: 'Открыть настройки',
-            click: () => {
-                if (mainWindow) {
-                    mainWindow.show();
-                } else {
-                    createWindow();
-                }
-            }
-        },
-        { type: 'separator' },
-        {
-            label: 'Выход',
-            click: () => {
-                app.isQuitting = true;
-                app.quit();
-            }
-        }
-    ]);
-
-    tray.setContextMenu(contextMenu);
+    updateTrayMenu(statusText);
 }
 
 // Подключение к WebSocket
@@ -218,27 +276,22 @@ function connectWebSocket() {
         ws = new WebSocket(WS_URL);
 
         ws.on('open', () => {
-            console.log('WebSocket connected');
-            
-            // Отправляем с небольшой задержкой чтобы соединение точно было готово
+            console.log('Agent WebSocket connected');
+
             setTimeout(() => {
                 if (!ws || ws.readyState !== WebSocket.OPEN) return;
-                
-                // Присоединяемся к сессии
-                wsSend({ type: 'join', sessionKey: config.sessionKey });
 
-                // Сообщаем серверу что Desktop Agent подключён
+                wsSend({ type: 'join', sessionKey: config.sessionKey });
                 wsSend({ type: 'agent_connected', sessionKey: config.sessionKey });
 
-                // Обновляем UI агента
-                if (mainWindow) {
-                    mainWindow.webContents.send('status-update', {
+                // Обновляем settings window если открыто
+                if (settingsWindow && !settingsWindow.isDestroyed()) {
+                    settingsWindow.webContents.send('status-update', {
                         status: 'working',
                         windowTitle: 'Подключено, мониторинг запущен'
                     });
                 }
 
-                // Запускаем мониторинг активности
                 isFirstCheck = true;
                 startActivityMonitoring();
             }, 500);
@@ -247,28 +300,52 @@ function connectWebSocket() {
         ws.on('message', (data) => {
             try {
                 const message = JSON.parse(data);
-                console.log('Received from server:', message.type);
+                console.log('Agent received:', message.type);
             } catch (error) {
                 console.error('Error parsing message:', error);
             }
         });
 
         ws.on('error', (error) => {
-            console.error('WebSocket error:', error);
+            console.error('Agent WebSocket error:', error);
         });
 
         ws.on('close', () => {
-            console.log('WebSocket disconnected');
+            console.log('Agent WebSocket disconnected');
             stopActivityMonitoring();
-            
-            // Переподключение через 5 секунд
+
             setTimeout(() => {
-                console.log('Reconnecting...');
+                console.log('Agent reconnecting...');
                 connectWebSocket();
             }, 5000);
         });
     } catch (error) {
         console.error('Failed to connect WebSocket:', error);
+    }
+}
+
+// Безопасная отправка через WebSocket
+function wsSend(data) {
+    try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(data));
+            return true;
+        }
+    } catch (error) {
+        console.error('WebSocket send error:', error.message);
+    }
+    return false;
+}
+
+// Отправка обновления активности
+function sendActivityUpdate(status, windowTitle) {
+    if (wsSend({
+        type: 'activity_update',
+        sessionKey: config.sessionKey,
+        status: status,
+        windowTitle: windowTitle
+    })) {
+        console.log(`Activity update sent: ${status}`);
     }
 }
 
@@ -279,18 +356,16 @@ function determineStatus(windowTitle) {
     const lower = windowTitle.toLowerCase();
     console.log(`[DETERMINE] Checking: "${lower}"`);
 
-    // Проверка белого списка (рабочие приложения)
-    for (const app of config.whiteList) {
-        if (lower.includes(app.toLowerCase())) {
-            console.log(`[DETERMINE] MATCH whiteList: "${app}"`);
+    for (const appName of config.whiteList) {
+        if (lower.includes(appName.toLowerCase())) {
+            console.log(`[DETERMINE] MATCH whiteList: "${appName}"`);
             return 'working';
         }
     }
 
-    // Проверка черного списка (отвлекающие приложения)
-    for (const app of config.blackList) {
-        if (lower.includes(app.toLowerCase())) {
-            console.log(`[DETERMINE] MATCH blackList: "${app}"`);
+    for (const appName of config.blackList) {
+        if (lower.includes(appName.toLowerCase())) {
+            console.log(`[DETERMINE] MATCH blackList: "${appName}"`);
             return 'distracted';
         }
     }
@@ -303,7 +378,7 @@ function determineStatus(windowTitle) {
 async function checkActiveWindow() {
     try {
         const { execFile } = require('child_process');
-        
+
         const windowInfo = await new Promise((resolve, reject) => {
             const script = `
 $code = @"
@@ -345,23 +420,18 @@ Add-Type -TypeDefinition $code
         }
 
         lastActivity = Date.now();
-        
-        // Парсим название вкладки из заголовка браузера
+
         let displayTitle = windowInfo.title;
         const pName = windowInfo.processName.toLowerCase();
-        
-        // Для браузеров берём только название вкладки (до " — " или " - " с именем браузера)
+
         if (['msedge', 'chrome', 'firefox', 'opera', 'brave'].includes(pName)) {
-            // "YouTube - Google Chrome" → "YouTube"
-            // "LinkTime - Таймер работы и еще 7 страниц — Личный: Microsoft Edge" → "LinkTime - Таймер работы"
             displayTitle = windowInfo.title
                 .replace(/\s*и еще \d+ страниц?/gi, '')
                 .replace(/\s*—\s*(Личный|Personal|InPrivate):?\s*Microsoft Edge/gi, '')
                 .replace(/\s*-\s*(Google Chrome|Mozilla Firefox|Opera|Brave)/gi, '')
                 .trim();
         }
-        
-        // Для определения статуса используем полный заголовок
+
         const fullTitle = `${windowInfo.processName} - ${windowInfo.title}`;
         console.log(`[MONITOR] Active: "${fullTitle}"`);
 
@@ -380,65 +450,32 @@ function updateStatus(status, windowTitle) {
     const changed = status !== currentStatus || isFirstCheck;
     currentStatus = status;
     isFirstCheck = false;
-    
+
     if (changed) {
         console.log(`[STATUS] Changed: ${status} (${windowTitle})`);
     }
-    
-    // Всегда обновляем UI
+
     updateTrayStatus(status, windowTitle);
-    
-    // Всегда отправляем на сервер (чтобы браузер знал актуальный статус)
     sendActivityUpdate(status, windowTitle);
-    
-    if (mainWindow) {
-        mainWindow.webContents.send('status-update', { status, windowTitle });
-    }
-}
 
-// Безопасная отправка через WebSocket
-function wsSend(data) {
-    try {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(data));
-            return true;
-        }
-    } catch (error) {
-        console.error('WebSocket send error:', error.message);
-    }
-    return false;
-}
-
-// Отправка обновления активности на сервер
-function sendActivityUpdate(status, windowTitle) {
-    if (wsSend({
-        type: 'activity_update',
-        sessionKey: config.sessionKey,
-        status: status,
-        windowTitle: windowTitle
-    })) {
-        console.log(`Activity update sent: ${status}`);
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+        settingsWindow.webContents.send('status-update', { status, windowTitle });
     }
 }
 
 // Запуск мониторинга активности
 function startActivityMonitoring() {
-    if (checkIntervalId) {
-        clearInterval(checkIntervalId);
-    }
+    if (checkIntervalId) clearInterval(checkIntervalId);
 
     console.log('Activity monitoring started');
-    
-    // Первая проверка сразу
     checkActiveWindow();
-    
-    // Проверка каждые 5 секунд
+
     checkIntervalId = setInterval(() => {
         checkActiveWindow();
     }, config.checkInterval);
 }
 
-// Остановка мониторинга активности
+// Остановка мониторинга
 function stopActivityMonitoring() {
     if (checkIntervalId) {
         clearInterval(checkIntervalId);
@@ -447,7 +484,7 @@ function stopActivityMonitoring() {
     console.log('Activity monitoring stopped');
 }
 
-// IPC обработчики для связи с окном настроек
+// IPC обработчики для окна настроек
 ipcMain.on('get-config', (event) => {
     event.reply('config-data', config);
 });
@@ -455,13 +492,18 @@ ipcMain.on('get-config', (event) => {
 ipcMain.on('save-config', (event, newConfig) => {
     config = { ...config, ...newConfig };
     saveConfig();
-    
-    // Переподключаемся если изменился sessionKey
-    if (ws) {
-        ws.close();
+
+    // Если изменился sessionKey — инжектим его в веб-страницу
+    if (newConfig.sessionKey && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.executeJavaScript(
+            `localStorage.setItem('sessionKey', '${newConfig.sessionKey}'); location.reload();`
+        ).catch(() => {});
     }
+
+    // Переподключаем WebSocket
+    if (ws) ws.close();
     connectWebSocket();
-    
+
     event.reply('config-saved');
 });
 
@@ -478,9 +520,14 @@ app.whenReady().then(() => {
     loadConfig();
     createTray();
     createWindow();
-    
-    // Подключаемся к WebSocket если есть sessionKey
+
+    // Если есть сохранённый ключ — инжектим его в веб-страницу при загрузке
     if (config.sessionKey) {
+        mainWindow.webContents.on('did-finish-load', () => {
+            mainWindow.webContents.executeJavaScript(
+                `if (!localStorage.getItem('sessionKey')) { localStorage.setItem('sessionKey', '${config.sessionKey}'); location.reload(); }`
+            ).catch(() => {});
+        });
         connectWebSocket();
     }
 
@@ -492,15 +539,11 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-    // Не закрываем приложение на macOS
-    if (process.platform !== 'darwin') {
-        // На других платформах продолжаем работать в фоне
-    }
+    // Продолжаем работать в фоне
 });
 
 app.on('before-quit', () => {
     stopActivityMonitoring();
-    if (ws) {
-        ws.close();
-    }
+    stopSessionKeySync();
+    if (ws) ws.close();
 });
