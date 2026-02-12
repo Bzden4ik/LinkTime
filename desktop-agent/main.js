@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, powerMonitor } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, powerMonitor, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const WebSocket = require('ws');
+const https = require('https');
 
 // GPU оптимизация — убираем ошибки и ускоряем рендер
 app.commandLine.appendSwitch('disable-gpu-compositing');
@@ -11,6 +12,8 @@ app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder');
 // Конфигурация
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
 const WS_URL = 'wss://linktime.onrender.com';
+const GITHUB_REPO = 'Bzden4ik/LinkTime';
+const CURRENT_VERSION = require('./package.json').version;
 
 // Состояние приложения
 let mainWindow = null;
@@ -22,6 +25,7 @@ let config = {
     checkInterval: 5000,
     idleTimeout: 30000,
     autostart: false,
+    autoUpdate: true,
     whiteList: [
         'LinkTime',
         'Visual Studio Code',
@@ -100,11 +104,15 @@ function saveConfig() {
 // Применить настройку автозапуска
 function applyAutostartSetting() {
     try {
+        // Не добавляем в автозагрузку если запущено в dev режиме (npm start)
+        if (!app.isPackaged) {
+            console.log('Autostart skipped: running in development mode');
+            return;
+        }
+        
         app.setLoginItemSettings({
             openAtLogin: config.autostart,
-            openAsHidden: false,
-            path: process.execPath,
-            args: []
+            openAsHidden: false
         });
         console.log(`Autostart ${config.autostart ? 'enabled' : 'disabled'}`);
     } catch (error) {
@@ -121,6 +129,74 @@ function getAutostartStatus() {
         console.error('Error getting autostart status:', error);
         return false;
     }
+}
+
+// === СИСТЕМА ОБНОВЛЕНИЙ ===
+async function checkForUpdates() {
+    return new Promise((resolve) => {
+        const options = {
+            hostname: 'api.github.com',
+            path: `/repos/${GITHUB_REPO}/releases/latest`,
+            method: 'GET',
+            headers: {
+                'User-Agent': 'LinkTime-Desktop-Agent'
+            }
+        };
+
+        https.get(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try {
+                    const release = JSON.parse(data);
+                    const latestVersion = release.tag_name.replace(/^v/, '');
+                    const downloadUrl = release.assets.find(asset => 
+                        asset.name.endsWith('.exe')
+                    )?.browser_download_url;
+
+                    resolve({
+                        hasUpdate: latestVersion !== CURRENT_VERSION,
+                        latestVersion,
+                        currentVersion: CURRENT_VERSION,
+                        downloadUrl,
+                        releaseUrl: release.html_url
+                    });
+                } catch (error) {
+                    console.error('Error parsing GitHub release:', error);
+                    resolve({ hasUpdate: false });
+                }
+            });
+        }).on('error', (error) => {
+            console.error('Error checking for updates:', error);
+            resolve({ hasUpdate: false });
+        });
+    });
+}
+
+async function downloadAndInstallUpdate(downloadUrl) {
+    const https = require('https');
+    const fs = require('fs');
+    const path = require('path');
+    const { shell } = require('electron');
+
+    const tempPath = path.join(app.getPath('temp'), 'LinkTime-Update.exe');
+    const file = fs.createWriteStream(tempPath);
+
+    return new Promise((resolve, reject) => {
+        https.get(downloadUrl, (response) => {
+            response.pipe(file);
+            file.on('finish', () => {
+                file.close();
+                console.log('Update downloaded, launching installer...');
+                shell.openPath(tempPath);
+                app.quit();
+                resolve();
+            });
+        }).on('error', (err) => {
+            fs.unlink(tempPath, () => {});
+            reject(err);
+        });
+    });
 }
 
 // Создание главного окна (веб-приложение LinkTime)
@@ -257,6 +333,19 @@ async function syncSessionKeyFromWeb() {
                 console.log(`Autostart setting synced from web: ${newAutostart}`);
                 config.autostart = newAutostart;
                 saveConfig(); // saveConfig уже вызывает applyAutostartSetting()
+            }
+        }
+        
+        // Синхронизируем настройку автообновлений из веб-страницы
+        const webAutoUpdate = await mainWindow.webContents.executeJavaScript(
+            "localStorage.getItem('autoUpdate')"
+        );
+        if (webAutoUpdate !== null) {
+            const newAutoUpdate = webAutoUpdate === 'true';
+            if (newAutoUpdate !== config.autoUpdate) {
+                console.log(`AutoUpdate setting synced from web: ${newAutoUpdate}`);
+                config.autoUpdate = newAutoUpdate;
+                saveConfig();
             }
         }
     } catch (error) {
@@ -635,6 +724,25 @@ ipcMain.on('test-connection', (event) => {
     }
 });
 
+// Обработчики обновлений
+ipcMain.on('check-updates', async (event) => {
+    if (!config.autoUpdate) {
+        event.reply('update-info', { hasUpdate: false, disabled: true });
+        return;
+    }
+    const updateInfo = await checkForUpdates();
+    event.reply('update-info', updateInfo);
+});
+
+ipcMain.on('install-update', async (event, downloadUrl) => {
+    try {
+        await downloadAndInstallUpdate(downloadUrl);
+    } catch (error) {
+        console.error('Failed to install update:', error);
+        event.reply('update-error', { message: 'Не удалось установить обновление' });
+    }
+});
+
 // Инициализация приложения
 app.whenReady().then(() => {
     loadConfig();
@@ -654,6 +762,21 @@ app.whenReady().then(() => {
         mainWindow.webContents.executeJavaScript(
             `localStorage.setItem('autostart', '${config.autostart}');`
         ).catch(() => {});
+        
+        // AutoUpdate
+        mainWindow.webContents.executeJavaScript(
+            `localStorage.setItem('autoUpdate', '${config.autoUpdate}');`
+        ).catch(() => {});
+        
+        // Проверка обновлений при запуске
+        if (config.autoUpdate && app.isPackaged) {
+            setTimeout(async () => {
+                const updateInfo = await checkForUpdates();
+                if (updateInfo.hasUpdate && mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('update-available', updateInfo);
+                }
+            }, 3000);
+        }
     });
     
     if (config.sessionKey) {

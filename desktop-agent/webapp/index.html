@@ -7,6 +7,19 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Уведомление о новой версии -->
+    <div class="update-notification" id="updateNotification" style="display: none;">
+        <div class="update-notification-content">
+            <span class="update-icon">🎉</span>
+            <div class="update-text">
+                <strong>Доступна новая версия!</strong>
+                <p id="updateVersionText">LinkTime v1.0.1</p>
+            </div>
+            <button class="btn btn-update-notification" id="updateNowBtn">Обновить</button>
+            <button class="close-notification" id="closeUpdateNotification">×</button>
+        </div>
+    </div>
+    
     <div class="container">
         <header>
             <h1>LinkTime</h1>
@@ -90,6 +103,19 @@
                         <span>Запускать вместе с Windows</span>
                     </label>
                     <p class="setting-hint">Приложение будет автоматически запускаться при входе в систему</p>
+                </div>
+                
+                <div class="setting-group" id="autoUpdateSection" style="display: none;">
+                    <h3>🔄 Автоматические обновления</h3>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="autoUpdateCheckbox" checked>
+                        <span>Проверять обновления автоматически</span>
+                    </label>
+                    <p class="setting-hint">Приложение будет проверять наличие новых версий при запуске</p>
+                    <div id="updateAvailable" style="display: none; margin-top: 15px;">
+                        <p class="update-info">Доступна новая версия: <strong id="newVersion"></strong></p>
+                        <button class="btn btn-update" id="installUpdateBtn">Обновить сейчас</button>
+                    </div>
                 </div>
                 <div class="setting-group" id="qrSection" style="display: none;">
                     <div id="qrcode"></div>

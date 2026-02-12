@@ -91,6 +91,52 @@ function setupEventListeners() {
     // Календарь
     document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
     document.getElementById('nextMonth').addEventListener('click', () => changeMonth(1));
+    
+    // Обновления
+    const updateNowBtn = document.getElementById('updateNowBtn');
+    const installUpdateBtn = document.getElementById('installUpdateBtn');
+    const closeUpdateNotification = document.getElementById('closeUpdateNotification');
+    
+    if (updateNowBtn) {
+        updateNowBtn.addEventListener('click', installUpdate);
+    }
+    if (installUpdateBtn) {
+        installUpdateBtn.addEventListener('click', installUpdate);
+    }
+    if (closeUpdateNotification) {
+        closeUpdateNotification.addEventListener('click', () => {
+            document.getElementById('updateNotification').style.display = 'none';
+        });
+    }
+    
+    // IPC обработчики для Electron
+    if (window.__electronApp && typeof require !== 'undefined') {
+        const { ipcRenderer } = require('electron');
+        
+        // Получение информации об обновлении
+        ipcRenderer.on('update-info', (event, info) => {
+            console.log('[Update] Info received:', info);
+            if (info.hasUpdate) {
+                updateInfo = info;
+                document.getElementById('updateAvailable').style.display = 'block';
+                document.getElementById('newVersion').textContent = info.latestVersion;
+            } else {
+                document.getElementById('updateAvailable').style.display = 'none';
+            }
+        });
+        
+        // Уведомление о доступном обновлении при запуске
+        ipcRenderer.on('update-available', (event, info) => {
+            console.log('[Update] New version available:', info);
+            showUpdateNotification(info);
+        });
+        
+        // Ошибка обновления
+        ipcRenderer.on('update-error', (event, error) => {
+            console.error('[Update] Error:', error);
+            showToast(error.message, 'error');
+        });
+    }
 }
 
 // Настройка обработчиков видимости и фокуса
@@ -720,8 +766,21 @@ function openSettings() {
         checkbox.parentNode.replaceChild(newCheckbox, checkbox);
         newCheckbox.addEventListener('change', saveAutostartSetting);
         console.log('[Autostart] Event listener attached');
+        
+        // Показываем секцию автообновлений
+        document.getElementById('autoUpdateSection').style.display = 'block';
+        loadAutoUpdateSetting();
+        
+        const updateCheckbox = document.getElementById('autoUpdateCheckbox');
+        const newUpdateCheckbox = updateCheckbox.cloneNode(true);
+        updateCheckbox.parentNode.replaceChild(newUpdateCheckbox, updateCheckbox);
+        newUpdateCheckbox.addEventListener('change', saveAutoUpdateSetting);
+        
+        // Проверяем обновления при открытии настроек
+        checkForUpdates();
     } else {
         document.getElementById('autostartSection').style.display = 'none';
+        document.getElementById('autoUpdateSection').style.display = 'none';
     }
     
     // Enter для добавления в списки
@@ -1405,6 +1464,64 @@ function saveAutostartSetting(event) {
     
     // Electron main.js синхронизирует эту настройку автоматически
     showToast(autostart ? 'Автозапуск включен' : 'Автозапуск выключен', 'success');
+}
+
+// === АВТООБНОВЛЕНИЯ (только Electron) ===
+let updateInfo = null;
+
+function loadAutoUpdateSetting() {
+    const autoUpdate = localStorage.getItem('autoUpdate');
+    const checkbox = document.getElementById('autoUpdateCheckbox');
+    if (checkbox) {
+        checkbox.checked = autoUpdate !== 'false'; // По умолчанию true
+        console.log('[AutoUpdate] Loaded from localStorage:', autoUpdate, '→ checkbox:', checkbox.checked);
+    }
+}
+
+function saveAutoUpdateSetting(event) {
+    const checkbox = event ? event.target : document.getElementById('autoUpdateCheckbox');
+    if (!checkbox) return;
+    
+    const autoUpdate = checkbox.checked;
+    localStorage.setItem('autoUpdate', String(autoUpdate));
+    console.log('[AutoUpdate] Saved to localStorage:', autoUpdate);
+    
+    showToast(autoUpdate ? 'Автообновления включены' : 'Автообновления выключены', 'success');
+}
+
+function showUpdateNotification(info) {
+    updateInfo = info;
+    const notification = document.getElementById('updateNotification');
+    const versionText = document.getElementById('updateVersionText');
+    
+    if (notification && versionText) {
+        versionText.textContent = `LinkTime v${info.latestVersion}`;
+        notification.style.display = 'block';
+        
+        // Автоматически скрыть через 15 секунд
+        setTimeout(() => {
+            if (notification.style.display === 'block') {
+                notification.style.display = 'none';
+            }
+        }, 15000);
+    }
+}
+
+function checkForUpdates() {
+    if (window.__electronApp && typeof require !== 'undefined') {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('check-updates');
+    }
+}
+
+function installUpdate() {
+    if (!updateInfo || !updateInfo.downloadUrl) return;
+    
+    if (window.__electronApp && typeof require !== 'undefined') {
+        const { ipcRenderer } = require('electron');
+        showToast('Загрузка обновления...', 'info');
+        ipcRenderer.send('install-update', updateInfo.downloadUrl);
+    }
 }
 
 function renderListItems(type) {
