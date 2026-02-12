@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const WebSocket = require('ws');
@@ -61,6 +61,9 @@ let currentStatus = null;
 let checkIntervalId = null;
 let isFirstCheck = true;
 let sessionKeySyncInterval = null;
+let idleCheckInterval = null;
+let isUserIdle = false;
+const IDLE_THRESHOLD = 30; // секунд бездействия до авто-паузы
 
 // Загрузка конфигурации
 function loadConfig() {
@@ -493,6 +496,49 @@ function startActivityMonitoring() {
     checkIntervalId = setInterval(() => {
         checkActiveWindow();
     }, config.checkInterval);
+
+    // Запускаем idle-мониторинг
+    startIdleMonitoring();
+}
+
+// Мониторинг бездействия (мышь/клавиатура)
+function startIdleMonitoring() {
+    if (idleCheckInterval) clearInterval(idleCheckInterval);
+
+    idleCheckInterval = setInterval(() => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+
+        const idleTime = powerMonitor.getSystemIdleTime(); // в секундах
+
+        if (idleTime >= IDLE_THRESHOLD && !isUserIdle) {
+            // Пользователь бездействует — авто-пауза
+            isUserIdle = true;
+            console.log(`[IDLE] User idle for ${idleTime}s — triggering auto-pause`);
+            mainWindow.webContents.executeJavaScript(`
+                if (typeof state !== 'undefined' && state.timerRunning && !state.timerPaused) {
+                    pauseTimer(true);
+                    showToast('Авто-Пауза: нет активности ${IDLE_THRESHOLD} сек', 'info');
+                }
+            `).catch(() => {});
+        } else if (idleTime < 5 && isUserIdle) {
+            // Пользователь вернулся — авто-возобновление
+            isUserIdle = false;
+            console.log('[IDLE] User returned — triggering auto-resume');
+            mainWindow.webContents.executeJavaScript(`
+                if (typeof state !== 'undefined' && state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
+                    resumeGraceUntil = Date.now() + 7000;
+                    const pauseDuration = Date.now() - state.currentPauseStart;
+                    state.totalPausedTime += pauseDuration;
+                    state.timerPaused = false;
+                    state.currentPauseStart = null;
+                    autoPauseActive = false;
+                    updateTimerDisplay();
+                    syncTimerState('resume', { totalPausedTime: state.totalPausedTime });
+                    showToast('Таймер возобновлён', 'success');
+                }
+            `).catch(() => {});
+        }
+    }, 5000); // проверяем каждые 5 секунд
 }
 
 // Остановка мониторинга
@@ -501,6 +547,11 @@ function stopActivityMonitoring() {
         clearInterval(checkIntervalId);
         checkIntervalId = null;
     }
+    if (idleCheckInterval) {
+        clearInterval(idleCheckInterval);
+        idleCheckInterval = null;
+    }
+    isUserIdle = false;
     console.log('Activity monitoring stopped');
 }
 
