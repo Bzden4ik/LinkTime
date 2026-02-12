@@ -177,6 +177,7 @@ function onUserReturned() {
         
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 1000);
+        updateTimer(); // Мгновенное обновление
         
         document.getElementById('pauseBtn').textContent = 'Пауза';
         document.getElementById('pauseBtn').disabled = false;
@@ -238,6 +239,7 @@ function startTimer() {
         saveTodaySession(session);
         
         timerInterval = setInterval(updateTimer, 1000);
+        updateTimer();
         
         document.getElementById('startBtn').disabled = true;
         document.getElementById('pauseBtn').disabled = false;
@@ -245,7 +247,8 @@ function startTimer() {
         
         // Синхронизируем старт таймера
         syncTimerState('start', {
-            sessionStart: state.currentSessionStart
+            sessionStart: state.currentSessionStart,
+            totalPausedTime: 0
         });
     } else if (state.timerPaused) {
         // Возобновление после паузы
@@ -266,6 +269,7 @@ function startTimer() {
         // Запускаем таймер снова
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 1000);
+        updateTimer();
         
         // Обновляем кнопки
         document.getElementById('startBtn').disabled = true;
@@ -306,6 +310,7 @@ function pauseTimer(isAutoPause = false) {
         // Запускаем таймер снова
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 1000);
+        updateTimer();
         
         // Обновляем кнопки
         document.getElementById('startBtn').disabled = true;
@@ -938,9 +943,10 @@ function applyTimerState(data) {
             state.timerRunning = true;
             state.timerPaused = false;
             state.currentSessionStart = timerData.sessionStart;
-            state.totalPausedTime = 0;
+            state.totalPausedTime = timerData.totalPausedTime || 0;
             
             timerInterval = setInterval(updateTimer, 1000);
+            updateTimer(); // Мгновенное обновление дисплея
             
             // Создаём сессию если её нет
             const sessions = getTodaySessions();
@@ -1002,6 +1008,12 @@ function applyTimerState(data) {
             document.getElementById('pauseBtn').disabled = false;
             document.getElementById('pauseBtn').textContent = 'Продолжить';
             document.getElementById('stopBtn').disabled = false;
+            
+            // Показываем время на момент паузы
+            if (state.currentPauseStart && state.currentSessionStart) {
+                const displayTime = (state.currentPauseStart - state.currentSessionStart) - state.totalPausedTime;
+                document.getElementById('timerDisplay').textContent = formatTime(Math.max(0, displayTime));
+            }
             break;
         }
             
@@ -1015,12 +1027,13 @@ function applyTimerState(data) {
             
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(updateTimer, 1000);
+            updateTimer(); // Мгновенное обновление дисплея
             
             // Завершаем последнюю паузу в сессии
             const sessions = getTodaySessions();
             if (sessions.length > 0) {
                 const currentSession = sessions[sessions.length - 1];
-                if (currentSession.pauses.length > 0) {
+                if (currentSession && currentSession.pauses && currentSession.pauses.length > 0) {
                     const lastPause = currentSession.pauses[currentSession.pauses.length - 1];
                     if (!lastPause.end) {
                         const pauseDuration = Date.now() - lastPause.start;

@@ -140,7 +140,7 @@ LinkTime/
 ```
 
 ## Desktop-агент
-
+По умолчанию устанавливаеться по этому пути: 'C:\Users\warfa\AppData\Local\Programs\linktime-desktop-agent'
 ### Быстрый старт
 
 ```bash
