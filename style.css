@@ -163,9 +163,58 @@ main {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin-bottom: 40px;
+    margin-bottom: 20px;
     font-variant-numeric: tabular-nums;
     letter-spacing: -3px;
+}
+
+/* Activity Indicator */
+.activity-indicator {
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 12px 24px;
+    border-radius: 12px;
+    margin: 0 auto 40px;
+    display: inline-block;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    transition: all 0.3s ease;
+    animation: indicatorPulse 2s ease-in-out infinite;
+}
+
+@keyframes indicatorPulse {
+    0%, 100% {
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+    }
+}
+
+.activity-indicator.working {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #10b981;
+}
+
+.activity-indicator.distracted {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #f59e0b;
+}
+
+.activity-indicator.idle {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #ef4444;
+}
+
+.activity-indicator:not(.working):not(.distracted):not(.idle) {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.6);
+    animation: none;
 }
 
 .timer-controls {
@@ -578,19 +627,19 @@ main {
 
 .calendar-day.today {
     border-color: #10b981;
-    background: rgba(16, 185, 129, 0.15);
+    background: rgba(16, 185, 129, 0.25);
     box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
 }
 
 .calendar-day.selected {
     border-color: #f59e0b;
-    background: rgba(245, 158, 11, 0.15);
+    background: rgba(245, 158, 11, 0.25);
     box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
 }
 
 .calendar-day.has-data {
-    background: rgba(99, 102, 241, 0.1);
-    border-color: rgba(99, 102, 241, 0.3);
+    background: rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.4);
 }
 
 .calendar-day .day-number {
