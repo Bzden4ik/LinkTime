@@ -15,7 +15,7 @@ let timerInterval = null;
 let ws = null;
 let reconnectInterval = null;
 let heartbeatInterval = null;
-const WS_URL = 'https://linktime.onrender.com';
+const WS_URL = 'wss://linktime.onrender.com';
 
 // Состояние видимости и фокуса
 let isTabVisible = true;
@@ -483,10 +483,12 @@ function toggleTask(taskId) {
     if (task) {
         task.completed = !task.completed;
         if (task.completed) {
+            // Записываем текущее рабочее время при выполнении
             task.completedAt = Date.now();
             task.timeSpent = getTotalWorkTimeForDate(task.date);
             showToast('Задача выполнена! 🎉', 'success');
         } else {
+            // Снимаем отметку — убираем время
             task.completedAt = null;
             task.timeSpent = null;
         }
@@ -496,8 +498,10 @@ function toggleTask(taskId) {
     }
 }
 
+// Получить общее рабочее время за дату (мс)
 function getTotalWorkTimeForDate(dateStr) {
     const data = getDataForDate(dateStr);
+    // Если таймер сейчас работает и это сегодня — добавляем текущую сессию
     if (dateStr === state.currentDate && state.timerRunning && state.currentSessionStart) {
         let currentWork = Date.now() - state.currentSessionStart - state.totalPausedTime;
         if (state.timerPaused && state.currentPauseStart) {
@@ -1279,6 +1283,7 @@ function applyRemoteData(data) {
             const remote = data.sessions[key];
             const localRaw = localStorage.getItem(key);
             const local = localRaw ? JSON.parse(localRaw) : [];
+            // Берём набор с большим количеством сессий, либо remote если local пуст
             if (!localRaw || remote.length > local.length) {
                 localStorage.setItem(key, JSON.stringify(remote));
             }

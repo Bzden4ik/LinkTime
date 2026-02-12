@@ -1360,3 +1360,61 @@ main {
         font-size: 0.95rem;
     }
 }
+
+
+/* === ELECTRON PERFORMANCE OPTIMIZATIONS === */
+
+/* Убираем все backdrop-filter (главный источник тормозов) */
+*,
+*::before,
+*::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* Упрощаем transition для всех элементов */
+.calendar-day,
+.task-item,
+.stat-card,
+.btn,
+.btn-primary,
+.btn-secondary,
+button {
+    transition: background 0.15s ease, border-color 0.15s ease !important;
+}
+
+/* Убираем transform-анимации hover */
+.calendar-day:hover {
+    transform: none !important;
+}
+
+.stat-card:hover {
+    transform: none !important;
+}
+
+/* Упрощаем box-shadow */
+.calendar-day.today {
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.25) !important;
+}
+
+.calendar-day.selected {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.25) !important;
+}
+
+.stat-card {
+    box-shadow: none !important;
+}
+
+/* Отключаем тяжёлые анимации */
+@keyframes pulse { }
+@keyframes shimmer { }
+@keyframes float { }
+
+/* will-change только для таймера */
+* {
+    will-change: auto !important;
+}
+
+#timer {
+    will-change: contents;
+}

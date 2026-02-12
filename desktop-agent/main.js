@@ -3,8 +3,10 @@ const path = require('path');
 const fs = require('fs');
 const WebSocket = require('ws');
 
-// Отключаем GPU ускорение (убирает ошибки gpu_process и повышает FPS)
-app.disableHardwareAcceleration();
+// GPU оптимизация — убираем ошибки и ускоряем рендер
+app.commandLine.appendSwitch('disable-gpu-compositing');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder');
 
 // Конфигурация
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
@@ -96,7 +98,8 @@ function createWindow() {
         minHeight: 600,
         webPreferences: {
             nodeIntegration: false,
-            contextIsolation: true
+            contextIsolation: true,
+            backgroundThrottling: false
         },
         icon: path.join(__dirname, 'icon.png'),
         skipTaskbar: false,
