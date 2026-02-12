@@ -87,6 +87,11 @@ function setupEventListeners() {
     document.getElementById('scanQR').addEventListener('click', startQRScanner);
     document.getElementById('enterKey').addEventListener('click', showKeyInput);
     document.getElementById('connectKey').addEventListener('click', connectWithKey);
+    
+    // Автозапуск (только для Electron)
+    if (window.__electronApp) {
+        document.getElementById('autostartCheckbox').addEventListener('change', saveAutostartSetting);
+    }
 
     // Календарь
     document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
@@ -708,6 +713,14 @@ function loadSelectedDateData() {
 function openSettings() {
     document.getElementById('settingsModal').classList.add('active');
     renderAppLists();
+    
+    // Показываем секцию автозапуска только в Electron
+    if (window.__electronApp) {
+        document.getElementById('autostartSection').style.display = 'block';
+        loadAutostartSetting();
+    } else {
+        document.getElementById('autostartSection').style.display = 'none';
+    }
     
     // Enter для добавления в списки
     document.getElementById('whiteListInput').onkeypress = (e) => {
@@ -1366,6 +1379,26 @@ function saveAppList(type, list) {
 function renderAppLists() {
     renderListItems('white');
     renderListItems('black');
+}
+
+// === АВТОЗАПУСК (только Electron) ===
+function loadAutostartSetting() {
+    const autostart = localStorage.getItem('autostart');
+    const checkbox = document.getElementById('autostartCheckbox');
+    if (checkbox) {
+        checkbox.checked = autostart === 'true';
+    }
+}
+
+function saveAutostartSetting() {
+    const checkbox = document.getElementById('autostartCheckbox');
+    if (!checkbox) return;
+    
+    const autostart = checkbox.checked;
+    localStorage.setItem('autostart', autostart);
+    
+    // Electron main.js синхронизирует эту настройку автоматически
+    showToast(autostart ? 'Автозапуск включен' : 'Автозапуск выключен', 'success');
 }
 
 function renderListItems(type) {

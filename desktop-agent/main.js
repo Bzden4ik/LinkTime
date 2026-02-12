@@ -21,6 +21,7 @@ let config = {
     sessionKey: '',
     checkInterval: 5000,
     idleTimeout: 30000,
+    autostart: false,
     whiteList: [
         'LinkTime',
         'Visual Studio Code',
@@ -80,6 +81,9 @@ function loadConfig() {
         config.whiteList.unshift('LinkTime');
     }
     console.log('WhiteList:', config.whiteList);
+    
+    // Применяем настройку автозапуска при загрузке
+    applyAutostartSetting();
 }
 
 // Сохранение конфигурации
@@ -87,8 +91,35 @@ function saveConfig() {
     try {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
         console.log('Config saved');
+        applyAutostartSetting();
     } catch (error) {
         console.error('Error saving config:', error);
+    }
+}
+
+// Применить настройку автозапуска
+function applyAutostartSetting() {
+    try {
+        app.setLoginItemSettings({
+            openAtLogin: config.autostart,
+            openAsHidden: false,
+            path: process.execPath,
+            args: []
+        });
+        console.log(`Autostart ${config.autostart ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+        console.error('Error setting autostart:', error);
+    }
+}
+
+// Получить текущий статус автозапуска
+function getAutostartStatus() {
+    try {
+        const settings = app.getLoginItemSettings();
+        return settings.openAtLogin;
+    } catch (error) {
+        console.error('Error getting autostart status:', error);
+        return false;
     }
 }
 
@@ -214,6 +245,19 @@ async function syncSessionKeyFromWeb() {
         }
         if (webBlackList) {
             config.blackList = JSON.parse(webBlackList);
+        }
+        
+        // Синхронизируем настройку автозапуска из веб-страницы
+        const webAutostart = await mainWindow.webContents.executeJavaScript(
+            "localStorage.getItem('autostart')"
+        );
+        if (webAutostart !== null) {
+            const newAutostart = webAutostart === 'true';
+            if (newAutostart !== config.autostart) {
+                console.log(`Autostart setting synced from web: ${newAutostart}`);
+                config.autostart = newAutostart;
+                saveConfig(); // saveConfig уже вызывает applyAutostartSetting()
+            }
         }
     } catch (error) {
         // Страница ещё не загрузилась — игнорируем
@@ -560,7 +604,9 @@ function stopActivityMonitoring() {
 
 // IPC обработчики для окна настроек
 ipcMain.on('get-config', (event) => {
-    event.reply('config-data', config);
+    const currentAutostart = getAutostartStatus();
+    const configWithAutostart = { ...config, autostart: currentAutostart };
+    event.reply('config-data', configWithAutostart);
 });
 
 ipcMain.on('save-config', (event, newConfig) => {

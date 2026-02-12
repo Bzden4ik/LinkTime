@@ -1370,6 +1370,27 @@ main {
     margin-bottom: 10px;
 }
 
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    padding: 12px 0;
+    user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: var(--primary);
+}
+
+.checkbox-label span {
+    font-size: 1rem;
+    color: white;
+}
+
 .list-editor {
     background: rgb(0 0 0 / 46%);
     border-radius: 12px;

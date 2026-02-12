@@ -85,6 +85,14 @@
                 <div class="hint">Автоматически синхронизируется из веб-страницы LinkTime</div>
             </div>
 
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="autostart" style="width: auto; cursor: pointer;">
+                    <span>Запускать вместе с Windows</span>
+                </label>
+                <div class="hint">Приложение будет автоматически запускаться при входе в систему</div>
+            </div>
+
             <div class="section-title">Рабочие приложения (белый список)</div>
             <div class="form-group">
                 <textarea id="whiteList" rows="5"></textarea>
@@ -117,6 +125,7 @@
 
         ipcRenderer.on('config-data', (event, config) => {
             document.getElementById('sessionKey').value = config.sessionKey || '';
+            document.getElementById('autostart').checked = config.autostart || false;
             document.getElementById('whiteList').value = (config.whiteList || []).join('\n');
             document.getElementById('blackList').value = (config.blackList || []).join('\n');
 
@@ -154,12 +163,13 @@
             e.preventDefault();
 
             const sessionKey = document.getElementById('sessionKey').value.trim();
+            const autostart = document.getElementById('autostart').checked;
             const whiteList = document.getElementById('whiteList').value
                 .split('\n').map(s => s.trim()).filter(Boolean);
             const blackList = document.getElementById('blackList').value
                 .split('\n').map(s => s.trim()).filter(Boolean);
 
-            ipcRenderer.send('save-config', { sessionKey, whiteList, blackList });
+            ipcRenderer.send('save-config', { sessionKey, autostart, whiteList, blackList });
         });
 
         ipcRenderer.on('config-saved', () => {

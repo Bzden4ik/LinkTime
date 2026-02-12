@@ -82,6 +82,15 @@
                     <button class="btn btn-add" id="scanQR">Отсканировать QR-код</button>
                     <button class="btn" id="enterKey">Ввести ключ доступа</button>
                 </div>
+                
+                <div class="setting-group" id="autostartSection" style="display: none;">
+                    <h3>🚀 Автозапуск приложения</h3>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="autostartCheckbox">
+                        <span>Запускать вместе с Windows</span>
+                    </label>
+                    <p class="setting-hint">Приложение будет автоматически запускаться при входе в систему</p>
+                </div>
                 <div class="setting-group" id="qrSection" style="display: none;">
                     <div id="qrcode"></div>
                     <p class="key-display" id="keyDisplay"></p>
