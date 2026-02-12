@@ -641,13 +641,22 @@ app.whenReady().then(() => {
     createTray();
     createWindow();
 
-    // Если есть сохранённый ключ — инжектим его в веб-страницу при загрузке
-    if (config.sessionKey) {
-        mainWindow.webContents.on('did-finish-load', () => {
+    // Инжектим настройки в веб-страницу при загрузке
+    mainWindow.webContents.on('did-finish-load', () => {
+        // SessionKey
+        if (config.sessionKey) {
             mainWindow.webContents.executeJavaScript(
-                `if (!localStorage.getItem('sessionKey')) { localStorage.setItem('sessionKey', '${config.sessionKey}'); location.reload(); }`
+                `if (!localStorage.getItem('sessionKey')) { localStorage.setItem('sessionKey', '${config.sessionKey}'); }`
             ).catch(() => {});
-        });
+        }
+        
+        // Autostart
+        mainWindow.webContents.executeJavaScript(
+            `localStorage.setItem('autostart', '${config.autostart}');`
+        ).catch(() => {});
+    });
+    
+    if (config.sessionKey) {
         connectWebSocket();
     }
 

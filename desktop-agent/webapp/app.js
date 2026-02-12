@@ -87,11 +87,6 @@ function setupEventListeners() {
     document.getElementById('scanQR').addEventListener('click', startQRScanner);
     document.getElementById('enterKey').addEventListener('click', showKeyInput);
     document.getElementById('connectKey').addEventListener('click', connectWithKey);
-    
-    // Автозапуск (только для Electron)
-    if (window.__electronApp) {
-        document.getElementById('autostartCheckbox').addEventListener('change', saveAutostartSetting);
-    }
 
     // Календарь
     document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
@@ -718,6 +713,13 @@ function openSettings() {
     if (window.__electronApp) {
         document.getElementById('autostartSection').style.display = 'block';
         loadAutostartSetting();
+        
+        // Добавляем обработчик (удаляем старый если был)
+        const checkbox = document.getElementById('autostartCheckbox');
+        const newCheckbox = checkbox.cloneNode(true);
+        checkbox.parentNode.replaceChild(newCheckbox, checkbox);
+        newCheckbox.addEventListener('change', saveAutostartSetting);
+        console.log('[Autostart] Event listener attached');
     } else {
         document.getElementById('autostartSection').style.display = 'none';
     }
@@ -1384,18 +1386,22 @@ function renderAppLists() {
 // === АВТОЗАПУСК (только Electron) ===
 function loadAutostartSetting() {
     const autostart = localStorage.getItem('autostart');
-    const checkbox = document.getElementById('autostartCheckbox');
+    // Используем querySelectorAll на случай если элемент был клонирован
+    const checkboxes = document.querySelectorAll('#autostartCheckbox');
+    const checkbox = checkboxes[checkboxes.length - 1]; // Берём последний (актуальный)
     if (checkbox) {
         checkbox.checked = autostart === 'true';
+        console.log('[Autostart] Loaded from localStorage:', autostart, '→ checkbox:', checkbox.checked);
     }
 }
 
-function saveAutostartSetting() {
-    const checkbox = document.getElementById('autostartCheckbox');
+function saveAutostartSetting(event) {
+    const checkbox = event ? event.target : document.getElementById('autostartCheckbox');
     if (!checkbox) return;
     
     const autostart = checkbox.checked;
-    localStorage.setItem('autostart', autostart);
+    localStorage.setItem('autostart', String(autostart));
+    console.log('[Autostart] Saved to localStorage:', autostart);
     
     // Electron main.js синхронизирует эту настройку автоматически
     showToast(autostart ? 'Автозапуск включен' : 'Автозапуск выключен', 'success');
