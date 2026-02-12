@@ -159,9 +159,34 @@ function onUserReturned() {
     // Если была авто-пауза (не ручная) — автоматически возобновляем
     if (state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
         console.log('User returned — auto-resuming timer');
+        resumeGraceUntil = Date.now() + 7000;
+        
+        // Прямое возобновление без pauseTimer
+        const pauseDuration = Date.now() - state.currentPauseStart;
+        const sessions = getTodaySessions();
+        const currentSession = sessions[sessions.length - 1];
+        if (currentSession && currentSession.pauses && currentSession.pauses.length > 0) {
+            currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
+            currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
+            saveTodaySessions(sessions);
+        }
+        state.totalPausedTime += pauseDuration;
+        state.timerPaused = false;
+        state.currentPauseStart = null;
         autoPauseActive = false;
-        resumeGraceUntil = Date.now() + 7000; // 7сек защита от повторной паузы
-        pauseTimer(false); // вызов pauseTimer при паузе = возобновление
+        manualPause = false;
+        
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(updateTimer, 1000);
+        
+        document.getElementById('pauseBtn').textContent = 'Пауза';
+        document.getElementById('pauseBtn').disabled = false;
+        
+        syncTimerState('resume', {
+            sessionStart: state.currentSessionStart,
+            totalPausedTime: state.totalPausedTime
+        });
+        
         showToast('Таймер возобновлён', 'success');
     }
 }

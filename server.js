@@ -306,6 +306,10 @@ wss.on('connection', (ws) => {
         
         console.log(`Desktop Agent connected for session ${sessionKey}`);
         
+        // Помечаем это соединение как агент
+        ws.isAgent = true;
+        ws.agentSessionKey = sessionKey;
+        
         // Отмечаем в данных сессии что агент подключён
         const currentData = sessionData.get(sessionKey) || {};
         currentData.agentConnected = true;
@@ -331,7 +335,28 @@ wss.on('connection', (ws) => {
         if (currentSessionKey && sessions.has(currentSessionKey)) {
             sessions.get(currentSessionKey).delete(ws);
             
-            // Удаляем пустые сессии
+            // Если отключился агент — уведомляем браузеры
+            if (ws.isAgent) {
+                const key = ws.agentSessionKey || currentSessionKey;
+                console.log(`Desktop Agent disconnected from session: ${key}`);
+                
+                const currentData = sessionData.get(key) || {};
+                currentData.agentConnected = false;
+                sessionData.set(key, currentData);
+                
+                if (sessions.has(key)) {
+                    const message = JSON.stringify({
+                        type: 'agent_status',
+                        connected: false
+                    });
+                    sessions.get(key).forEach((client) => {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(message);
+                        }
+                    });
+                }
+            }
+            
             if (sessions.get(currentSessionKey).size === 0) {
                 sessions.delete(currentSessionKey);
                 console.log(`Session ${currentSessionKey} removed (no active connections)`);
