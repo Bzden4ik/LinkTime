@@ -283,6 +283,11 @@ function createTray() {
     });
 }
 
+// === IPC: send saved sessionKey to preload (sync) ===
+ipcMain.on('get-session-key', (event) => {
+    event.returnValue = sessionKey || '';
+});
+
 // === IPC: receive sessionKey from page ===
 ipcMain.on('session-key', (event, key) => {
     if (key && key !== sessionKey) {
