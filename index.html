@@ -15,7 +15,7 @@
 
         <main>
             <!-- Таймер -->
-            <section class="timer-section glass-card">
+            <section class="timer-section glass-card" data-tab-content="timer">
                 <div class="timer-display" id="timerDisplay">00:00:00</div>
                 <div class="activity-indicator" id="activityIndicator">⚪ Ожидание Desktop Agent...</div>
                 <div class="timer-controls">
@@ -40,7 +40,7 @@
             </section>
 
             <!-- Задачи -->
-            <section class="tasks-section glass-card">
+            <section class="tasks-section glass-card" data-tab-content="tasks">
                 <div class="tasks-header">
                     <h2 id="tasksTitle">Задачи на сегодня</h2>
                     <button class="btn btn-add" id="addTaskBtn">+ Добавить</button>
@@ -56,7 +56,7 @@
             </section>
 
             <!-- Календарь -->
-            <section class="calendar-section glass-card">
+            <section class="calendar-section glass-card" data-tab-content="calendar">
                 <div class="calendar-header">
                     <button class="btn btn-small" id="prevMonth">◀</button>
                     <h2 id="currentMonth"></h2>
@@ -101,6 +101,22 @@
 
     <!-- Toast notification -->
     <div class="toast" id="toast"></div>
+
+    <!-- Mobile bottom navigation -->
+    <nav class="mobile-nav" id="mobileNav">
+        <button class="mobile-nav-item active" data-tab="timer">
+            <span class="mobile-nav-icon">⏱</span>
+            <span class="mobile-nav-label">Таймер</span>
+        </button>
+        <button class="mobile-nav-item" data-tab="tasks">
+            <span class="mobile-nav-icon">📋</span>
+            <span class="mobile-nav-label">Задачи</span>
+        </button>
+        <button class="mobile-nav-item" data-tab="calendar">
+            <span class="mobile-nav-icon">📅</span>
+            <span class="mobile-nav-label">Календарь</span>
+        </button>
+    </nav>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>

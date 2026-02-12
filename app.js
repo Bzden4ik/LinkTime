@@ -1264,3 +1264,49 @@ function showToast(message, type = 'info') {
 // Экспорт функций для глобального доступа (для onclick в HTML)
 window.toggleTask = toggleTask;
 window.deleteTask = deleteTask;
+
+// === MOBILE TAB NAVIGATION ===
+(function initMobileNav() {
+    const nav = document.getElementById('mobileNav');
+    if (!nav) return;
+    
+    const buttons = nav.querySelectorAll('.mobile-nav-item');
+    const sections = document.querySelectorAll('[data-tab-content]');
+    
+    function switchTab(tabName) {
+        buttons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+        });
+        sections.forEach(sec => {
+            if (sec.dataset.tabContent === tabName) {
+                sec.classList.add('tab-active');
+                sec.style.display = '';
+            } else {
+                sec.classList.remove('tab-active');
+                // On mobile, hide non-active tabs
+                if (window.innerWidth <= 768) {
+                    sec.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+    
+    // Reset tabs when resizing to desktop
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 768) {
+            sections.forEach(sec => sec.style.display = '');
+        } else {
+            const activeTab = nav.querySelector('.mobile-nav-item.active');
+            if (activeTab) switchTab(activeTab.dataset.tab);
+        }
+    });
+    
+    // Init: on mobile show only timer
+    if (window.innerWidth <= 768) {
+        switchTab('timer');
+    }
+})();
