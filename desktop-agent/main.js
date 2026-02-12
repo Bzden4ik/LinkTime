@@ -206,7 +206,9 @@ function createMainWindow() {
         }
     });
 
-    mainWindow.loadURL(SITE_URL);
+    // Load site with sessionKey in URL so app.js picks it up
+    const url = sessionKey ? `${SITE_URL}?sessionKey=${sessionKey}` : SITE_URL;
+    mainWindow.loadURL(url);
 
     // Grab sessionKey from the page when it loads
     mainWindow.webContents.on('did-finish-load', () => {

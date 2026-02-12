@@ -38,11 +38,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Инициализация приложения
 function initializeApp() {
-    // Получаем или создаём ключ сессии
-    state.sessionKey = localStorage.getItem('sessionKey');
-    if (!state.sessionKey) {
-        state.sessionKey = generateSessionKey();
-        localStorage.setItem('sessionKey', state.sessionKey);
+    // Check URL for sessionKey (from Electron app or shared link)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlKey = urlParams.get('sessionKey');
+    if (urlKey) {
+        localStorage.setItem('sessionKey', urlKey);
+        state.sessionKey = urlKey;
+        // Clean URL
+        window.history.replaceState({}, '', window.location.pathname);
+    } else {
+        // Получаем или создаём ключ сессии
+        state.sessionKey = localStorage.getItem('sessionKey');
+        if (!state.sessionKey) {
+            state.sessionKey = generateSessionKey();
+            localStorage.setItem('sessionKey', state.sessionKey);
+        }
     }
     
     // Подключаемся к WebSocket серверу
