@@ -3,6 +3,11 @@ const path = require('path');
 const fs = require('fs');
 const WebSocket = require('ws');
 
+// Fix GPU crashes
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+
 // Конфигурация
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
 const WS_URL = 'wss://linktime.onrender.com';
