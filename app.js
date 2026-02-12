@@ -25,6 +25,7 @@ let autoPauseTimeout = null; // Таймер отложенной авто-па�
 let agentConnected = false; // Подключён ли Desktop Agent
 let agentStatus = null; // Последний статус от агента
 let manualPause = false; // Ручная пауза (приоритет над авто)
+let resumeGraceUntil = 0; // Защита от мгновенной повторной паузы
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
@@ -114,6 +115,10 @@ function setupVisibilityHandlers() {
 // Пользователь ушёл с вкладки — запускаем обратный отсчёт авто-паузы
 function onUserLeft(reason) {
     if (!state.timerRunning || state.timerPaused) return;
+    if (Date.now() < resumeGraceUntil) {
+        console.log('Grace period active — skip auto-pause');
+        return;
+    }
     
     sendBrowserEvent(reason);
     
@@ -155,6 +160,7 @@ function onUserReturned() {
     if (state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
         console.log('User returned — auto-resuming timer');
         autoPauseActive = false;
+        resumeGraceUntil = Date.now() + 7000; // 7сек защита от повторной паузы
         pauseTimer(false); // вызов pauseTimer при паузе = возобновление
         showToast('Таймер возобновлён', 'success');
     }
@@ -259,15 +265,13 @@ function pauseTimer(isAutoPause = false) {
         const pauseDuration = Date.now() - state.currentPauseStart;
         const sessions = getTodaySessions();
         const currentSession = sessions[sessions.length - 1];
-        if (currentSession && currentSession.pauses.length > 0) {
+        if (currentSession && currentSession.pauses && currentSession.pauses.length > 0) {
             currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
             currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
             saveTodaySessions(sessions);
         }
         
         state.totalPausedTime += pauseDuration;
-        
-        saveTodaySessions(sessions);
         
         state.timerPaused = false;
         state.currentPauseStart = null;
@@ -304,6 +308,7 @@ function pauseTimer(isAutoPause = false) {
         const sessions = getTodaySessions();
         const currentSession = sessions[sessions.length - 1];
         if (currentSession) {
+            if (!currentSession.pauses) currentSession.pauses = [];
             currentSession.pauses.push({
                 start: state.currentPauseStart,
                 isAuto: isAutoPause
@@ -338,7 +343,7 @@ function stopTimer() {
         if (state.timerPaused) {
             const sessions = getTodaySessions();
             const currentSession = sessions[sessions.length - 1];
-            if (currentSession && currentSession.pauses.length > 0) {
+            if (currentSession && currentSession.pauses && currentSession.pauses.length > 0) {
                 const pauseDuration = Date.now() - state.currentPauseStart;
                 currentSession.pauses[currentSession.pauses.length - 1].end = Date.now();
                 currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
@@ -1088,7 +1093,7 @@ function handleActivityStatus(status, windowTitle) {
     updateActivityIndicator(status, windowTitle);
     
     // Если агент говорит distracted/idle и таймер идёт — ставим авто-паузу
-    if (status !== 'working' && state.timerRunning && !state.timerPaused) {
+    if (status !== 'working' && state.timerRunning && !state.timerPaused && Date.now() >= resumeGraceUntil) {
         console.log(`Agent reports ${status} — auto-pausing`);
         pauseTimer(true);
         
@@ -1109,8 +1114,7 @@ function handleActivityStatus(status, windowTitle) {
 function handleForcePause(reason) {
     console.log(`Force pause received: ${reason}`);
     
-    if (state.timerRunning && !state.timerPaused) {
-        // Вызываем паузу с флагом авто-паузы
+    if (state.timerRunning && !state.timerPaused && Date.now() >= resumeGraceUntil) {
         pauseTimer(true);
         
         // Показываем уведомление
