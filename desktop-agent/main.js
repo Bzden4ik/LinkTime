@@ -193,6 +193,20 @@ async function syncSessionKeyFromWeb() {
                 settingsWindow.webContents.send('config-data', config);
             }
         }
+
+        // Синхронизируем списки приложений из веб-страницы
+        const webWhiteList = await mainWindow.webContents.executeJavaScript(
+            "localStorage.getItem('whiteList')"
+        );
+        const webBlackList = await mainWindow.webContents.executeJavaScript(
+            "localStorage.getItem('blackList')"
+        );
+        if (webWhiteList) {
+            config.whiteList = JSON.parse(webWhiteList);
+        }
+        if (webBlackList) {
+            config.blackList = JSON.parse(webBlackList);
+        }
     } catch (error) {
         // Страница ещё не загрузилась — игнорируем
     }

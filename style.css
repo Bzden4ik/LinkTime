@@ -547,7 +547,7 @@ main {
 }
 
 .task-time {
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     color: rgba(99, 102, 241, 0.9);
     font-weight: 500;
 }
@@ -558,7 +558,7 @@ main {
 }
 
 .task-item.completed .task-time {
-    color: rgba(99, 102, 241, 0.5);
+    color: rgb(7 219 74);
 }
 
 .task-item button {

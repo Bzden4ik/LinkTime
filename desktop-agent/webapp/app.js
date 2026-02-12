@@ -702,6 +702,15 @@ function loadSelectedDateData() {
 
 function openSettings() {
     document.getElementById('settingsModal').classList.add('active');
+    renderAppLists();
+    
+    // Enter для добавления в списки
+    document.getElementById('whiteListInput').onkeypress = (e) => {
+        if (e.key === 'Enter') addListItem('white');
+    };
+    document.getElementById('blackListInput').onkeypress = (e) => {
+        if (e.key === 'Enter') addListItem('black');
+    };
 }
 
 function closeSettings() {
@@ -1308,6 +1317,77 @@ function showToast(message, type = 'info') {
 // Экспорт функций для глобального доступа (для onclick в HTML)
 window.toggleTask = toggleTask;
 window.deleteTask = deleteTask;
+
+// === УПРАВЛЕНИЕ СПИСКАМИ ПРИЛОЖЕНИЙ (white/black) ===
+
+const DEFAULT_WHITE_LIST = [
+    'LinkTime', 'Visual Studio Code', 'Code.exe', 'Terminal', 'cmd.exe',
+    'PowerShell', 'Figma', 'Adobe Photoshop', 'Sublime Text', 'WebStorm',
+    'PyCharm', 'IntelliJ IDEA', 'Eclipse', 'Postman', 'Docker', 'Git', 'GitHub Desktop'
+];
+
+const DEFAULT_BLACK_LIST = [
+    'YouTube', 'Netflix', 'Facebook', 'Twitter', 'Instagram', 'TikTok',
+    'Reddit', 'Twitch', 'Steam', 'Discord - ', 'Telegram', 'WhatsApp'
+];
+
+function getAppList(type) {
+    const key = type === 'white' ? 'whiteList' : 'blackList';
+    const stored = localStorage.getItem(key);
+    if (stored) return JSON.parse(stored);
+    const defaults = type === 'white' ? DEFAULT_WHITE_LIST : DEFAULT_BLACK_LIST;
+    localStorage.setItem(key, JSON.stringify(defaults));
+    return defaults;
+}
+
+function saveAppList(type, list) {
+    const key = type === 'white' ? 'whiteList' : 'blackList';
+    localStorage.setItem(key, JSON.stringify(list));
+}
+
+function renderAppLists() {
+    renderListItems('white');
+    renderListItems('black');
+}
+
+function renderListItems(type) {
+    const container = document.getElementById(type + 'ListItems');
+    if (!container) return;
+    const items = getAppList(type);
+    container.innerHTML = items.map((item, i) => `
+        <span class="list-tag ${type}">
+            ${item}
+            <button class="remove-tag" onclick="removeListItem('${type}', ${i})">×</button>
+        </span>
+    `).join('');
+}
+
+function addListItem(type) {
+    const input = document.getElementById(type + 'ListInput');
+    const value = input.value.trim();
+    if (!value) return;
+    const list = getAppList(type);
+    if (list.includes(value)) {
+        showToast('Уже есть в списке', 'error');
+        return;
+    }
+    list.push(value);
+    saveAppList(type, list);
+    renderListItems(type);
+    input.value = '';
+    syncData();
+}
+
+function removeListItem(type, index) {
+    const list = getAppList(type);
+    list.splice(index, 1);
+    saveAppList(type, list);
+    renderListItems(type);
+    syncData();
+}
+
+window.addListItem = addListItem;
+window.removeListItem = removeListItem;
 
 // === MOBILE TAB NAVIGATION ===
 (function initMobileNav() {

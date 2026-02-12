@@ -95,6 +95,30 @@
                     <input type="text" id="keyInput" placeholder="Введите ключ доступа">
                     <button class="btn" id="connectKey">Подключиться</button>
                 </div>
+
+                <div class="setting-group">
+                    <h3>🟢 Рабочие приложения</h3>
+                    <p class="setting-hint">Приложения, в которых вы работаете</p>
+                    <div class="list-editor" id="whiteListEditor">
+                        <div class="list-items" id="whiteListItems"></div>
+                        <div class="list-add">
+                            <input type="text" id="whiteListInput" placeholder="Название приложения...">
+                            <button class="btn btn-add" onclick="addListItem('white')">+</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <h3>🔴 Отвлекающие приложения</h3>
+                    <p class="setting-hint">Приложения, которые отвлекают от работы</p>
+                    <div class="list-editor" id="blackListEditor">
+                        <div class="list-items" id="blackListItems"></div>
+                        <div class="list-add">
+                            <input type="text" id="blackListInput" placeholder="Название приложения...">
+                            <button class="btn btn-add" onclick="addListItem('black')">+</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

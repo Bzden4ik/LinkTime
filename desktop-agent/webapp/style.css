@@ -547,7 +547,7 @@ main {
 }
 
 .task-time {
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     color: rgba(99, 102, 241, 0.9);
     font-weight: 500;
 }
@@ -558,7 +558,7 @@ main {
 }
 
 .task-item.completed .task-time {
-    color: rgba(99, 102, 241, 0.5);
+    color: rgb(7 219 74);
 }
 
 .task-item button {
@@ -710,7 +710,7 @@ main {
 }
 
 .modal-content {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(28 28 28 / 98%);
     backdrop-filter: blur(30px);
     -webkit-backdrop-filter: blur(30px);
     border-radius: 30px;
@@ -1361,6 +1361,102 @@ main {
     }
 }
 
+
+/* === LIST EDITOR (white/black lists) === */
+
+.setting-hint {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 10px;
+}
+
+.list-editor {
+    background: rgb(0 0 0 / 46%);
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.list-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.list-items:empty {
+    margin-bottom: 0;
+}
+
+.list-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    padding: 5px 10px 5px 14px;
+    font-size: 0.85rem;
+    color: white;
+}
+
+.list-tag.white {
+    border-color: rgba(16, 185, 129, 0.4);
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.list-tag.black {
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.list-tag .remove-tag {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 0;
+    line-height: 1;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.list-tag .remove-tag:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+}
+
+.list-add {
+    display: flex;
+    gap: 8px;
+}
+
+.list-add input {
+    flex: 1;
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: white;
+    font-size: 0.9rem;
+    outline: none;
+}
+
+.list-add input:focus {
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+.list-add .btn {
+    padding: 8px 16px;
+    font-size: 1.1rem;
+    min-width: 44px;
+}
 
 /* === ELECTRON PERFORMANCE OPTIMIZATIONS === */
 

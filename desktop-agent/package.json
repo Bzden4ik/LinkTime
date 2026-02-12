@@ -21,7 +21,13 @@
   },
   "build": {
     "appId": "com.linktime.agent",
-    "productName": "LinkTime Agent",
+    "productName": "LinkTime",
+    "files": [
+      "main.js",
+      "settings.html",
+      "webapp/**/*",
+      "icon.png"
+    ],
     "win": {
       "target": ["nsis"],
       "icon": "icon.ico"
