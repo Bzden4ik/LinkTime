@@ -483,6 +483,7 @@ function stopTimer() {
         document.getElementById('stopBtn').disabled = true;
         
         updateSelectedDateStats();
+        renderCalendar();
         showToast('Сессия завершена!', 'success');
         
         // Синхронизируем остановку таймера
