@@ -24,6 +24,7 @@
     "productName": "LinkTime",
     "files": [
       "main.js",
+      "preload.js",
       "settings.html",
       "webapp/**/*",
       "icon.png"

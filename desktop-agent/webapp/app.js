@@ -111,11 +111,11 @@ function setupEventListeners() {
     }
     
     // IPC обработчики для Electron
-    if (window.__electronApp && typeof require !== 'undefined') {
-        const { ipcRenderer } = require('electron');
+    if (window.__electronApp && window.electronAPI) {
+        console.log('[Update] Setting up IPC handlers for updates...');
         
         // Получение информации об обновлении
-        ipcRenderer.on('update-info', (event, info) => {
+        window.electronAPI.onUpdateInfo((event, info) => {
             console.log('[Update] Info received:', info);
             if (info.hasUpdate) {
                 updateInfo = info;
@@ -127,15 +127,22 @@ function setupEventListeners() {
         });
         
         // Уведомление о доступном обновлении при запуске
-        ipcRenderer.on('update-available', (event, info) => {
+        window.electronAPI.onUpdateAvailable((event, info) => {
             console.log('[Update] New version available:', info);
             showUpdateNotification(info);
         });
         
         // Ошибка обновления
-        ipcRenderer.on('update-error', (event, error) => {
+        window.electronAPI.onUpdateError((event, error) => {
             console.error('[Update] Error:', error);
             showToast(error.message, 'error');
+        });
+        
+        console.log('[Update] IPC handlers registered');
+    } else {
+        console.log('[Update] Not in Electron, skipping IPC setup', {
+            __electronApp: window.__electronApp,
+            electronAPI: window.electronAPI
         });
     }
 }
@@ -1513,37 +1520,54 @@ function saveAutoUpdateSetting(event) {
 }
 
 function showUpdateNotification(info) {
+    console.log('[Update] showUpdateNotification called with:', info);
     updateInfo = info;
     const notification = document.getElementById('updateNotification');
     const versionText = document.getElementById('updateVersionText');
     
+    console.log('[Update] Notification element:', notification);
+    console.log('[Update] Version text element:', versionText);
+    
     if (notification && versionText) {
         versionText.textContent = `LinkTime v${info.latestVersion}`;
         notification.style.display = 'block';
+        console.log('[Update] Notification displayed');
         
         // Автоматически скрыть через 15 секунд
         setTimeout(() => {
             if (notification.style.display === 'block') {
                 notification.style.display = 'none';
+                console.log('[Update] Notification auto-hidden after 15s');
             }
         }, 15000);
+    } else {
+        console.error('[Update] Notification elements not found!');
     }
 }
 
 function checkForUpdates() {
-    if (window.__electronApp && typeof require !== 'undefined') {
-        const { ipcRenderer } = require('electron');
-        ipcRenderer.send('check-updates');
+    console.log('[Update] checkForUpdates called');
+    if (window.__electronApp && window.electronAPI) {
+        console.log('[Update] Sending check-updates request...');
+        window.electronAPI.checkUpdates();
+    } else {
+        console.log('[Update] electronAPI not available');
     }
 }
 
 function installUpdate() {
-    if (!updateInfo || !updateInfo.downloadUrl) return;
+    console.log('[Update] installUpdate called', updateInfo);
+    if (!updateInfo || !updateInfo.downloadUrl) {
+        console.error('[Update] No update info or download URL');
+        return;
+    }
     
-    if (window.__electronApp && typeof require !== 'undefined') {
-        const { ipcRenderer } = require('electron');
+    if (window.__electronApp && window.electronAPI) {
+        console.log('[Update] Installing update from:', updateInfo.downloadUrl);
         showToast('Загрузка обновления...', 'info');
-        ipcRenderer.send('install-update', updateInfo.downloadUrl);
+        window.electronAPI.installUpdate(updateInfo.downloadUrl);
+    } else {
+        console.error('[Update] electronAPI not available');
     }
 }
 

@@ -133,6 +133,9 @@ function getAutostartStatus() {
 
 // === СИСТЕМА ОБНОВЛЕНИЙ ===
 async function checkForUpdates() {
+    console.log('[Update] Checking for updates...');
+    console.log('[Update] Current version:', CURRENT_VERSION);
+    
     return new Promise((resolve) => {
         const options = {
             hostname: 'api.github.com',
@@ -149,10 +152,24 @@ async function checkForUpdates() {
             res.on('end', () => {
                 try {
                     const release = JSON.parse(data);
-                    const latestVersion = release.tag_name.replace(/^v/, '');
+                    console.log('[Update] GitHub response:', {
+                        tag_name: release.tag_name,
+                        name: release.name,
+                        html_url: release.html_url
+                    });
+                    
+                    // Парсим версию из названия релиза "Version 1.1.0 (Beta)"
+                    const versionMatch = release.name.match(/(\d+\.\d+\.\d+)/);
+                    const latestVersion = versionMatch ? versionMatch[1] : release.tag_name.replace(/^v/, '');
+                    
+                    console.log('[Update] Latest version:', latestVersion);
+                    console.log('[Update] Has update:', latestVersion !== CURRENT_VERSION);
+                    
                     const downloadUrl = release.assets.find(asset => 
                         asset.name.endsWith('.exe')
                     )?.browser_download_url;
+                    
+                    console.log('[Update] Download URL:', downloadUrl);
 
                     resolve({
                         hasUpdate: latestVersion !== CURRENT_VERSION,
@@ -162,12 +179,12 @@ async function checkForUpdates() {
                         releaseUrl: release.html_url
                     });
                 } catch (error) {
-                    console.error('Error parsing GitHub release:', error);
+                    console.error('[Update] Error parsing GitHub release:', error);
                     resolve({ hasUpdate: false });
                 }
             });
         }).on('error', (error) => {
-            console.error('Error checking for updates:', error);
+            console.error('[Update] Error checking for updates:', error);
             resolve({ hasUpdate: false });
         });
     });
@@ -209,7 +226,8 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            backgroundThrottling: false
+            backgroundThrottling: false,
+            preload: path.join(__dirname, 'preload.js')
         },
         icon: path.join(__dirname, 'icon.png'),
         skipTaskbar: false,
@@ -217,11 +235,6 @@ function createWindow() {
     });
 
     mainWindow.loadFile(path.join(__dirname, 'webapp', 'index.html'));
-
-    // Помечаем что это Electron — web-код не будет управлять авто-паузой
-    mainWindow.webContents.on('did-finish-load', () => {
-        mainWindow.webContents.executeJavaScript('window.__electronApp = true;').catch(() => {});
-    });
 
     mainWindow.on('close', (event) => {
         if (!app.isQuitting) {
@@ -769,13 +782,25 @@ app.whenReady().then(() => {
         ).catch(() => {});
         
         // Проверка обновлений при запуске
-        if (config.autoUpdate && app.isPackaged) {
+        console.log('[Update] AutoUpdate enabled:', config.autoUpdate);
+        console.log('[Update] App packaged:', app.isPackaged);
+        
+        if (config.autoUpdate) {
+            console.log('[Update] Starting update check in 3 seconds...');
             setTimeout(async () => {
+                console.log('[Update] Performing update check...');
                 const updateInfo = await checkForUpdates();
+                console.log('[Update] Check result:', updateInfo);
+                
                 if (updateInfo.hasUpdate && mainWindow && !mainWindow.isDestroyed()) {
+                    console.log('[Update] Sending update notification to renderer...');
                     mainWindow.webContents.send('update-available', updateInfo);
+                } else {
+                    console.log('[Update] No update available or window destroyed');
                 }
             }, 3000);
+        } else {
+            console.log('[Update] AutoUpdate disabled, skipping check');
         }
     });
     
