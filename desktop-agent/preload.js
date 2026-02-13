@@ -1,10 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Устанавливаем флаг что это Electron
-window.__electronApp = true;
+console.log('[Preload] Setting up Electron bridge...');
 
-// Expose ipcRenderer для renderer process
+// Expose Electron API
 contextBridge.exposeInMainWorld('electronAPI', {
+    // Флаг что это Electron
+    isElectron: true,
+    
     // Обновления
     onUpdateInfo: (callback) => ipcRenderer.on('update-info', callback),
     onUpdateAvailable: (callback) => ipcRenderer.on('update-available', callback),
@@ -16,4 +18,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeListener: (channel, callback) => ipcRenderer.removeListener(channel, callback)
 });
 
-console.log('[Preload] Electron API exposed, __electronApp flag set');
+console.log('[Preload] Electron API exposed');
+

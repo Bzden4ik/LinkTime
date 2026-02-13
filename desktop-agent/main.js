@@ -132,6 +132,23 @@ function getAutostartStatus() {
 }
 
 // === СИСТЕМА ОБНОВЛЕНИЙ ===
+
+// Сравнение семантических версий (x.y.z)
+function compareVersions(v1, v2) {
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+    
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+        const num1 = parts1[i] || 0;
+        const num2 = parts2[i] || 0;
+        
+        if (num1 > num2) return 1;   // v1 новее
+        if (num1 < num2) return -1;  // v2 новее
+    }
+    
+    return 0; // версии равны
+}
+
 async function checkForUpdates() {
     console.log('[Update] Checking for updates...');
     console.log('[Update] Current version:', CURRENT_VERSION);
@@ -163,7 +180,16 @@ async function checkForUpdates() {
                     const latestVersion = versionMatch ? versionMatch[1] : release.tag_name.replace(/^v/, '');
                     
                     console.log('[Update] Latest version:', latestVersion);
-                    console.log('[Update] Has update:', latestVersion !== CURRENT_VERSION);
+                    console.log('[Update] Current version:', CURRENT_VERSION);
+                    
+                    // Семантическое сравнение: latestVersion > currentVersion?
+                    const hasUpdate = compareVersions(latestVersion, CURRENT_VERSION) > 0;
+                    
+                    console.log('[Update] Version comparison result:', {
+                        latest: latestVersion,
+                        current: CURRENT_VERSION,
+                        hasUpdate: hasUpdate
+                    });
                     
                     const downloadUrl = release.assets.find(asset => 
                         asset.name.endsWith('.exe')
@@ -172,7 +198,7 @@ async function checkForUpdates() {
                     console.log('[Update] Download URL:', downloadUrl);
 
                     resolve({
-                        hasUpdate: latestVersion !== CURRENT_VERSION,
+                        hasUpdate: hasUpdate,
                         latestVersion,
                         currentVersion: CURRENT_VERSION,
                         downloadUrl,
@@ -191,28 +217,89 @@ async function checkForUpdates() {
 }
 
 async function downloadAndInstallUpdate(downloadUrl) {
+    console.log('[Update] Starting download from:', downloadUrl);
     const https = require('https');
     const fs = require('fs');
     const path = require('path');
-    const { shell } = require('electron');
 
     const tempPath = path.join(app.getPath('temp'), 'LinkTime-Update.exe');
-    const file = fs.createWriteStream(tempPath);
+    console.log('[Update] Temp path:', tempPath);
+    
+    // Удаляем старый файл если существует
+    if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+        console.log('[Update] Removed old temp file');
+    }
 
     return new Promise((resolve, reject) => {
-        https.get(downloadUrl, (response) => {
-            response.pipe(file);
-            file.on('finish', () => {
-                file.close();
-                console.log('Update downloaded, launching installer...');
-                shell.openPath(tempPath);
-                app.quit();
-                resolve();
+        const downloadFile = (url, redirectCount = 0) => {
+            if (redirectCount > 5) {
+                reject(new Error('Too many redirects'));
+                return;
+            }
+
+            console.log('[Update] Making request to:', url);
+            
+            https.get(url, {
+                headers: {
+                    'User-Agent': 'LinkTime-Desktop-Agent'
+                }
+            }, (response) => {
+                console.log('[Update] Response status:', response.statusCode);
+                console.log('[Update] Response headers:', response.headers);
+                
+                // Обработка редиректов
+                if (response.statusCode === 301 || response.statusCode === 302) {
+                    console.log('[Update] Following redirect to:', response.headers.location);
+                    downloadFile(response.headers.location, redirectCount + 1);
+                    return;
+                }
+                
+                if (response.statusCode !== 200) {
+                    reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
+                    return;
+                }
+                
+                const file = fs.createWriteStream(tempPath);
+                let downloaded = 0;
+                const total = parseInt(response.headers['content-length'], 10);
+                
+                response.on('data', (chunk) => {
+                    downloaded += chunk.length;
+                    const percent = ((downloaded / total) * 100).toFixed(1);
+                    console.log(`[Update] Downloaded: ${percent}% (${downloaded}/${total} bytes)`);
+                });
+                
+                response.pipe(file);
+                
+                file.on('finish', () => {
+                    file.close();
+                    console.log('[Update] Download completed, file size:', fs.statSync(tempPath).size, 'bytes');
+                    console.log('[Update] Launching installer...');
+                    
+                    // Запускаем установщик
+                    shell.openPath(tempPath).then(() => {
+                        console.log('[Update] Installer launched, quitting app...');
+                        setTimeout(() => app.quit(), 1000);
+                        resolve();
+                    }).catch((err) => {
+                        console.error('[Update] Failed to launch installer:', err);
+                        reject(err);
+                    });
+                });
+                
+                file.on('error', (err) => {
+                    console.error('[Update] File write error:', err);
+                    fs.unlink(tempPath, () => {});
+                    reject(err);
+                });
+            }).on('error', (err) => {
+                console.error('[Update] Download error:', err);
+                reject(err);
             });
-        }).on('error', (err) => {
-            fs.unlink(tempPath, () => {});
-            reject(err);
-        });
+        };
+        
+        downloadFile(downloadUrl);
     });
 }
 
@@ -233,6 +320,14 @@ function createWindow() {
         skipTaskbar: false,
         title: 'LinkTime'
     });
+
+    // Убираем меню в продакшн версии
+    if (app.isPackaged) {
+        mainWindow.setMenu(null);
+        console.log('[App] Menu hidden (production mode)');
+    } else {
+        console.log('[App] Menu visible (development mode)');
+    }
 
     mainWindow.loadFile(path.join(__dirname, 'webapp', 'index.html'));
 
@@ -273,6 +368,11 @@ function createSettingsWindow() {
         parent: mainWindow || undefined,
         modal: false
     });
+
+    // Убираем меню в продакшн версии
+    if (app.isPackaged) {
+        settingsWindow.setMenu(null);
+    }
 
     settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
 
@@ -748,11 +848,16 @@ ipcMain.on('check-updates', async (event) => {
 });
 
 ipcMain.on('install-update', async (event, downloadUrl) => {
+    console.log('[Update] Received install-update request for:', downloadUrl);
     try {
         await downloadAndInstallUpdate(downloadUrl);
+        // Приложение закроется автоматически после успешного запуска установщика
     } catch (error) {
-        console.error('Failed to install update:', error);
-        event.reply('update-error', { message: 'Не удалось установить обновление' });
+        console.error('[Update] Failed to install update:', error);
+        event.reply('update-error', { 
+            message: 'Не удалось установить обновление',
+            details: error.message || String(error)
+        });
     }
 });
 

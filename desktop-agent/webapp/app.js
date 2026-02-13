@@ -111,7 +111,7 @@ function setupEventListeners() {
     }
     
     // IPC обработчики для Electron
-    if (window.__electronApp && window.electronAPI) {
+    if (window.electronAPI?.isElectron) {
         console.log('[Update] Setting up IPC handlers for updates...');
         
         // Получение информации об обновлении
@@ -135,13 +135,15 @@ function setupEventListeners() {
         // Ошибка обновления
         window.electronAPI.onUpdateError((event, error) => {
             console.error('[Update] Error:', error);
-            showToast(error.message, 'error');
+            const message = error.details 
+                ? `${error.message}: ${error.details}` 
+                : error.message;
+            showToast(message, 'error');
         });
         
         console.log('[Update] IPC handlers registered');
     } else {
         console.log('[Update] Not in Electron, skipping IPC setup', {
-            __electronApp: window.__electronApp,
             electronAPI: window.electronAPI
         });
     }
@@ -179,7 +181,7 @@ function setupVisibilityHandlers() {
 // Пользователь ушёл с вкладки — запускаем обратный отсчёт авто-паузы
 function onUserLeft(reason) {
     // В Electron idle-паузой управляет main.js через powerMonitor
-    if (window.__electronApp) return;
+    if (window.electronAPI?.isElectron) return;
     if (!state.timerRunning || state.timerPaused) return;
     if (Date.now() < resumeGraceUntil) {
         console.log('Grace period active — skip auto-pause');
@@ -214,7 +216,7 @@ function onUserLeft(reason) {
 // Пользователь вернулся на вкладку
 function onUserReturned() {
     // В Electron idle-паузой управляет main.js через powerMonitor
-    if (window.__electronApp) return;
+    if (window.electronAPI?.isElectron) return;
 
     // Отменяем обратный отсчёт авто-паузы
     if (autoPauseTimeout) {
@@ -786,7 +788,7 @@ function openSettings() {
     renderAppLists();
     
     // Показываем секцию автозапуска только в Electron
-    if (window.__electronApp) {
+    if (window.electronAPI?.isElectron) {
         document.getElementById('autostartSection').style.display = 'block';
         loadAutostartSetting();
         
@@ -1547,7 +1549,7 @@ function showUpdateNotification(info) {
 
 function checkForUpdates() {
     console.log('[Update] checkForUpdates called');
-    if (window.__electronApp && window.electronAPI) {
+    if (window.electronAPI?.isElectron) {
         console.log('[Update] Sending check-updates request...');
         window.electronAPI.checkUpdates();
     } else {
@@ -1562,7 +1564,7 @@ function installUpdate() {
         return;
     }
     
-    if (window.__electronApp && window.electronAPI) {
+    if (window.electronAPI?.isElectron) {
         console.log('[Update] Installing update from:', updateInfo.downloadUrl);
         showToast('Загрузка обновления...', 'info');
         window.electronAPI.installUpdate(updateInfo.downloadUrl);
