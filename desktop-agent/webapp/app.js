@@ -8,7 +8,8 @@ let state = {
     sessionKey: null,
     currentDate: new Date().toISOString().split('T')[0],
     selectedDate: new Date().toISOString().split('T')[0], // Добавлена выбранная дата
-    totalPausedTime: 0
+    totalPausedTime: 0,
+    lastTaskCompletionTime: 0 // Последняя точка фиксации задачи для интервального учёта
 };
 
 let timerInterval = null;
@@ -288,6 +289,7 @@ function startTimer() {
         state.timerRunning = true;
         state.currentSessionStart = Date.now();
         state.totalPausedTime = 0;
+        state.lastTaskCompletionTime = 0; // Сбрасываем счётчик интервального времени
         manualPause = false;
         autoPauseActive = false;
         
@@ -460,6 +462,7 @@ function stopTimer() {
         state.currentPauseStart = null;
         state.elapsedTime = 0;
         state.totalPausedTime = 0;
+        state.lastTaskCompletionTime = 0; // Сбрасываем счётчик интервального времени
         autoPauseActive = false;
         manualPause = false;
         if (autoPauseTimeout) { clearTimeout(autoPauseTimeout); autoPauseTimeout = null; }
@@ -534,9 +537,29 @@ function toggleTask(taskId) {
     if (task) {
         task.completed = !task.completed;
         if (task.completed) {
-            // Записываем текущее рабочее время при выполнении
+            // Фиксируем интервальное время с последней выполненной задачи
             task.completedAt = Date.now();
-            task.timeSpent = getTotalWorkTimeForDate(task.date);
+            
+            // Если таймер запущен - фиксируем разницу времени
+            if (state.timerRunning && state.currentSessionStart) {
+                // Текущее время таймера (без пауз)
+                let currentElapsed = Date.now() - state.currentSessionStart - state.totalPausedTime;
+                if (state.timerPaused && state.currentPauseStart) {
+                    currentElapsed -= (Date.now() - state.currentPauseStart);
+                }
+                
+                // Интервальное время = текущее время - последняя точка фиксации
+                task.timeSpent = Math.max(0, currentElapsed - state.lastTaskCompletionTime);
+                
+                // Обновляем точку фиксации для следующей задачи
+                state.lastTaskCompletionTime = currentElapsed;
+                
+                console.log(`[Task] Completed: ${task.text}, Time: ${formatTime(task.timeSpent)}, Next checkpoint: ${formatTime(state.lastTaskCompletionTime)}`);
+            } else {
+                // Таймер не запущен - время не фиксируется
+                task.timeSpent = 0;
+            }
+            
             showToast('Задача выполнена! 🎉', 'success');
         } else {
             // Снимаем отметку — убираем время
