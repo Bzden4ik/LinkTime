@@ -8,64 +8,90 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #1a1a2e;
             padding: 20px;
-            color: #333;
+            color: #eee;
+            height: 100vh;
+            overflow-y: auto;
         }
-        .container {
-            max-width: 500px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-        }
-        h1 { font-size: 22px; margin-bottom: 6px; color: #667eea; }
-        .subtitle { color: #999; font-size: 13px; margin-bottom: 20px; }
+        .container { max-width: 500px; margin: 0 auto; }
+        h1 { font-size: 22px; margin-bottom: 4px; color: #a78bfa; }
+        .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+
         .status-indicator {
-            padding: 12px; background: #f5f5f5; border-radius: 10px;
+            padding: 12px 16px; background: #16213e; border-radius: 10px;
             margin-bottom: 20px; display: flex; align-items: center; gap: 10px;
+            border: 1px solid #2a2a4a;
         }
-        .status-dot {
-            width: 12px; height: 12px; border-radius: 50%; background: #ccc;
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; background: #555; flex-shrink: 0; }
+        .status-dot.working { background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,0.6); }
+        .status-dot.distracted { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.6); }
+        .status-dot.idle { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.6); }
+        .status-text { flex: 1; font-size: 13px; color: #ccc; }
+
+        .section { background: #16213e; border-radius: 12px; padding: 18px; margin-bottom: 16px; border: 1px solid #2a2a4a; }
+        .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .section-title { font-size: 15px; font-weight: 700; color: #fff; }
+        .section-desc { font-size: 12px; color: #888; margin-bottom: 12px; }
+
+        .checkbox-row { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+        .checkbox-row input[type=checkbox] {
+            width: 18px; height: 18px; margin-top: 1px; cursor: pointer;
+            accent-color: #a78bfa; flex-shrink: 0;
         }
-        .status-dot.working { background: #10b981; box-shadow: 0 0 10px rgba(16,185,129,0.5); }
-        .status-dot.distracted { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
-        .status-dot.idle { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.5); }
-        .status-text { flex: 1; font-size: 13px; }
-        .form-group { margin-bottom: 16px; }
-        label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
-        input {
-            width: 100%; padding: 10px; border: 2px solid #e5e5e5;
-            border-radius: 8px; font-size: 13px; transition: border 0.3s;
+        .checkbox-label { font-size: 14px; color: #ddd; }
+        .checkbox-hint { font-size: 11px; color: #666; margin-top: 3px; }
+
+        .form-group { margin-bottom: 14px; }
+        label.field-label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+        input[type=text] {
+            width: 100%; padding: 9px 12px; border: 1px solid #2a2a4a;
+            border-radius: 8px; font-size: 13px; background: #0f0f1a; color: #eee;
+            transition: border 0.2s;
         }
-        input:focus { outline: none; border-color: #667eea; }
-        textarea {
-            width: 100%; padding: 10px; border: 2px solid #e5e5e5;
-            border-radius: 8px; font-size: 12px; font-family: monospace;
-            resize: vertical; min-height: 80px; transition: border 0.3s;
+        input[type=text]:focus { outline: none; border-color: #a78bfa; }
+
+        .tags-container {
+            min-height: 48px; padding: 8px; background: #0f0f1a; border: 1px solid #2a2a4a;
+            border-radius: 8px; display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;
         }
-        textarea:focus { outline: none; border-color: #667eea; }
-        .hint { font-size: 11px; color: #999; margin-top: 4px; }
-        button {
-            width: 100%; padding: 12px;
+        .tag {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500;
+        }
+        .tag.white { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+        .tag.black { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+        .tag-remove { cursor: pointer; opacity: 0.7; font-size: 14px; line-height: 1; }
+        .tag-remove:hover { opacity: 1; }
+        .tag-input-row { display: flex; gap: 8px; }
+        .tag-input-row input { flex: 1; }
+        .add-btn {
+            padding: 9px 16px; background: #10b981; color: white; border: none;
+            border-radius: 8px; font-size: 20px; cursor: pointer; font-weight: bold;
+            transition: background 0.2s; flex-shrink: 0; width: 48px;
+        }
+        .add-btn:hover { background: #059669; }
+        .add-btn.red { background: #ef4444; }
+        .add-btn.red:hover { background: #dc2626; }
+
+        .save-btn {
+            width: 100%; padding: 13px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white; border: none; border-radius: 8px;
-            font-size: 15px; font-weight: 600; cursor: pointer; transition: transform 0.2s;
+            color: white; border: none; border-radius: 10px;
+            font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.2s;
+            margin-top: 4px;
         }
-        button:hover { transform: translateY(-2px); }
-        button:active { transform: translateY(0); }
-        .success-message {
-            background: #10b981; color: white; padding: 10px;
-            border-radius: 8px; margin-top: 12px; display: none; font-size: 13px;
-        }
-        .success-message.show { display: block; }
-        .connection-status {
-            display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px;
-        }
+        .save-btn:hover { opacity: 0.9; }
+
+        .connection-status { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; color: #888; }
         .connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
         .connection-dot.connected { background: #10b981; }
-        .section-title { font-size: 15px; font-weight: 700; color: #667eea; margin: 20px 0 10px; }
+
+        .success-message {
+            background: #10b981; color: white; padding: 10px 14px;
+            border-radius: 8px; margin-top: 12px; display: none; font-size: 13px; text-align: center;
+        }
+        .success-message.show { display: block; }
     </style>
 </head>
 <body>
@@ -73,104 +99,159 @@
         <h1>LinkTime Agent</h1>
         <p class="subtitle">Настройки мониторинга активности</p>
 
-        <div class="status-indicator" id="statusIndicator">
+        <div class="status-indicator">
             <div class="status-dot" id="statusDot"></div>
             <div class="status-text" id="statusText">Ожидание подключения...</div>
         </div>
 
-        <form id="configForm">
+        <!-- Ключ сессии -->
+        <div class="section">
             <div class="form-group">
-                <label for="sessionKey">Ключ сессии</label>
+                <label class="field-label">Ключ сессии</label>
                 <input type="text" id="sessionKey" placeholder="session_xxxxx_xxxxx">
-                <div class="hint">Автоматически синхронизируется из веб-страницы LinkTime</div>
+                <div style="font-size:11px;color:#666;margin-top:4px;">Автоматически синхронизируется из веб-страницы LinkTime</div>
             </div>
+        </div>
 
-            <div class="form-group">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="autostart" style="width: auto; cursor: pointer;">
-                    <span>Запускать вместе с Windows</span>
-                </label>
-                <div class="hint">Приложение будет автоматически запускаться при входе в систему</div>
+        <!-- Автозапуск -->
+        <div class="section">
+            <div class="section-header">
+                <span>🚀</span>
+                <span class="section-title">Автозапуск приложения</span>
             </div>
+            <label class="checkbox-row">
+                <input type="checkbox" id="autostart">
+                <div>
+                    <div class="checkbox-label">Запускать вместе с Windows</div>
+                    <div class="checkbox-hint">Приложение будет автоматически запускаться при входе в систему</div>
+                </div>
+            </label>
+        </div>
 
-            <div class="section-title">Рабочие приложения (белый список)</div>
-            <div class="form-group">
-                <textarea id="whiteList" rows="5"></textarea>
-                <div class="hint">По одному на строку. Если заголовок окна содержит текст — считается работой.</div>
+        <!-- Автообновления -->
+        <div class="section">
+            <div class="section-header">
+                <span>🔄</span>
+                <span class="section-title">Автоматические обновления</span>
             </div>
+            <label class="checkbox-row">
+                <input type="checkbox" id="autoUpdate">
+                <div>
+                    <div class="checkbox-label">Проверять обновления автоматически</div>
+                    <div class="checkbox-hint">Приложение будет проверять наличие новых версий при запуске</div>
+                </div>
+            </label>
+        </div>
 
-            <div class="section-title">Отвлекающие приложения (чёрный список)</div>
-            <div class="form-group">
-                <textarea id="blackList" rows="5"></textarea>
-                <div class="hint">По одному на строку. Если заголовок окна содержит текст — считается отвлечением.</div>
+        <!-- Рабочие приложения -->
+        <div class="section">
+            <div class="section-header">
+                <span style="width:12px;height:12px;background:#10b981;border-radius:50%;display:inline-block;box-shadow:0 0 8px rgba(16,185,129,0.6);"></span>
+                <span class="section-title">Рабочие приложения</span>
             </div>
+            <div class="section-desc">Приложения, в которых вы работаете</div>
+            <div class="tags-container" id="whiteTags"></div>
+            <div class="tag-input-row">
+                <input type="text" id="whiteInput" placeholder="Название приложения...">
+                <button class="add-btn" onclick="addTag('white')">+</button>
+            </div>
+        </div>
 
-            <button type="submit">Сохранить настройки</button>
-        </form>
+        <!-- Отвлекающие приложения -->
+        <div class="section">
+            <div class="section-header">
+                <span style="width:12px;height:12px;background:#ef4444;border-radius:50%;display:inline-block;box-shadow:0 0 8px rgba(239,68,68,0.6);"></span>
+                <span class="section-title">Отвлекающие приложения</span>
+            </div>
+            <div class="section-desc">Приложения, которые отвлекают от работы</div>
+            <div class="tags-container" id="blackTags"></div>
+            <div class="tag-input-row">
+                <input type="text" id="blackInput" placeholder="Название приложения...">
+                <button class="add-btn red" onclick="addTag('black')">+</button>
+            </div>
+        </div>
+
+        <button class="save-btn" onclick="saveConfig()">Сохранить настройки</button>
 
         <div class="connection-status">
             <div class="connection-dot" id="connectionDot"></div>
             <span id="connectionText">Не подключено</span>
         </div>
-
-        <div class="success-message" id="successMessage">
-            ✓ Настройки сохранены!
-        </div>
+        <div class="success-message" id="successMessage">✓ Настройки сохранены!</div>
     </div>
 
     <script>
         const { ipcRenderer } = require('electron');
+
+        let whiteList = [];
+        let blackList = [];
+
+        function renderTags(list, containerId, type) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = list.map((item, i) => `
+                <span class="tag ${type}">
+                    ${item}
+                    <span class="tag-remove" onclick="removeTag('${type}', ${i})">×</span>
+                </span>
+            `).join('');
+        }
+
+        function addTag(type) {
+            const inputId = type === 'white' ? 'whiteInput' : 'blackInput';
+            const input = document.getElementById(inputId);
+            const val = input.value.trim();
+            if (!val) return;
+            if (type === 'white') { whiteList.push(val); renderTags(whiteList, 'whiteTags', 'white'); }
+            else { blackList.push(val); renderTags(blackList, 'blackTags', 'black'); }
+            input.value = '';
+        }
+
+        function removeTag(type, index) {
+            if (type === 'white') { whiteList.splice(index, 1); renderTags(whiteList, 'whiteTags', 'white'); }
+            else { blackList.splice(index, 1); renderTags(blackList, 'blackTags', 'black'); }
+        }
+
+        // Enter в полях ввода
+        document.getElementById('whiteInput').addEventListener('keypress', e => { if (e.key === 'Enter') addTag('white'); });
+        document.getElementById('blackInput').addEventListener('keypress', e => { if (e.key === 'Enter') addTag('black'); });
 
         ipcRenderer.send('get-config');
 
         ipcRenderer.on('config-data', (event, config) => {
             document.getElementById('sessionKey').value = config.sessionKey || '';
             document.getElementById('autostart').checked = config.autostart || false;
-            document.getElementById('whiteList').value = (config.whiteList || []).join('\n');
-            document.getElementById('blackList').value = (config.blackList || []).join('\n');
-
-            if (config.sessionKey) {
-                ipcRenderer.send('test-connection');
-            }
+            document.getElementById('autoUpdate').checked = config.autoUpdate !== false;
+            whiteList = config.whiteList || [];
+            blackList = config.blackList || [];
+            renderTags(whiteList, 'whiteTags', 'white');
+            renderTags(blackList, 'blackTags', 'black');
+            if (config.sessionKey) ipcRenderer.send('test-connection');
         });
 
         ipcRenderer.on('status-update', (event, data) => {
-            const statusDot = document.getElementById('statusDot');
-            const statusText = document.getElementById('statusText');
-            statusDot.className = `status-dot ${data.status}`;
-            let label = '';
-            switch (data.status) {
-                case 'working': label = '🟢 Работа'; break;
-                case 'distracted': label = '🟡 Отвлечение'; break;
-                case 'idle': label = '🔴 Неактивен'; break;
-            }
-            statusText.textContent = `${label}: ${data.windowTitle}`;
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            dot.className = `status-dot ${data.status}`;
+            const labels = { working: '🟢 Работа', distracted: '🟡 Отвлечение', idle: '🔴 Неактивен' };
+            text.textContent = `${labels[data.status] || ''}: ${data.windowTitle}`;
         });
 
         ipcRenderer.on('connection-status', (event, data) => {
             const dot = document.getElementById('connectionDot');
             const text = document.getElementById('connectionText');
-            if (data.connected) {
-                dot.classList.add('connected');
-                text.textContent = 'Подключено к серверу';
-            } else {
-                dot.classList.remove('connected');
-                text.textContent = 'Не подключено';
-            }
+            dot.classList.toggle('connected', data.connected);
+            text.textContent = data.connected ? 'Подключено к серверу' : 'Не подключено';
         });
 
-        document.getElementById('configForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-
-            const sessionKey = document.getElementById('sessionKey').value.trim();
-            const autostart = document.getElementById('autostart').checked;
-            const whiteList = document.getElementById('whiteList').value
-                .split('\n').map(s => s.trim()).filter(Boolean);
-            const blackList = document.getElementById('blackList').value
-                .split('\n').map(s => s.trim()).filter(Boolean);
-
-            ipcRenderer.send('save-config', { sessionKey, autostart, whiteList, blackList });
-        });
+        function saveConfig() {
+            ipcRenderer.send('save-config', {
+                sessionKey: document.getElementById('sessionKey').value.trim(),
+                autostart: document.getElementById('autostart').checked,
+                autoUpdate: document.getElementById('autoUpdate').checked,
+                whiteList,
+                blackList
+            });
+        }
 
         ipcRenderer.on('config-saved', () => {
             const msg = document.getElementById('successMessage');
