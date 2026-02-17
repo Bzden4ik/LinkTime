@@ -329,7 +329,7 @@ function createWindow() {
         console.log('[App] Menu visible (development mode)');
     }
 
-    mainWindow.loadFile(path.join(__dirname, 'webapp', 'index.html'));
+    mainWindow.loadURL('https://linktime.go-tit.ru');
 
     mainWindow.on('close', (event) => {
         if (!app.isQuitting) {

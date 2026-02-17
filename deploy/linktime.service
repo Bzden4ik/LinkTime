@@ -24,7 +24,7 @@ SyslogIdentifier=linktime
 # Security
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/linktime /var/www/linktime/data
+ReadWritePaths=/var/lib/linktime
 
 [Install]
 WantedBy=multi-user.target
