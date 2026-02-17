@@ -491,9 +491,13 @@ function toggleTask(taskId) {
     if (task) {
         task.completed = !task.completed;
         if (task.completed) {
-            // Записываем текущее рабочее время при выполнении
+            // Записываем только время потраченное на эту задачу (дельта от предыдущей)
             task.completedAt = Date.now();
-            task.timeSpent = getTotalWorkTimeForDate(task.date);
+            const totalNow = getTotalWorkTimeForDate(task.date);
+            const alreadyAttributed = tasks
+                .filter(t => t.completed && t.id !== taskId && t.date === task.date && t.timeSpent)
+                .reduce((sum, t) => sum + t.timeSpent, 0);
+            task.timeSpent = Math.max(0, totalNow - alreadyAttributed);
             showToast('Задача выполнена! 🎉', 'success');
         } else {
             // Снимаем отметку — убираем время
