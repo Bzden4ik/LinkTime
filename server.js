@@ -51,6 +51,20 @@ db.exec(`
         status TEXT DEFAULT 'pending',
         created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
     );
+
+    CREATE TABLE IF NOT EXISTS teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT DEFAULT 'Команда',
+        created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
+
+    CREATE TABLE IF NOT EXISTS team_members (
+        team_id INTEGER NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT DEFAULT 'member',
+        joined_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+        PRIMARY KEY (team_id, user_id)
+    );
 `);
 
 console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
@@ -100,6 +114,12 @@ const stmts = {
     updateInvitation: db.prepare('UPDATE invitations SET status = ? WHERE id = ? AND to_user_id = ?'),
     countPending: db.prepare('SELECT COUNT(*) as cnt FROM invitations WHERE to_user_id = ? AND status = ?'),
     checkInvitationExists: db.prepare('SELECT id FROM invitations WHERE from_user_id = ? AND to_user_id = ? AND status = ?'),
+    // Teams
+    createTeam: db.prepare('INSERT INTO teams (name) VALUES (?)'),
+    addTeamMember: db.prepare('INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)'),
+    getUserTeam: db.prepare('SELECT t.* FROM teams t JOIN team_members tm ON t.id = tm.team_id WHERE tm.user_id = ?'),
+    getTeamMembers: db.prepare('SELECT u.user_id, u.username, u.email, tm.role, tm.joined_at FROM team_members tm JOIN users u ON tm.user_id = u.user_id WHERE tm.team_id = ?'),
+    checkTeamMember: db.prepare('SELECT team_id FROM team_members WHERE user_id = ?'),
 };
 
 // === ХЕЛПЕРЫ ДЛЯ БД ===
@@ -292,13 +312,52 @@ app.get('/api/invitations/:sessionKey', (req, res) => {
 
 // === API: Ответить на приглашение ===
 app.post('/api/invite/:id/respond', (req, res) => {
-    const { sessionKey, action } = req.body; // action: 'accept' | 'decline'
+    const { sessionKey, action } = req.body;
     const user = stmts.getUserBySession.get(sessionKey);
     if (!user) return res.status(400).json({ error: 'Профиль не найден' });
+    
     const status = action === 'accept' ? 'accepted' : 'declined';
+    const invitation = db.prepare('SELECT * FROM invitations WHERE id = ? AND to_user_id = ?').get(req.params.id, user.user_id);
+    if (!invitation) return res.status(404).json({ error: 'Приглашение не найдено' });
+    
     stmts.updateInvitation.run(status, req.params.id, user.user_id);
+    
+    if (action === 'accept') {
+        // Проверяем есть ли команда у отправителя
+        const fromUser = stmts.getUserByUserId.get(invitation.from_user_id);
+        let team = stmts.getUserTeam.get(fromUser.user_id);
+        
+        if (!team) {
+            // Создаём новую команду
+            const result = stmts.createTeam.run('Команда');
+            const teamId = result.lastInsertRowid;
+            stmts.addTeamMember.run(teamId, fromUser.user_id, 'owner');
+            team = { id: teamId };
+        }
+        
+        // Добавляем принявшего в команду
+        stmts.addTeamMember.run(team.id, user.user_id, 'member');
+        
+        // Уведомляем всех участников команды
+        const members = stmts.getTeamMembers.all(team.id);
+        members.forEach(m => {
+            const memberUser = stmts.getUserByUserId.get(m.user_id);
+            notifyUser(memberUser.session_key, { type: 'team_updated', teamId: team.id });
+        });
+    }
+    
     const cnt = stmts.countPending.get(user.user_id, 'pending').cnt;
     res.json({ ok: true, count: cnt });
+});
+
+// === API: Получить команду пользователя ===
+app.get('/api/team/:sessionKey', (req, res) => {
+    const user = stmts.getUserBySession.get(req.params.sessionKey);
+    if (!user) return res.json({ team: null, members: [] });
+    const team = stmts.getUserTeam.get(user.user_id);
+    if (!team) return res.json({ team: null, members: [] });
+    const members = stmts.getTeamMembers.all(team.id);
+    res.json({ team, members });
 });
 
 // Fallback — отдаём index.html для SPA

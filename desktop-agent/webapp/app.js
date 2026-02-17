@@ -95,7 +95,6 @@ document.getElementById('burgerBtn').addEventListener('click', toggleBurger);
 document.getElementById('burgerSettings').addEventListener('click', () => { closeBurger(); openSettings(); });
 document.getElementById('burgerBell').addEventListener('click', toggleNotifications);
 document.getElementById('avatarBtn').addEventListener('click', () => { closeBurger(); openProfile(); });
-document.getElementById('inviteBtn').addEventListener('click', () => { closeBurger(); openInviteModal(); });
 document.getElementById('closeProfile').addEventListener('click', closeProfile);
 document.getElementById('closeInvite').addEventListener('click', closeInviteModal);
 document.getElementById('saveUsername').addEventListener('click', saveUsername);
@@ -974,6 +973,9 @@ case 'notification_count':
 updateNotifBadge(message.count);
 loadNotificationCount();
 break;
+case 'team_updated':
+loadTeam();
+break;
 }
 };
 
@@ -1492,6 +1494,7 @@ migrateBtn.textContent = 'Перенести данные из браузера 
 // === ПРОФИЛЬ И КОМАНДЫ ===
 
 let userProfile = null; // { userId, username, email }
+let userTeam = null; // { team, members: [] }
 
 function getApiBase() {
   return WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
@@ -1503,6 +1506,7 @@ async function initUserProfile() {
     userProfile = await res.json();
     updateAvatarLetter();
     loadNotificationCount();
+    loadTeam();
   } catch (e) {
     console.error('Profile init error:', e);
   }
@@ -1511,6 +1515,60 @@ async function initUserProfile() {
 function updateAvatarLetter() {
   if (!userProfile) return;
   document.getElementById('avatarLetter').textContent = (userProfile.username || '?')[0].toUpperCase();
+}
+
+// === КОМАНДА ===
+
+async function loadTeam() {
+  if (!userProfile) return;
+  try {
+    const res = await fetch(`${getApiBase()}/api/team/${state.sessionKey}`);
+    userTeam = await res.json();
+    renderTeam();
+  } catch (e) {
+    console.error('Team load error:', e);
+  }
+}
+
+function renderTeam() {
+  const container = document.getElementById('teamSlots');
+  if (!userTeam || !userTeam.team) {
+    container.innerHTML = '';
+    return;
+  }
+  
+  const members = userTeam.members || [];
+  const me = members.find(m => m.user_id === userProfile.userId);
+  const others = members.filter(m => m.user_id !== userProfile.userId);
+  
+  let html = '';
+  
+  // Сначала я
+  if (me) {
+    html += `
+      <div class="team-member-avatar me" title="${me.username} (вы)">
+        ${me.username[0].toUpperCase()}
+        <div class="member-tooltip">${me.username} (вы)</div>
+      </div>
+    `;
+  }
+  
+  // Потом остальные
+  others.forEach(m => {
+    html += `
+      <div class="team-member-avatar" title="${m.username}">
+        ${m.username[0].toUpperCase()}
+        <div class="member-tooltip">${m.username}</div>
+      </div>
+    `;
+  });
+  
+  // Слот для приглашения (если есть команда)
+  html += `
+    <div class="team-add-slot" onclick="openInviteModal()" title="Пригласить">+</div>
+  `;
+  
+  container.innerHTML = html;
 }
 
 // === БУРГЕР ===
@@ -1582,6 +1640,7 @@ async function respondInvite(id, action) {
     if (data.ok) {
       showToast(action === 'accept' ? 'Приглашение принято!' : 'Приглашение отклонено', 'info');
       loadNotificationCount();
+      if (action === 'accept') loadTeam();
     }
   } catch (e) {
     showToast('Ошибка', 'error');
@@ -1589,6 +1648,7 @@ async function respondInvite(id, action) {
 }
 
 window.respondInvite = respondInvite;
+window.openInviteModal = openInviteModal;
 
 // === ПРОФИЛЬ ===
 
