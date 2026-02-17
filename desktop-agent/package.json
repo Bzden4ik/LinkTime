@@ -26,7 +26,8 @@
       "main.js",
       "preload.js",
       "settings.html",
-      "icon.png"
+      "icon.png",
+      "webapp/**/*"
     ],
     "win": {
       "target": [

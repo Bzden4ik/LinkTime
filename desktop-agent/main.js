@@ -10,7 +10,7 @@ app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder');
 
 // Конфигурация
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
-const WS_URL = 'wss://linktime.onrender.com';
+const WS_URL = 'wss://linktime.go-tit.ru';
 
 // Состояние приложения
 let mainWindow = null;
@@ -604,7 +604,6 @@ console.log('Activity monitoring stopped');
 
 // IPC обработчики для окна настроек
 ipcMain.on('get-config', (event) => {
-    event.reply('config-data', config);
     const currentAutostart = getAutostartStatus();
     const configWithAutostart = { ...config, autostart: currentAutostart };
     event.reply('config-data', configWithAutostart);
