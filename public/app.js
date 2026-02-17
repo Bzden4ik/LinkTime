@@ -8,8 +8,7 @@ elapsedTime: 0,
 sessionKey: null,
 currentDate: new Date().toISOString().split('T')[0],
 selectedDate: new Date().toISOString().split('T')[0], // Добавлена выбранная дата
-totalPausedTime: 0,
-lastTaskMarkedMs: 0 // Время таймера на момент последней отмеченной задачи
+totalPausedTime: 0
 };
 
 let timerInterval = null;
@@ -256,7 +255,6 @@ updateSelectedDateStats();
 state.timerRunning = true;
 state.currentSessionStart = Date.now();
 state.totalPausedTime = 0;
-state.lastTaskMarkedMs = 0;
 manualPause = false;
 autoPauseActive = false;
 
@@ -429,7 +427,6 @@ state.currentSessionStart = null;
 state.currentPauseStart = null;
 state.elapsedTime = 0;
 state.totalPausedTime = 0;
-state.lastTaskMarkedMs = 0;
 autoPauseActive = false;
 manualPause = false;
 if (autoPauseTimeout) { clearTimeout(autoPauseTimeout); autoPauseTimeout = null; }
@@ -480,11 +477,22 @@ document.getElementById('taskText').value = '';
 function saveTask() {
 const taskText = document.getElementById('taskText').value.trim();
 if (taskText) {
+// Запоминаем время таймера в момент создания задачи
+let timerMsAtCreation = 0;
+if (state.timerRunning && state.currentSessionStart) {
+timerMsAtCreation = Date.now() - state.currentSessionStart - state.totalPausedTime;
+if (state.timerPaused && state.currentPauseStart) {
+timerMsAtCreation -= (Date.now() - state.currentPauseStart);
+}
+timerMsAtCreation = Math.max(0, timerMsAtCreation);
+}
+
 const task = {
 id: Date.now(),
 text: taskText,
 completed: false,
-date: state.selectedDate // Сохраняем задачу для выбранной даты
+date: state.selectedDate,
+createdTimerMs: timerMsAtCreation
 };
 
 const tasks = getTasks();
@@ -504,21 +512,18 @@ const task = tasks.find(t => t.id === Number(taskId));
 if (task) {
 task.completed = !task.completed;
 if (task.completed) {
-// Записываем время с момента последней отмеченной задачи (или старта таймера)
 task.completedAt = Date.now();
 if (state.timerRunning && state.currentSessionStart) {
-// Текущее отображаемое время таймера
 let displayMs = Date.now() - state.currentSessionStart - state.totalPausedTime;
 if (state.timerPaused && state.currentPauseStart) {
 displayMs -= (Date.now() - state.currentPauseStart);
 }
 displayMs = Math.max(0, displayMs);
-// Разница от предыдущей отмеченной задачи
-task.timeSpent = displayMs - state.lastTaskMarkedMs;
-// Запоминаем текущее время для следующей задачи
-state.lastTaskMarkedMs = displayMs;
+// Время с момента создания задачи
+const base = task.createdTimerMs || 0;
+task.timeSpent = Math.max(0, displayMs - base);
 } else {
-task.timeSpent = getTotalWorkTimeForDate(task.date);
+task.timeSpent = 0;
 }
 showToast('Задача выполнена! 🎉', 'success');
 } else {
