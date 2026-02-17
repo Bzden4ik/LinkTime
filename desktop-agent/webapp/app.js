@@ -8,8 +8,7 @@ elapsedTime: 0,
 sessionKey: null,
 currentDate: new Date().toISOString().split('T')[0],
 selectedDate: new Date().toISOString().split('T')[0], // Добавлена выбранная дата
-totalPausedTime: 0,
-workTimeBeforeSession: 0
+totalPausedTime: 0
 };
 
 let timerInterval = null;
@@ -95,14 +94,12 @@ document.getElementById('showKey').addEventListener('click', showSessionKey);
 document.getElementById('scanQR').addEventListener('click', startQRScanner);
 document.getElementById('enterKey').addEventListener('click', showKeyInput);
 document.getElementById('connectKey').addEventListener('click', connectWithKey);
-
-// Кнопка миграции данных
 document.getElementById('migrateBtn').addEventListener('click', migrateDataToServer);
 
-// Автозапуск (только для Electron)
-if (window.__electronApp) {
-document.getElementById('autostartCheckbox').addEventListener('change', saveAutostartSetting);
-}
+    // Автозапуск (только для Electron)
+    if (window.__electronApp) {
+        document.getElementById('autostartCheckbox').addEventListener('change', saveAutostartSetting);
+    }
 
 // Календарь
 document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
@@ -1457,16 +1454,11 @@ if (!state.sessionKey) {
 showToast('Сначала создайте или введите ключ сессии', 'error');
 return;
 }
-
 const migrateBtn = document.getElementById('migrateBtn');
 migrateBtn.disabled = true;
 migrateBtn.textContent = 'Переносим данные...';
-
 try {
-// Собираем задачи
 const tasks = getTasks();
-
-// Собираем все сессии из localStorage
 const allSessions = {};
 for (let i = 0; i < localStorage.length; i++) {
 const key = localStorage.key(i);
@@ -1474,21 +1466,13 @@ if (key.startsWith('sessions_')) {
 allSessions[key] = JSON.parse(localStorage.getItem(key));
 }
 }
-
-// Определяем URL сервера
 const serverUrl = WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
-
-// Отправляем на сервер
 const response = await fetch(`${serverUrl}/api/data/${encodeURIComponent(state.sessionKey)}`, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({ tasks, sessions: allSessions })
 });
-
-if (!response.ok) {
-throw new Error(`Сервер вернул ошибку: ${response.status}`);
-}
-
+if (!response.ok) throw new Error(`Сервер вернул ошибку: ${response.status}`);
 const result = await response.json();
 if (result.ok) {
 const taskCount = tasks.length;
