@@ -1315,21 +1315,13 @@ function applyRemoteData(data) {
     if (!data) return;
     
     if (data.tasks && Array.isArray(data.tasks)) {
-        const mergedMap = new Map();
-        dataCache.tasks.forEach(t => mergedMap.set(t.id, t));
-        data.tasks.forEach(t => mergedMap.set(t.id, t));
-        dataCache.tasks = Array.from(mergedMap.values());
+        dataCache.tasks = data.tasks;
         renderTasks();
+        updateSelectedDateStats();
     }
     
     if (data.sessions) {
-        Object.keys(data.sessions).forEach(key => {
-            const remote = data.sessions[key];
-            const local = dataCache.sessions[key] || [];
-            if (!dataCache.sessions[key] || remote.length > local.length) {
-                dataCache.sessions[key] = remote;
-            }
-        });
+        dataCache.sessions = { ...dataCache.sessions, ...data.sessions };
         updateSelectedDateStats();
         renderCalendar();
     }
