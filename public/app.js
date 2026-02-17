@@ -7,8 +7,9 @@ let state = {
     elapsedTime: 0,
     sessionKey: null,
     currentDate: new Date().toISOString().split('T')[0],
-    selectedDate: new Date().toISOString().split('T')[0], // Добавлена выбранная дата
-    totalPausedTime: 0
+    selectedDate: new Date().toISOString().split('T')[0],
+    totalPausedTime: 0,
+    workTimeBeforeSession: 0 // время накопленное в предыдущих сессиях за сегодня
 };
 
 let timerInterval = null;
@@ -247,6 +248,7 @@ function startTimer() {
         state.timerRunning = true;
         state.currentSessionStart = Date.now();
         state.totalPausedTime = 0;
+        state.workTimeBeforeSession = getDataForDate(state.currentDate).totalWorkTime;
         manualPause = false;
         autoPauseActive = false;
         
@@ -419,6 +421,7 @@ function stopTimer() {
         state.currentPauseStart = null;
         state.elapsedTime = 0;
         state.totalPausedTime = 0;
+        state.workTimeBeforeSession = 0;
         autoPauseActive = false;
         manualPause = false;
         if (autoPauseTimeout) { clearTimeout(autoPauseTimeout); autoPauseTimeout = null; }
@@ -494,13 +497,15 @@ function toggleTask(taskId) {
     if (task) {
         task.completed = !task.completed;
         if (task.completed) {
-            // Записываем только время потраченное на эту задачу (дельта от предыдущей)
             task.completedAt = Date.now();
+            // Время в текущей сессии
             const totalNow = getTotalWorkTimeForDate(task.date);
+            const currentSessionTime = totalNow - state.workTimeBeforeSession;
+            // Уже атрибутированное время задачам в этой сессии
             const alreadyAttributed = tasks
-                .filter(t => t.completed && t.id !== taskId && t.date === task.date && t.timeSpent)
+                .filter(t => t.completed && t.id !== taskId && t.date === task.date && t.timeSpent && t.completedAt >= (state.currentSessionStart || 0))
                 .reduce((sum, t) => sum + t.timeSpent, 0);
-            task.timeSpent = Math.max(0, totalNow - alreadyAttributed);
+            task.timeSpent = Math.max(0, currentSessionTime - alreadyAttributed);
             showToast('Задача выполнена! 🎉', 'success');
         } else {
             // Снимаем отметку — убираем время
