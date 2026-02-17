@@ -16,7 +16,7 @@ let timerInterval = null;
 let ws = null;
 let reconnectInterval = null;
 let heartbeatInterval = null;
-const WS_URL = 'wss://linktime.onrender.com';
+const WS_URL = 'wss://linktime.go-tit.ru';
 
 // Состояние видимости и фокуса
 let isTabVisible = true;

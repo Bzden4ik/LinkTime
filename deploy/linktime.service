@@ -1,0 +1,30 @@
+[Unit]
+Description=LinkTime Work Time Tracker
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/linktime
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+
+# Environment
+Environment=NODE_ENV=production
+Environment=PORT=3002
+Environment=DATABASE_PATH=/var/lib/linktime/linktime.db
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=linktime
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/linktime /var/www/linktime/data
+
+[Install]
+WantedBy=multi-user.target

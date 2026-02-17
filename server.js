@@ -1,15 +1,165 @@
+const express = require('express');
+const http = require('http');
 const WebSocket = require('ws');
+const path = require('path');
+const Database = require('better-sqlite3');
 
-const PORT = process.env.PORT || 8080;
-const wss = new WebSocket.Server({ port: PORT });
+// === КОНФИГУРАЦИЯ ===
+const PORT = process.env.PORT || 3002;
+const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'linktime.db');
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Хранилище активных сессий: { sessionKey: [connections] }
-const sessions = new Map();
+// === БАЗА ДАННЫХ ===
+const fs = require('fs');
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
 
-// Хранилище данных сессий: { sessionKey: { tasks, sessions, lastUpdate, timerState, lastTickTimestamp, activityStatus, lastHeartbeat } }
-const sessionData = new Map();
+const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 
-console.log(`WebSocket server running on port ${PORT}`);
+// Создание таблиц
+db.exec(`
+    CREATE TABLE IF NOT EXISTS session_data (
+        session_key TEXT PRIMARY KEY,
+        tasks TEXT DEFAULT '[]',
+        work_sessions TEXT DEFAULT '{}',
+        timer_state TEXT DEFAULT NULL,
+        activity_status TEXT DEFAULT NULL,
+        active_window TEXT DEFAULT NULL,
+        agent_connected INTEGER DEFAULT 0,
+        last_heartbeat INTEGER,
+        last_update INTEGER,
+        created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
+`);
+
+console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
+
+// Prepared statements для производительности
+const stmts = {
+    getSession: db.prepare('SELECT * FROM session_data WHERE session_key = ?'),
+    upsertSession: db.prepare(`
+        INSERT INTO session_data (session_key, tasks, work_sessions, timer_state, activity_status, active_window, agent_connected, last_heartbeat, last_update)
+        VALUES (@session_key, @tasks, @work_sessions, @timer_state, @activity_status, @active_window, @agent_connected, @last_heartbeat, @last_update)
+        ON CONFLICT(session_key) DO UPDATE SET
+            tasks = COALESCE(@tasks, tasks),
+            work_sessions = COALESCE(@work_sessions, work_sessions),
+            timer_state = @timer_state,
+            activity_status = @activity_status,
+            active_window = @active_window,
+            agent_connected = @agent_connected,
+            last_heartbeat = COALESCE(@last_heartbeat, last_heartbeat),
+            last_update = @last_update
+    `),
+    updateTimerState: db.prepare(`
+        UPDATE session_data SET timer_state = ?, last_update = ?, last_heartbeat = ? WHERE session_key = ?
+    `),
+    updateActivity: db.prepare(`
+        UPDATE session_data SET activity_status = ?, active_window = ?, last_update = ?, last_heartbeat = ? WHERE session_key = ?
+    `),
+    updateHeartbeat: db.prepare(`
+        UPDATE session_data SET last_heartbeat = ? WHERE session_key = ?
+    `),
+    updateAgentStatus: db.prepare(`
+        UPDATE session_data SET agent_connected = ?, activity_status = CASE WHEN ? = 0 THEN NULL ELSE activity_status END, active_window = CASE WHEN ? = 0 THEN NULL ELSE active_window END, last_update = ? WHERE session_key = ?
+    `),
+    updateSync: db.prepare(`
+        UPDATE session_data SET tasks = ?, work_sessions = ?, last_update = ? WHERE session_key = ?
+    `),
+    getAllSessions: db.prepare('SELECT session_key, last_heartbeat, timer_state FROM session_data WHERE last_heartbeat IS NOT NULL'),
+};
+
+// === ХЕЛПЕРЫ ДЛЯ БД ===
+
+function getSessionData(sessionKey) {
+    const row = stmts.getSession.get(sessionKey);
+    if (!row) return null;
+    return {
+        tasks: JSON.parse(row.tasks || '[]'),
+        sessions: JSON.parse(row.work_sessions || '{}'),
+        timerState: row.timer_state ? JSON.parse(row.timer_state) : null,
+        activityStatus: row.activity_status,
+        activeWindow: row.active_window,
+        agentConnected: !!row.agent_connected,
+        lastHeartbeat: row.last_heartbeat,
+        lastUpdate: row.last_update,
+    };
+}
+
+function ensureSession(sessionKey) {
+    const existing = stmts.getSession.get(sessionKey);
+    if (!existing) {
+        stmts.upsertSession.run({
+            session_key: sessionKey,
+            tasks: '[]',
+            work_sessions: '{}',
+            timer_state: null,
+            activity_status: null,
+            active_window: null,
+            agent_connected: 0,
+            last_heartbeat: null,
+            last_update: Date.now(),
+        });
+    }
+}
+
+// === EXPRESS СЕРВЕР ===
+const app = express();
+
+// CORS
+app.use((req, res, next) => {
+    const allowedOrigins = [
+        'https://linktime.go-tit.ru',
+        'http://localhost:3002',
+        'http://127.0.0.1:3002',
+    ];
+    const origin = req.headers.origin;
+    if (!origin || allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+});
+
+// Статические файлы
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Health check
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        uptime: Math.round(process.uptime()),
+        connections: wss.clients.size,
+        env: NODE_ENV,
+    });
+});
+
+// Fallback — отдаём index.html для SPA
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// === HTTP СЕРВЕР ===
+const server = http.createServer(app);
+
+// === WEBSOCKET СЕРВЕР ===
+const wss = new WebSocket.Server({ noServer: true });
+
+// Хранилище активных подключений: { sessionKey: Set<ws> }
+const connections = new Map();
+
+// Обработка upgrade
+server.on('upgrade', (request, socket, head) => {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+    });
+});
 
 wss.on('connection', (ws) => {
     let currentSessionKey = null;
@@ -48,7 +198,7 @@ wss.on('connection', (ws) => {
                     break;
             }
         } catch (error) {
-            console.error('Error processing message:', error);
+            console.error('[WS] Error processing message:', error);
         }
     });
 
@@ -56,10 +206,14 @@ wss.on('connection', (ws) => {
         handleDisconnect(ws);
     });
 
-    // Проверяет есть ли живой агент в сессии
+    ws.on('error', (error) => {
+        console.error('[WS] Connection error:', error.message);
+    });
+
+    // --- Проверка живого агента ---
     function isAgentAlive(sessionKey) {
-        if (!sessions.has(sessionKey)) return false;
-        for (const client of sessions.get(sessionKey)) {
+        if (!connections.has(sessionKey)) return false;
+        for (const client of connections.get(sessionKey)) {
             if (client.isAgent && client.readyState === WebSocket.OPEN) {
                 return true;
             }
@@ -67,152 +221,101 @@ wss.on('connection', (ws) => {
         return false;
     }
 
+    // --- Broadcast в сессию ---
+    function broadcast(sessionKey, message, excludeWs = null) {
+        if (!connections.has(sessionKey)) return;
+        const msg = typeof message === 'string' ? message : JSON.stringify(message);
+        connections.get(sessionKey).forEach((client) => {
+            if (client !== excludeWs && client.readyState === WebSocket.OPEN) {
+                client.send(msg);
+            }
+        });
+    }
+
+    // --- ОБРАБОТЧИКИ ---
+
     function handleJoin(ws, data) {
         const { sessionKey } = data;
         currentSessionKey = sessionKey;
 
-        // Добавляем соединение к сессии
-        if (!sessions.has(sessionKey)) {
-            sessions.set(sessionKey, new Set());
+        // Добавляем соединение
+        if (!connections.has(sessionKey)) {
+            connections.set(sessionKey, new Set());
         }
-        sessions.get(sessionKey).add(ws);
+        connections.get(sessionKey).add(ws);
 
-        // Отправляем текущие данные сессии новому подключению
-        if (sessionData.has(sessionKey)) {
-            const data = sessionData.get(sessionKey);
-            ws.send(JSON.stringify({
-                type: 'init',
-                data: data
-            }));
-            
-            // Отправляем состояние таймера отдельно, если оно есть
-            if (data.timerState) {
-                ws.send(JSON.stringify({
-                    type: 'timer_state',
-                    data: data.timerState
-                }));
+        // Создаём запись в БД если нет
+        ensureSession(sessionKey);
+
+        // Отправляем текущие данные
+        const sessionData = getSessionData(sessionKey);
+        if (sessionData) {
+            ws.send(JSON.stringify({ type: 'init', data: sessionData }));
+
+            if (sessionData.timerState) {
+                ws.send(JSON.stringify({ type: 'timer_state', data: sessionData.timerState }));
             }
-            
-            // Отправляем статус агента (проверяем реальное подключение)
+
+            // Проверяем реальное подключение агента
             const agentAlive = isAgentAlive(sessionKey);
-            data.agentConnected = agentAlive;
-            sessionData.set(sessionKey, data);
-            ws.send(JSON.stringify({
-                type: 'agent_status',
-                connected: agentAlive
-            }));
+            if (sessionData.agentConnected !== agentAlive) {
+                stmts.updateAgentStatus.run(agentAlive ? 1 : 0, agentAlive ? 1 : 0, agentAlive ? 1 : 0, Date.now(), sessionKey);
+            }
+            ws.send(JSON.stringify({ type: 'agent_status', connected: agentAlive }));
         }
 
-        console.log(`Client joined session: ${sessionKey}`);
-        console.log(`Active connections in session: ${sessions.get(sessionKey).size}`);
+        console.log(`[WS] Client joined session: ${sessionKey} (${connections.get(sessionKey).size} connections)`);
     }
 
     function handleSync(ws, data) {
-        const { sessionKey, tasks, sessions: userSessions, date } = data;
+        const { sessionKey, tasks, sessions: userSessions } = data;
+        const now = Date.now();
 
-        // Обновляем данные сессии
-        const currentData = sessionData.get(sessionKey) || {};
-        const updatedData = {
-            ...currentData,
-            tasks: tasks || currentData.tasks || [],
-            sessions: userSessions || currentData.sessions || {},
-            lastUpdate: Date.now()
-        };
-        sessionData.set(sessionKey, updatedData);
+        stmts.updateSync.run(
+            JSON.stringify(tasks || []),
+            JSON.stringify(userSessions || {}),
+            now,
+            sessionKey
+        );
 
-        // Рассылаем обновления всем подключенным клиентам в этой сессии
-        if (sessions.has(sessionKey)) {
-            const message = JSON.stringify({
-                type: 'update',
-                data: updatedData,
-                from: 'server'
-            });
+        // Рассылаем обновления другим клиентам
+        const sessionData = getSessionData(sessionKey);
+        broadcast(sessionKey, { type: 'update', data: sessionData, from: 'server' }, ws);
 
-            sessions.get(sessionKey).forEach((client) => {
-                if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    client.send(message);
-                }
-            });
-        }
-
-        console.log(`Sync received for session: ${sessionKey}`);
+        console.log(`[WS] Sync received for session: ${sessionKey}`);
     }
 
     function handleTimerSync(ws, data) {
         const { sessionKey, action, data: timerData } = data;
-
-        // Обновляем состояние таймера в сессии
-        const currentData = sessionData.get(sessionKey) || {};
         const now = Date.now();
-        
-        // Центральный расчет времени на сервере
-        if (action === 'start' || action === 'resume') {
-            currentData.lastTickTimestamp = now;
-        } else if (action === 'stop' || action === 'pause') {
-            if (currentData.lastTickTimestamp) {
-                const elapsed = now - currentData.lastTickTimestamp;
-                currentData.totalWorkTime = (currentData.totalWorkTime || 0) + elapsed;
-            }
-            currentData.lastTickTimestamp = null;
-        }
-        
-        currentData.timerState = { action, ...timerData };
-        currentData.lastUpdate = now;
-        currentData.lastHeartbeat = now;
-        sessionData.set(sessionKey, currentData);
 
-        // Рассылаем обновление таймера всем подключенным клиентам в этой сессии
-        if (sessions.has(sessionKey)) {
-            const message = JSON.stringify({
-                type: 'timer_state',
-                data: { action, ...timerData }
-            });
+        const timerState = { action, ...timerData };
+        stmts.updateTimerState.run(JSON.stringify(timerState), now, now, sessionKey);
 
-            sessions.get(sessionKey).forEach((client) => {
-                if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    client.send(message);
-                }
-            });
-        }
+        // Рассылаем обновление таймера
+        broadcast(sessionKey, { type: 'timer_state', data: timerState }, ws);
 
-        console.log(`Timer sync (${action}) for session: ${sessionKey}`);
+        console.log(`[WS] Timer sync (${action}) for session: ${sessionKey}`);
     }
 
     function handleActivityUpdate(ws, data) {
         const { sessionKey, status, windowTitle } = data;
+        const now = Date.now();
 
-        // Обновляем статус активности в сессии
-        const currentData = sessionData.get(sessionKey) || {};
-        currentData.activityStatus = status; // working / distracted / idle
-        currentData.activeWindow = windowTitle;
-        currentData.lastUpdate = Date.now();
-        currentData.lastHeartbeat = Date.now();
-        sessionData.set(sessionKey, currentData);
+        stmts.updateActivity.run(status, windowTitle, now, now, sessionKey);
 
-        // Рассылаем статус активности всем участникам сессии
-        if (sessions.has(sessionKey)) {
-            const message = JSON.stringify({
-                type: 'activity_status',
-                status: status,
-                windowTitle: windowTitle
-            });
+        // Рассылаем статус активности ВСЕМ (включая отправителя)
+        broadcast(sessionKey, { type: 'activity_status', status, windowTitle });
 
-            sessions.get(sessionKey).forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(message);
-                }
-            });
-        }
+        console.log(`[WS] Activity update for session ${sessionKey}: ${status} (${windowTitle})`);
 
-        console.log(`Activity update for session ${sessionKey}: ${status} (${windowTitle})`);
-        
-        // Если статус distracted или idle, отправляем команду force_pause через 5 секунд
+        // Если distracted/idle — ставим force_pause через 5 секунд
         if (status === 'distracted' || status === 'idle') {
             setTimeout(() => {
-                const latestData = sessionData.get(sessionKey);
-                // Проверяем что статус всё ещё не working
-                if (latestData && latestData.activityStatus !== 'working') {
-                    sendForcePause(sessionKey, status);
+                const currentData = getSessionData(sessionKey);
+                if (currentData && currentData.activityStatus !== 'working') {
+                    broadcast(sessionKey, { type: 'force_pause', reason: status });
+                    console.log(`[WS] Force pause sent to session ${sessionKey} (reason: ${status})`);
                 }
             }, 5000);
         }
@@ -220,221 +323,160 @@ wss.on('connection', (ws) => {
 
     function handleHeartbeat(ws, data) {
         const { sessionKey } = data;
-        
-        const currentData = sessionData.get(sessionKey) || {};
-        currentData.lastHeartbeat = Date.now();
-        sessionData.set(sessionKey, currentData);
-        
-        // Отправляем подтверждение heartbeat
+        stmts.updateHeartbeat.run(Date.now(), sessionKey);
+
         if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                type: 'heartbeat_ack',
-                timestamp: Date.now()
-            }));
-        }
-    }
-
-    function sendForcePause(sessionKey, reason) {
-        if (sessions.has(sessionKey)) {
-            const message = JSON.stringify({
-                type: 'force_pause',
-                reason: reason // distracted / idle
-            });
-
-            sessions.get(sessionKey).forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(message);
-                }
-            });
-            
-            console.log(`Force pause sent to session ${sessionKey} (reason: ${reason})`);
+            ws.send(JSON.stringify({ type: 'heartbeat_ack', timestamp: Date.now() }));
         }
     }
 
     function handleRequestState(ws, data) {
         const { sessionKey } = data;
-        
-        // Отправляем текущее состояние сессии клиенту
-        if (sessionData.has(sessionKey)) {
-            const currentData = sessionData.get(sessionKey);
-            
-            // Отправляем все данные сессии
-            ws.send(JSON.stringify({
-                type: 'init',
-                data: currentData
-            }));
-            
-            // Отправляем состояние таймера отдельно
-            if (currentData.timerState) {
-                ws.send(JSON.stringify({
-                    type: 'timer_state',
-                    data: currentData.timerState
-                }));
+        const sessionData = getSessionData(sessionKey);
+
+        if (sessionData) {
+            ws.send(JSON.stringify({ type: 'init', data: sessionData }));
+
+            if (sessionData.timerState) {
+                ws.send(JSON.stringify({ type: 'timer_state', data: sessionData.timerState }));
             }
-            
-            // Отправляем статус активности если есть
-            if (currentData.activityStatus) {
+
+            if (sessionData.activityStatus) {
                 ws.send(JSON.stringify({
                     type: 'activity_status',
-                    status: currentData.activityStatus,
-                    windowTitle: currentData.activeWindow || ''
+                    status: sessionData.activityStatus,
+                    windowTitle: sessionData.activeWindow || '',
                 }));
             }
-            
-            // Отправляем реальный статус агента
+
             const agentAlive = isAgentAlive(sessionKey);
-            currentData.agentConnected = agentAlive;
-            if (!agentAlive) {
-                currentData.activityStatus = null;
-                currentData.activeWindow = null;
+            if (!agentAlive && sessionData.agentConnected) {
+                stmts.updateAgentStatus.run(0, 0, 0, Date.now(), sessionKey);
             }
-            sessionData.set(sessionKey, currentData);
-            ws.send(JSON.stringify({
-                type: 'agent_status',
-                connected: agentAlive
-            }));
-            
-            console.log(`State sent to client for session ${sessionKey}, agent: ${agentAlive}`);
+            ws.send(JSON.stringify({ type: 'agent_status', connected: agentAlive }));
+
+            console.log(`[WS] State sent to client for session ${sessionKey}, agent: ${agentAlive}`);
         }
     }
 
     function handleBrowserEvent(ws, data) {
         const { sessionKey, event } = data;
-        
-        console.log(`Browser event for session ${sessionKey}: ${event}`);
-        
-        // Обновляем информацию о состоянии браузера в данных сессии
-        const currentData = sessionData.get(sessionKey) || {};
-        currentData.browserEvent = event;
-        currentData.lastUpdate = Date.now();
-        sessionData.set(sessionKey, currentData);
-        
-        // Можно добавить дополнительную логику для разных событий
-        // Например, при tab_hidden или browser_blur можно установить статус idle
+        console.log(`[WS] Browser event for session ${sessionKey}: ${event}`);
+
+        // При скрытии вкладки без агента — пауза через 30 секунд
         if (event === 'tab_hidden' || event === 'browser_blur') {
-            // Только если нет Desktop-агента, который подтверждает работу
-            if (!currentData.activityStatus || currentData.activityStatus === 'idle') {
-                // Ставим задержку перед паузой
+            const sessionData = getSessionData(sessionKey);
+            if (!sessionData || !sessionData.activityStatus || sessionData.activityStatus === 'idle') {
                 setTimeout(() => {
-                    const latestData = sessionData.get(sessionKey);
-                    if (latestData && latestData.browserEvent === event) {
-                        // Всё ещё скрыто/без фокуса
-                        sendForcePause(sessionKey, 'browser_inactive');
+                    const latestData = getSessionData(sessionKey);
+                    // Если агент не подтверждает работу
+                    if (!latestData || !latestData.agentConnected || latestData.activityStatus !== 'working') {
+                        broadcast(sessionKey, { type: 'force_pause', reason: 'browser_inactive' });
                     }
-                }, 30000); // 30 секунд задержка
+                }, 30000);
             }
         }
     }
 
     function handleAgentConnected(ws, data) {
         const { sessionKey } = data;
-        
-        console.log(`Desktop Agent connected for session ${sessionKey}`);
-        
-        // Помечаем это соединение как агент
+
         ws.isAgent = true;
         ws.agentSessionKey = sessionKey;
-        
-        // Отмечаем в данных сессии что агент подключён
-        const currentData = sessionData.get(sessionKey) || {};
-        currentData.agentConnected = true;
-        currentData.lastUpdate = Date.now();
-        sessionData.set(sessionKey, currentData);
-        
-        // Рассылаем всем клиентам в сессии
-        if (sessions.has(sessionKey)) {
-            const message = JSON.stringify({
-                type: 'agent_status',
-                connected: true
-            });
 
-            sessions.get(sessionKey).forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(message);
-                }
-            });
-        }
+        stmts.updateAgentStatus.run(1, 1, 1, Date.now(), sessionKey);
+
+        broadcast(sessionKey, { type: 'agent_status', connected: true });
+
+        console.log(`[WS] Desktop Agent connected for session ${sessionKey}`);
     }
 
     function handleDisconnect(ws) {
-        if (currentSessionKey && sessions.has(currentSessionKey)) {
-            sessions.get(currentSessionKey).delete(ws);
-            
+        if (currentSessionKey && connections.has(currentSessionKey)) {
+            connections.get(currentSessionKey).delete(ws);
+
             // Если отключился агент — уведомляем браузеры
             if (ws.isAgent) {
                 const key = ws.agentSessionKey || currentSessionKey;
-                console.log(`Desktop Agent disconnected from session: ${key}`);
-                
-                const currentData = sessionData.get(key) || {};
-                currentData.agentConnected = false;
-                currentData.activityStatus = null;
-                currentData.activeWindow = null;
-                sessionData.set(key, currentData);
-                
-                if (sessions.has(key)) {
-                    const message = JSON.stringify({
-                        type: 'agent_status',
-                        connected: false
-                    });
-                    sessions.get(key).forEach((client) => {
-                        if (client.readyState === WebSocket.OPEN) {
-                            client.send(message);
-                        }
-                    });
-                }
+                console.log(`[WS] Desktop Agent disconnected from session: ${key}`);
+
+                stmts.updateAgentStatus.run(0, 0, 0, Date.now(), key);
+
+                broadcast(key, { type: 'agent_status', connected: false });
             }
-            
-            if (sessions.get(currentSessionKey).size === 0) {
-                sessions.delete(currentSessionKey);
-                console.log(`Session ${currentSessionKey} removed (no active connections)`);
+
+            if (connections.get(currentSessionKey).size === 0) {
+                connections.delete(currentSessionKey);
+                console.log(`[WS] Session ${currentSessionKey} removed (no active connections)`);
             } else {
-                console.log(`Client disconnected from session: ${currentSessionKey}`);
-                console.log(`Remaining connections: ${sessions.get(currentSessionKey).size}`);
+                console.log(`[WS] Client disconnected from session: ${currentSessionKey} (${connections.get(currentSessionKey).size} remaining)`);
             }
         }
     }
 });
 
-// Мониторинг heartbeat - проверка каждые 5 секунд
+// === МОНИТОРИНГ HEARTBEAT (каждые 5 секунд) ===
 setInterval(() => {
     const now = Date.now();
-    const heartbeatTimeout = 15000; // 15 секунд
-    
-    for (const [sessionKey, data] of sessionData.entries()) {
-        // Если есть активная сессия и нет heartbeat больше 15 секунд
-        if (data.lastHeartbeat && (now - data.lastHeartbeat) > heartbeatTimeout) {
-            // Проверяем что таймер был активен
-            if (data.timerState && data.timerState.action === 'start') {
-                console.log(`Heartbeat timeout for session ${sessionKey}, forcing pause`);
-                
-                // Обновляем статус на паузу
-                data.timerState.action = 'pause';
-                data.activityStatus = 'idle';
-                
-                // Рассчитываем время
-                if (data.lastTickTimestamp) {
-                    const elapsed = now - data.lastTickTimestamp;
-                    data.totalWorkTime = (data.totalWorkTime || 0) + elapsed;
-                    data.lastTickTimestamp = null;
+    const heartbeatTimeout = 15000;
+
+    const rows = stmts.getAllSessions.all();
+    for (const row of rows) {
+        if (row.last_heartbeat && (now - row.last_heartbeat) > heartbeatTimeout) {
+            const timerState = row.timer_state ? JSON.parse(row.timer_state) : null;
+            if (timerState && timerState.action === 'start') {
+                console.log(`[Monitor] Heartbeat timeout for session ${row.session_key}, forcing pause`);
+
+                timerState.action = 'pause';
+                stmts.updateTimerState.run(JSON.stringify(timerState), now, null, row.session_key);
+                stmts.updateActivity.run('idle', null, now, now, row.session_key);
+
+                // Отправляем force_pause
+                if (connections.has(row.session_key)) {
+                    const msg = JSON.stringify({ type: 'force_pause', reason: 'timeout' });
+                    connections.get(row.session_key).forEach((client) => {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(msg);
+                        }
+                    });
                 }
-                
-                sessionData.set(sessionKey, data);
-                
-                // Отправляем force_pause всем клиентам сессии
-                sendForcePause(sessionKey, 'timeout');
             }
         }
     }
-}, 5000); // Проверка каждые 5 секунд
+}, 5000);
 
-// Очистка старых данных сессий (старше 7 дней)
-setInterval(() => {
-    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    
-    for (const [key, data] of sessionData.entries()) {
-        if (data.lastUpdate < sevenDaysAgo && !sessions.has(key)) {
-            sessionData.delete(key);
-            console.log(`Cleaned up old session data: ${key}`);
-        }
-    }
-}, 60 * 60 * 1000); // Проверка каждый час
+// === GRACEFUL SHUTDOWN ===
+function shutdown(signal) {
+    console.log(`\n[Server] ${signal} received, shutting down gracefully...`);
+
+    // Закрываем WebSocket соединения
+    wss.clients.forEach((ws) => {
+        ws.close(1000, 'Server shutting down');
+    });
+
+    // Закрываем HTTP сервер
+    server.close(() => {
+        console.log('[Server] HTTP server closed');
+        db.close();
+        console.log('[DB] Database closed');
+        process.exit(0);
+    });
+
+    // Принудительное закрытие через 10 секунд
+    setTimeout(() => {
+        console.error('[Server] Forced shutdown');
+        db.close();
+        process.exit(1);
+    }, 10000);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// === ЗАПУСК ===
+server.listen(PORT, () => {
+    console.log(`[Server] LinkTime running on port ${PORT} (${NODE_ENV})`);
+    console.log(`[Server] Static files: ${path.join(__dirname, 'public')}`);
+    console.log(`[Server] Database: ${DB_PATH}`);
+    console.log(`[Server] Health check: http://localhost:${PORT}/api/health`);
+});

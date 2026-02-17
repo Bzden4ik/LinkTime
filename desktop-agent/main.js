@@ -11,7 +11,7 @@ app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder');
 
 // Конфигурация
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
-const WS_URL = 'wss://linktime.onrender.com';
+const WS_URL = 'wss://linktime.go-tit.ru';
 const GITHUB_REPO = 'Bzden4ik/LinkTime';
 const CURRENT_VERSION = require('./package.json').version;
 
