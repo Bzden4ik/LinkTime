@@ -96,6 +96,7 @@ function setupEventListeners() {
     document.getElementById('scanQR').addEventListener('click', startQRScanner);
     document.getElementById('enterKey').addEventListener('click', showKeyInput);
     document.getElementById('connectKey').addEventListener('click', connectWithKey);
+    document.getElementById('migrateBtn').addEventListener('click', migrateFromLocalStorage);
 
     // Календарь
     document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
@@ -1329,7 +1330,69 @@ function applyRemoteData(data) {
     }
 }
 
-// === УВЕДОМЛЕНИЯ ===
+async function migrateFromLocalStorage() {
+    const btn = document.getElementById('migrateBtn');
+    btn.disabled = true;
+    btn.textContent = 'Переношу...';
+
+    try {
+        // Собираем задачи из localStorage
+        const lsTasks = JSON.parse(localStorage.getItem('tasks') || '[]');
+
+        // Собираем сессии из localStorage
+        const lsSessions = {};
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('sessions_')) {
+                lsSessions[key] = JSON.parse(localStorage.getItem(key));
+            }
+        }
+
+        if (lsTasks.length === 0 && Object.keys(lsSessions).length === 0) {
+            showToast('Нет данных в браузере для переноса', 'info');
+            btn.disabled = false;
+            btn.textContent = 'Перенести данные из браузера в базу';
+            return;
+        }
+
+        // Мержим с тем что уже есть в кэше
+        const mergedMap = new Map();
+        dataCache.tasks.forEach(t => mergedMap.set(t.id, t));
+        lsTasks.forEach(t => mergedMap.set(t.id, t));
+        dataCache.tasks = Array.from(mergedMap.values());
+
+        Object.keys(lsSessions).forEach(key => {
+            const remote = lsSessions[key];
+            const local = dataCache.sessions[key] || [];
+            dataCache.sessions[key] = remote.length > local.length ? remote : local;
+        });
+
+        // Сохраняем на сервер
+        await saveToServer();
+
+        // Удаляем из localStorage
+        localStorage.removeItem('tasks');
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('sessions_')) {
+                localStorage.removeItem(key);
+            }
+        }
+
+        showToast('Данные перенесены в базу и удалены из браузера', 'success');
+        renderTasks();
+        updateSelectedDateStats();
+        renderCalendar();
+    } catch (e) {
+        console.error('[Migrate]', e);
+        showToast('Ошибка при переносе данных', 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Перенести данные из браузера в базу';
+}
+
+
 
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
