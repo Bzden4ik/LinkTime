@@ -99,6 +99,15 @@ function setupEventListeners() {
     document.getElementById('connectKey').addEventListener('click', connectWithKey);
     document.getElementById('migrateBtn').addEventListener('click', migrateFromLocalStorage);
 
+    // Настройки агента
+    loadAgentSettings();
+    document.getElementById('addWhiteBtn').addEventListener('click', () => addAgentTag('white'));
+    document.getElementById('addBlackBtn').addEventListener('click', () => addAgentTag('black'));
+    document.getElementById('whiteInputWeb').addEventListener('keypress', e => { if (e.key === 'Enter') addAgentTag('white'); });
+    document.getElementById('blackInputWeb').addEventListener('keypress', e => { if (e.key === 'Enter') addAgentTag('black'); });
+    document.getElementById('settingAutostart').addEventListener('change', saveAgentSettings);
+    document.getElementById('settingAutoUpdate').addEventListener('change', saveAgentSettings);
+
     // Календарь
     document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
     document.getElementById('nextMonth').addEventListener('click', () => changeMonth(1));
@@ -718,9 +727,61 @@ function loadSelectedDateData() {
     updateSelectedDateStats();
 }
 
+// === НАСТРОЙКИ АГЕНТА ===
+
+let agentWhiteList = [];
+let agentBlackList = [];
+
+function loadAgentSettings() {
+    document.getElementById('settingAutostart').checked = localStorage.getItem('autostart') === 'true';
+    document.getElementById('settingAutoUpdate').checked = localStorage.getItem('autoUpdate') !== 'false';
+    agentWhiteList = JSON.parse(localStorage.getItem('whiteList') || '[]');
+    agentBlackList = JSON.parse(localStorage.getItem('blackList') || '[]');
+    renderAgentTags();
+}
+
+function renderAgentTags() {
+    const wc = document.getElementById('whiteTagsWeb');
+    const bc = document.getElementById('blackTagsWeb');
+    wc.innerHTML = agentWhiteList.map((item, i) =>
+        `<span class="tag white">${item} <span class="tag-remove" onclick="removeAgentTag('white',${i})">×</span></span>`
+    ).join('');
+    bc.innerHTML = agentBlackList.map((item, i) =>
+        `<span class="tag black">${item} <span class="tag-remove" onclick="removeAgentTag('black',${i})">×</span></span>`
+    ).join('');
+}
+
+function addAgentTag(type) {
+    const inputId = type === 'white' ? 'whiteInputWeb' : 'blackInputWeb';
+    const val = document.getElementById(inputId).value.trim();
+    if (!val) return;
+    if (type === 'white') agentWhiteList.push(val);
+    else agentBlackList.push(val);
+    document.getElementById(inputId).value = '';
+    renderAgentTags();
+    saveAgentSettings();
+}
+
+function removeAgentTag(type, index) {
+    if (type === 'white') agentWhiteList.splice(index, 1);
+    else agentBlackList.splice(index, 1);
+    renderAgentTags();
+    saveAgentSettings();
+}
+
+function saveAgentSettings() {
+    localStorage.setItem('autostart', document.getElementById('settingAutostart').checked);
+    localStorage.setItem('autoUpdate', document.getElementById('settingAutoUpdate').checked);
+    localStorage.setItem('whiteList', JSON.stringify(agentWhiteList));
+    localStorage.setItem('blackList', JSON.stringify(agentBlackList));
+}
+
+window.removeAgentTag = removeAgentTag;
+
 // === НАСТРОЙКИ ===
 
 function openSettings() {
+    loadAgentSettings();
     document.getElementById('settingsModal').classList.add('active');
 }
 

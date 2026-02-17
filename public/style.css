@@ -1410,11 +1410,52 @@ button {
 @keyframes shimmer { }
 @keyframes float { }
 
-/* will-change только для таймера */
-* {
-    will-change: auto !important;
+/* Настройки агента */
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 14px;
+    color: rgba(255,255,255,0.85);
 }
+.checkbox-row input[type=checkbox] {
+    width: 18px;
+    height: 18px;
+    accent-color: #10b981;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.setting-hint {
+    font-size: 12px;
+    color: rgba(255,255,255,0.45);
+    margin-bottom: 10px;
+}
+.tags-container {
+    min-height: 44px;
+    padding: 8px;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+.tag.white { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+.tag.black { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+.tag-remove { cursor: pointer; opacity: 0.7; font-size: 14px; line-height: 1; }
+.tag-remove:hover { opacity: 1; }
+.tag-input-row { display: flex; gap: 8px; }
+.tag-input-row input { flex: 1; }
+.tag-add-btn { width: 44px; padding: 0; font-size: 20px; flex-shrink: 0; }
 
-#timer {
-    will-change: contents;
-}

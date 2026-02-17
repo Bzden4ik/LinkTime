@@ -80,6 +80,38 @@
                     <button class="btn" id="migrateBtn">Перенести данные из браузера в базу</button>
                 </div>
                 <div class="setting-group">
+                    <h3>🚀 Автозапуск приложения</h3>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="settingAutostart">
+                        <span>Запускать вместе с Windows</span>
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>🔄 Автоматические обновления</h3>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="settingAutoUpdate">
+                        <span>Проверять обновления автоматически</span>
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>🟢 Рабочие приложения</h3>
+                    <p class="setting-hint">Приложения, в которых вы работаете</p>
+                    <div class="tags-container" id="whiteTagsWeb"></div>
+                    <div class="tag-input-row">
+                        <input type="text" id="whiteInputWeb" placeholder="Название приложения...">
+                        <button class="btn btn-add tag-add-btn" id="addWhiteBtn">+</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <h3>🔴 Отвлекающие приложения</h3>
+                    <p class="setting-hint">Приложения, которые отвлекают от работы</p>
+                    <div class="tags-container" id="blackTagsWeb"></div>
+                    <div class="tag-input-row">
+                        <input type="text" id="blackInputWeb" placeholder="Название приложения...">
+                        <button class="btn btn-stop tag-add-btn" id="addBlackBtn">+</button>
+                    </div>
+                </div>
+                <div class="setting-group">
                     <h3>Синхронизация устройств</h3>                    <button class="btn" id="generateQR">Подключить устройство (QR-код)</button>
                     <button class="btn" id="showKey">Показать ключ доступа</button>
                     <button class="btn btn-add" id="scanQR">Отсканировать QR-код</button>
