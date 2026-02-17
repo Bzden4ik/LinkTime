@@ -129,6 +129,9 @@ app.use((req, res, next) => {
 // Статические файлы
 app.use(express.static(path.join(__dirname, 'public')));
 
+// JSON body parser
+app.use(express.json({ limit: '10mb' }));
+
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({
@@ -138,6 +141,32 @@ app.get('/api/health', (req, res) => {
         connections: wss.clients.size,
         env: NODE_ENV,
     });
+});
+
+// === API: Получить данные сессии ===
+app.get('/api/data/:sessionKey', (req, res) => {
+    const { sessionKey } = req.params;
+    const row = stmts.getSession.get(sessionKey);
+    if (!row) return res.json({ tasks: [], sessions: {} });
+    res.json({
+        tasks: JSON.parse(row.tasks || '[]'),
+        sessions: JSON.parse(row.work_sessions || '{}')
+    });
+});
+
+// === API: Сохранить данные сессии ===
+app.post('/api/data/:sessionKey', (req, res) => {
+    const { sessionKey } = req.params;
+    const { tasks, sessions } = req.body;
+    if (!sessionKey) return res.status(400).json({ error: 'sessionKey required' });
+    ensureSession(sessionKey);
+    stmts.updateSync.run(
+        JSON.stringify(tasks || []),
+        JSON.stringify(sessions || {}),
+        Date.now(),
+        sessionKey
+    );
+    res.json({ ok: true });
 });
 
 // Fallback — отдаём index.html для SPA

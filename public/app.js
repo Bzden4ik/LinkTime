@@ -64,6 +64,8 @@ function initializeApp() {
     
     // Подключаемся к WebSocket серверу
     connectWebSocket();
+    // Загружаем данные с сервера
+    loadFromServer();
 }
 
 // Генерация уникального ключа сессии
@@ -654,7 +656,7 @@ function selectDate(dateStr) {
 }
 
 function getDataForDate(dateStr) {
-    const sessions = JSON.parse(localStorage.getItem(`sessions_${dateStr}`) || '[]');
+    const sessions = dataCache.sessions[`sessions_${dateStr}`] || [];
     const tasks = getTasks().filter(t => t.date === dateStr);
     
     let totalWorkTime = 0;
@@ -800,11 +802,10 @@ function handleQRCodeScanned(key) {
     localStorage.setItem('sessionKey', key);
     showToast('Устройство успешно подключено!', 'success');
     closeSettings();
-    // Переподключаемся к WebSocket с новым ключом
-    if (ws) {
-        ws.close();
-    }
+    if (ws) ws.close();
     connectWebSocket();
+    dataCache = { tasks: [], sessions: {} };
+    loadFromServer();
 }
 
 function showKeyInput() {
@@ -820,31 +821,71 @@ function connectWithKey() {
         localStorage.setItem('sessionKey', key);
         showToast('Устройство успешно подключено!', 'success');
         closeSettings();
-        // Переподключаемся к WebSocket с новым ключом
-        if (ws) {
-            ws.close();
-        }
+        if (ws) ws.close();
         connectWebSocket();
+        dataCache = { tasks: [], sessions: {} };
+        loadFromServer();
     }
 }
 
-// === ХРАНИЛИЩЕ ===
+// === ХРАНИЛИЩЕ (SQLite через сервер API) ===
+
+const API_BASE = WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
+let dataCache = { tasks: [], sessions: {} };
+let saveTimeout = null;
+let dataLoaded = false;
+
+async function loadFromServer() {
+    try {
+        const res = await fetch(`${API_BASE}/api/data/${state.sessionKey}`);
+        const data = await res.json();
+        dataCache.tasks = data.tasks || [];
+        dataCache.sessions = data.sessions || {};
+        dataLoaded = true;
+        console.log('[Storage] Loaded from server');
+        renderTasks();
+        updateSelectedDateStats();
+        renderCalendar();
+    } catch (e) {
+        console.warn('[Storage] Load failed', e);
+        dataLoaded = true;
+    }
+}
+
+function scheduleSave() {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => saveToServer(), 500);
+}
+
+async function saveToServer() {
+    try {
+        await fetch(`${API_BASE}/api/data/${state.sessionKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tasks: dataCache.tasks, sessions: dataCache.sessions })
+        });
+    } catch (e) {
+        console.warn('[Storage] Save failed', e);
+    }
+}
 
 function getTasks() {
-    return JSON.parse(localStorage.getItem('tasks') || '[]');
+    return dataCache.tasks;
 }
 
 function saveTasks(tasks) {
-    localStorage.setItem('tasks', JSON.stringify(tasks));
+    dataCache.tasks = tasks;
+    scheduleSave();
     syncData();
 }
 
 function getTodaySessions() {
-    return JSON.parse(localStorage.getItem(`sessions_${state.currentDate}`) || '[]');
+    return dataCache.sessions[`sessions_${state.currentDate}`] || [];
 }
 
 function saveTodaySessions(sessions) {
-    localStorage.setItem(`sessions_${state.currentDate}`, JSON.stringify(sessions));
+    dataCache.sessions[`sessions_${state.currentDate}`] = sessions;
+    scheduleSave();
     syncData();
 }
 
@@ -943,22 +984,11 @@ function connectWebSocket() {
 
 function syncData() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-        const tasks = getTasks();
-        const allSessions = {};
-        
-        // Собираем все сессии со всех дат
-        for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key.startsWith('sessions_')) {
-                allSessions[key] = JSON.parse(localStorage.getItem(key));
-            }
-        }
-        
         ws.send(JSON.stringify({
             type: 'sync',
             sessionKey: state.sessionKey,
-            tasks: tasks,
-            sessions: allSessions,
+            tasks: dataCache.tasks,
+            sessions: dataCache.sessions,
             date: state.currentDate
         }));
     }
@@ -1278,26 +1308,20 @@ function updateActivityIndicator(status, windowTitle) {
 function applyRemoteData(data) {
     if (!data) return;
     
-    // Объединяем задачи (по id, без дубликатов)
     if (data.tasks && Array.isArray(data.tasks)) {
-        const localTasks = getTasks();
         const mergedMap = new Map();
-        localTasks.forEach(t => mergedMap.set(t.id, t));
+        dataCache.tasks.forEach(t => mergedMap.set(t.id, t));
         data.tasks.forEach(t => mergedMap.set(t.id, t));
-        const merged = Array.from(mergedMap.values());
-        localStorage.setItem('tasks', JSON.stringify(merged));
+        dataCache.tasks = Array.from(mergedMap.values());
         renderTasks();
     }
     
-    // Объединяем сессии (по дате, берём больший набор)
     if (data.sessions) {
         Object.keys(data.sessions).forEach(key => {
             const remote = data.sessions[key];
-            const localRaw = localStorage.getItem(key);
-            const local = localRaw ? JSON.parse(localRaw) : [];
-            // Берём набор с большим количеством сессий, либо remote если local пуст
-            if (!localRaw || remote.length > local.length) {
-                localStorage.setItem(key, JSON.stringify(remote));
+            const local = dataCache.sessions[key] || [];
+            if (!dataCache.sessions[key] || remote.length > local.length) {
+                dataCache.sessions[key] = remote;
             }
         });
         updateSelectedDateStats();
