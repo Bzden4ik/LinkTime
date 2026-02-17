@@ -671,8 +671,8 @@ updateSelectedDateStats();
 }
 
 function getDataForDate(dateStr) {
-const sessions = JSON.parse(localStorage.getItem(`sessions_${dateStr}`) || '[]');
-const tasks = getTasks().filter(t => t.date === dateStr);
+const sessions = getSessionsForDate(dateStr);
+const tasks = cache.tasks.filter(t => t.date === dateStr);
 
 let totalWorkTime = 0;
 let totalPauseTime = 0;
@@ -862,23 +862,29 @@ connectWebSocket();
 }
 }
 
-// === ХРАНИЛИЩЕ ===
+// === ХРАНИЛИЩЕ (сервер — единственный источник правды) ===
+
+// In-memory кеш — актуален пока открыта вкладка
+const cache = {
+tasks: [],
+sessions: {} // { 'sessions_2025-01-01': [...] }
+};
 
 function getTasks() {
-return JSON.parse(localStorage.getItem('tasks') || '[]');
+return cache.tasks;
 }
 
 function saveTasks(tasks) {
-localStorage.setItem('tasks', JSON.stringify(tasks));
+cache.tasks = tasks;
 syncData();
 }
 
 function getTodaySessions() {
-return JSON.parse(localStorage.getItem(`sessions_${state.currentDate}`) || '[]');
+return cache.sessions[`sessions_${state.currentDate}`] || [];
 }
 
 function saveTodaySessions(sessions) {
-localStorage.setItem(`sessions_${state.currentDate}`, JSON.stringify(sessions));
+cache.sessions[`sessions_${state.currentDate}`] = sessions;
 syncData();
 }
 
@@ -886,6 +892,10 @@ function saveTodaySession(session) {
 const sessions = getTodaySessions();
 sessions.push(session);
 saveTodaySessions(sessions);
+}
+
+function getSessionsForDate(dateStr) {
+return cache.sessions[`sessions_${dateStr}`] || [];
 }
 
 // === WEBSOCKET СИНХРОНИЗАЦИЯ ===
@@ -977,22 +987,11 @@ console.error('Failed to connect WebSocket:', error);
 
 function syncData() {
 if (ws && ws.readyState === WebSocket.OPEN) {
-const tasks = getTasks();
-const allSessions = {};
-
-// Собираем все сессии со всех дат
-for (let i = 0; i < localStorage.length; i++) {
-const key = localStorage.key(i);
-if (key.startsWith('sessions_')) {
-allSessions[key] = JSON.parse(localStorage.getItem(key));
-}
-}
-
 ws.send(JSON.stringify({
 type: 'sync',
 sessionKey: state.sessionKey,
-tasks: tasks,
-sessions: allSessions,
+tasks: cache.tasks,
+sessions: cache.sessions,
 date: state.currentDate
 }));
 }
@@ -1325,28 +1324,13 @@ indicator.className = `activity-indicator ${statusClass}`;
 function applyRemoteData(data) {
 if (!data) return;
 
-// Объединяем задачи (по id, без дубликатов)
 if (data.tasks && Array.isArray(data.tasks)) {
-const localTasks = getTasks();
-const mergedMap = new Map();
-localTasks.forEach(t => mergedMap.set(t.id, t));
-data.tasks.forEach(t => mergedMap.set(t.id, t));
-const merged = Array.from(mergedMap.values());
-localStorage.setItem('tasks', JSON.stringify(merged));
+cache.tasks = data.tasks;
 renderTasks();
 }
 
-// Объединяем сессии (по дате, берём больший набор)
 if (data.sessions) {
-Object.keys(data.sessions).forEach(key => {
-const remote = data.sessions[key];
-const localRaw = localStorage.getItem(key);
-const local = localRaw ? JSON.parse(localRaw) : [];
-// Берём набор с большим количеством сессий, либо remote если local пуст
-if (!localRaw || remote.length > local.length) {
-localStorage.setItem(key, JSON.stringify(remote));
-}
-});
+cache.sessions = data.sessions;
 updateSelectedDateStats();
 renderCalendar();
 }
@@ -1460,6 +1444,7 @@ window.addListItem = addListItem;
 window.removeListItem = removeListItem;
 
 // === МИГРАЦИЯ ДАННЫХ ИЗ БРАУЗЕРА В БД СЕРВЕРА ===
+// === СИНХРОНИЗАЦИЯ С СЕРВЕРОМ ===
 async function migrateDataToServer() {
 if (!state.sessionKey) {
 showToast('Сначала создайте или введите ключ сессии', 'error');
@@ -1467,71 +1452,22 @@ return;
 }
 const migrateBtn = document.getElementById('migrateBtn');
 migrateBtn.disabled = true;
-migrateBtn.textContent = 'Переносим данные...';
+migrateBtn.textContent = 'Загружаем...';
 try {
 const serverUrl = WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
 const apiUrl = `${serverUrl}/api/data/${encodeURIComponent(state.sessionKey)}`;
-
-// 1. Получаем данные из БД
 const getResp = await fetch(apiUrl);
-if (!getResp.ok) throw new Error(`Не удалось получить данные с сервера: ${getResp.status}`);
+if (!getResp.ok) throw new Error(`Ошибка сервера: ${getResp.status}`);
 const serverData = await getResp.json();
-
-// 2. Собираем локальные данные
-const localTasks = getTasks();
-const localSessions = {};
-for (let i = 0; i < localStorage.length; i++) {
-const key = localStorage.key(i);
-if (key.startsWith('sessions_')) {
-localSessions[key] = JSON.parse(localStorage.getItem(key));
-}
-}
-
-// 3. Мержим задачи по id (без дублей)
-const mergedTasksMap = new Map();
-(serverData.tasks || []).forEach(t => mergedTasksMap.set(t.id, t));
-localTasks.forEach(t => mergedTasksMap.set(t.id, t));
-const mergedTasks = Array.from(mergedTasksMap.values());
-
-// 4. Мержим сессии по дате (берём больший набор)
-const mergedSessions = { ...(serverData.sessions || {}) };
-Object.keys(localSessions).forEach(key => {
-const local = localSessions[key];
-const remote = mergedSessions[key] || [];
-if (!remote.length || local.length >= remote.length) {
-mergedSessions[key] = local;
-}
-});
-
-// 5. Отправляем мерженные данные
-const postResp = await fetch(apiUrl, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ tasks: mergedTasks, sessions: mergedSessions })
-});
-if (!postResp.ok) throw new Error(`Сервер вернул ошибку: ${postResp.status}`);
-const result = await postResp.json();
-
-// 6. Обновляем localStorage мерженными данными
-localStorage.setItem('tasks', JSON.stringify(mergedTasks));
-Object.keys(mergedSessions).forEach(key => {
-localStorage.setItem(key, JSON.stringify(mergedSessions[key]));
-});
-
-// 7. Обновляем UI
+cache.tasks = serverData.tasks || [];
+cache.sessions = serverData.sessions || {};
 renderTasks();
 updateSelectedDateStats();
 renderCalendar();
-
-if (result.ok) {
-const msg = result.newTasks > 0 || result.newDays > 0
-? `Синхронизировано! +${result.newTasks} задач, +${result.newDays} дней. Итого: ${result.totalTasks} задач, ${result.totalDays} дней`
-: `Все данные уже в базе (${result.totalTasks} задач, ${result.totalDays} дней)`;
-showToast(msg, 'success');
-}
+showToast(`Загружено с сервера: ${cache.tasks.length} задач`, 'success');
 } catch (error) {
-console.error('Migration error:', error);
-showToast('Ошибка переноса: ' + error.message, 'error');
+console.error('Sync error:', error);
+showToast('Ошибка загрузки: ' + error.message, 'error');
 } finally {
 migrateBtn.disabled = false;
 migrateBtn.textContent = 'Перенести данные из браузера в базу';
