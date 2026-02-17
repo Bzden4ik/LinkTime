@@ -30,6 +30,9 @@ if [ "$LOCAL" = "$REMOTE" ]; then
     exit 0
 fi
 
+info "Сбрасываем локальные изменения на сервере..."
+git checkout -- .
+
 info "Применяем обновления..."
 git pull origin main
 
