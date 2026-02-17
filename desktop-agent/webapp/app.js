@@ -65,6 +65,8 @@ localStorage.setItem('sessionKey', state.sessionKey);
 
 // Подключаемся к WebSocket серверу
 connectWebSocket();
+// Загружаем профиль пользователя
+initUserProfile();
 }
 
 // Генерация уникального ключа сессии
@@ -88,7 +90,20 @@ if (e.key === 'Enter') saveTask();
 });
 
 // Настройки
-document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('settingsBtn') && document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('burgerBtn').addEventListener('click', toggleBurger);
+document.getElementById('burgerSettings').addEventListener('click', () => { closeBurger(); openSettings(); });
+document.getElementById('burgerBell').addEventListener('click', toggleNotifications);
+document.getElementById('avatarBtn').addEventListener('click', () => { closeBurger(); openProfile(); });
+document.getElementById('inviteBtn').addEventListener('click', () => { closeBurger(); openInviteModal(); });
+document.getElementById('closeProfile').addEventListener('click', closeProfile);
+document.getElementById('closeInvite').addEventListener('click', closeInviteModal);
+document.getElementById('saveUsername').addEventListener('click', saveUsername);
+document.getElementById('saveEmail').addEventListener('click', saveEmail);
+document.getElementById('sendInviteBtn').addEventListener('click', sendInvite);
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('burgerWrap').contains(e.target)) closeBurger();
+});
 document.getElementById('closeSettings').addEventListener('click', closeSettings);
 document.getElementById('generateQR').addEventListener('click', generateQRCode);
 document.getElementById('showKey').addEventListener('click', showSessionKey);
@@ -955,6 +970,10 @@ case 'agent_status':
 // Desktop Agent подключился/отключился
 handleAgentStatus(message.connected);
 break;
+case 'notification_count':
+updateNotifBadge(message.count);
+loadNotificationCount();
+break;
 }
 };
 
@@ -1469,6 +1488,199 @@ migrateBtn.disabled = false;
 migrateBtn.textContent = 'Перенести данные из браузера в базу';
 }
 }
+
+// === ПРОФИЛЬ И КОМАНДЫ ===
+
+let userProfile = null; // { userId, username, email }
+
+function getApiBase() {
+  return WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
+}
+
+async function initUserProfile() {
+  try {
+    const res = await fetch(`${getApiBase()}/api/user/${state.sessionKey}`);
+    userProfile = await res.json();
+    updateAvatarLetter();
+    loadNotificationCount();
+  } catch (e) {
+    console.error('Profile init error:', e);
+  }
+}
+
+function updateAvatarLetter() {
+  if (!userProfile) return;
+  document.getElementById('avatarLetter').textContent = (userProfile.username || '?')[0].toUpperCase();
+}
+
+// === БУРГЕР ===
+
+function toggleBurger() {
+  document.getElementById('burgerDropdown').classList.toggle('open');
+  document.getElementById('notificationsPanel').style.display = 'none';
+}
+function closeBurger() {
+  document.getElementById('burgerDropdown').classList.remove('open');
+}
+
+// === УВЕДОМЛЕНИЯ ===
+
+async function loadNotificationCount() {
+  if (!userProfile) return;
+  try {
+    const res = await fetch(`${getApiBase()}/api/invitations/${state.sessionKey}`);
+    const data = await res.json();
+    updateNotifBadge(data.count);
+    renderNotifications(data.invitations);
+  } catch (e) {}
+}
+
+function updateNotifBadge(count) {
+  const badge = document.getElementById('burgerBadge');
+  const bellBadge = document.getElementById('bellBadge');
+  if (count > 0) {
+    badge.style.display = 'flex';
+    badge.textContent = count;
+    bellBadge.style.display = 'flex';
+    bellBadge.textContent = count;
+  } else {
+    badge.style.display = 'none';
+    bellBadge.style.display = 'none';
+  }
+}
+
+function toggleNotifications() {
+  const panel = document.getElementById('notificationsPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function renderNotifications(invitations) {
+  const panel = document.getElementById('notificationsPanel');
+  if (!invitations || invitations.length === 0) {
+    panel.innerHTML = '<div class="notif-empty">Нет новых уведомлений</div>';
+    return;
+  }
+  panel.innerHTML = invitations.map(inv => `
+    <div class="notif-item">
+      <strong>${inv.from_username}</strong> приглашает вас в команду
+      <div class="notif-actions">
+        <button class="notif-accept" onclick="respondInvite(${inv.id}, 'accept')">Принять</button>
+        <button class="notif-decline" onclick="respondInvite(${inv.id}, 'decline')">Отклонить</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function respondInvite(id, action) {
+  try {
+    const res = await fetch(`${getApiBase()}/api/invite/${id}/respond`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionKey: state.sessionKey, action })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast(action === 'accept' ? 'Приглашение принято!' : 'Приглашение отклонено', 'info');
+      loadNotificationCount();
+    }
+  } catch (e) {
+    showToast('Ошибка', 'error');
+  }
+}
+
+window.respondInvite = respondInvite;
+
+// === ПРОФИЛЬ ===
+
+function openProfile() {
+  if (!userProfile) return;
+  document.getElementById('profileUserId').textContent = userProfile.userId;
+  document.getElementById('profileUsername').value = userProfile.username || '';
+  document.getElementById('profileEmail').value = userProfile.email || '';
+  document.getElementById('usernameHint').textContent = '';
+  document.getElementById('profileModal').classList.add('active');
+}
+function closeProfile() {
+  document.getElementById('profileModal').classList.remove('active');
+}
+
+async function saveUsername() {
+  const username = document.getElementById('profileUsername').value.trim();
+  const hint = document.getElementById('usernameHint');
+  try {
+    const res = await fetch(`${getApiBase()}/api/user/${state.sessionKey}/username`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      userProfile.username = username;
+      updateAvatarLetter();
+      hint.style.color = '#10b981';
+      hint.textContent = 'Имя сохранено!';
+    } else {
+      hint.style.color = '#ef4444';
+      hint.textContent = data.error || 'Ошибка';
+    }
+  } catch (e) {
+    hint.style.color = '#ef4444';
+    hint.textContent = 'Ошибка соединения';
+  }
+}
+
+async function saveEmail() {
+  const email = document.getElementById('profileEmail').value.trim();
+  try {
+    await fetch(`${getApiBase()}/api/user/${state.sessionKey}/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    userProfile.email = email;
+    showToast('Email сохранён', 'success');
+  } catch (e) {
+    showToast('Ошибка', 'error');
+  }
+}
+
+// === ПРИГЛАШЕНИЯ ===
+
+function openInviteModal() {
+  document.getElementById('inviteQuery').value = '';
+  document.getElementById('inviteHint').textContent = '';
+  document.getElementById('inviteModal').classList.add('active');
+}
+function closeInviteModal() {
+  document.getElementById('inviteModal').classList.remove('active');
+}
+
+async function sendInvite() {
+  const query = document.getElementById('inviteQuery').value.trim();
+  const hint = document.getElementById('inviteHint');
+  if (!query) { hint.style.color = '#ef4444'; hint.textContent = 'Введите ID или имя'; return; }
+  try {
+    const res = await fetch(`${getApiBase()}/api/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fromSessionKey: state.sessionKey, toQuery: query })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      hint.style.color = '#10b981';
+      hint.textContent = 'Приглашение отправлено!';
+    } else {
+      hint.style.color = '#ef4444';
+      hint.textContent = data.error || 'Ошибка';
+    }
+  } catch (e) {
+    hint.style.color = '#ef4444';
+    hint.textContent = 'Ошибка соединения';
+  }
+}
+
+// WS: получаем уведомление о новом приглашении
+// (добавляется в обработчик onmessage)
 
 // === MOBILE TAB NAVIGATION ===
 (function initMobileNav() {

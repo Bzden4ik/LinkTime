@@ -10,7 +10,29 @@
 <div class="container">
 <header>
 <h1>LinkTime</h1>
-<button class="settings-btn" id="settingsBtn">⚙️</button>
+<div class="header-right">
+  <!-- Бургер-меню -->
+  <div class="burger-wrap" id="burgerWrap">
+    <button class="burger-btn" id="burgerBtn">
+      <span></span><span></span><span></span>
+      <div class="burger-badge" id="burgerBadge" style="display:none"></div>
+    </button>
+    <div class="burger-dropdown" id="burgerDropdown">
+      <button class="burger-item" id="burgerSettings">⚙️ Настройки</button>
+      <button class="burger-item burger-bell" id="burgerBell">
+        🔔 Уведомления
+        <span class="bell-badge" id="bellBadge" style="display:none"></span>
+      </button>
+      <div class="notifications-panel" id="notificationsPanel" style="display:none"></div>
+    </div>
+  </div>
+  <!-- Аватар (профиль) -->
+  <button class="avatar-btn" id="avatarBtn" title="Профиль">
+    <span class="avatar-letter" id="avatarLetter">?</span>
+  </button>
+  <!-- Добавить в команду -->
+  <button class="avatar-btn avatar-add" id="inviteBtn" title="Пригласить в команду">+</button>
+</div>
 </header>
 
 <main>
@@ -138,6 +160,59 @@
 
 <!-- Toast notification -->
 <div class="toast" id="toast"></div>
+
+<!-- Модальное окно: профиль -->
+<div class="modal" id="profileModal">
+<div class="modal-content">
+  <div class="modal-header">
+    <h2>Мой профиль</h2>
+    <button class="close-btn" id="closeProfile">×</button>
+  </div>
+  <div class="modal-body">
+    <div class="profile-id-block">
+      <span class="profile-label">Ваш ID <small>(нельзя изменить)</small></span>
+      <div class="profile-id-value" id="profileUserId">—</div>
+    </div>
+    <div class="setting-group">
+      <h3>Имя пользователя</h3>
+      <div class="profile-field-row">
+        <input type="text" id="profileUsername" placeholder="username" maxlength="20">
+        <button class="btn btn-small btn-add" id="saveUsername">Сохранить</button>
+      </div>
+      <p class="setting-hint" id="usernameHint"></p>
+    </div>
+    <div class="setting-group">
+      <h3>Email <span style="font-size:0.8em;opacity:0.6">(необязательно)</span></h3>
+      <div class="profile-field-row">
+        <input type="email" id="profileEmail" placeholder="you@example.com">
+        <button class="btn btn-small btn-add" id="saveEmail">Сохранить</button>
+      </div>
+      <p class="setting-hint">При указании почты восстановить профиль можно без участия администрации.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Модальное окно: пригласить -->
+<div class="modal" id="inviteModal">
+<div class="modal-content">
+  <div class="modal-header">
+    <h2>Пригласить в команду</h2>
+    <button class="close-btn" id="closeInvite">×</button>
+  </div>
+  <div class="modal-body">
+    <div class="setting-group">
+      <h3>Найти пользователя</h3>
+      <p class="setting-hint">Введите ID (6 символов) или имя пользователя</p>
+      <div class="profile-field-row">
+        <input type="text" id="inviteQuery" placeholder="ID или username">
+        <button class="btn btn-small btn-add" id="sendInviteBtn">Пригласить</button>
+      </div>
+      <p class="setting-hint" id="inviteHint"></p>
+    </div>
+  </div>
+</div>
+</div>
 
 <!-- Mobile bottom navigation -->
 <nav class="mobile-nav" id="mobileNav">

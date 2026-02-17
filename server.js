@@ -34,6 +34,23 @@ db.exec(`
         last_update INTEGER,
         created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_key TEXT UNIQUE NOT NULL,
+        user_id TEXT UNIQUE NOT NULL,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT DEFAULT NULL,
+        created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
+
+    CREATE TABLE IF NOT EXISTS invitations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_user_id TEXT NOT NULL,
+        to_user_id TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
 `);
 
 console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
@@ -70,6 +87,19 @@ const stmts = {
         UPDATE session_data SET tasks = ?, work_sessions = ?, last_update = ? WHERE session_key = ?
     `),
     getAllSessions: db.prepare('SELECT session_key, last_heartbeat, timer_state FROM session_data WHERE last_heartbeat IS NOT NULL'),
+    // Users
+    getUserBySession: db.prepare('SELECT * FROM users WHERE session_key = ?'),
+    getUserByUserId: db.prepare('SELECT * FROM users WHERE user_id = ?'),
+    getUserByUsername: db.prepare('SELECT * FROM users WHERE username = ?'),
+    createUser: db.prepare('INSERT INTO users (session_key, user_id, username, email) VALUES (?, ?, ?, ?)'),
+    updateUsername: db.prepare('UPDATE users SET username = ? WHERE session_key = ?'),
+    updateEmail: db.prepare('UPDATE users SET email = ? WHERE session_key = ?'),
+    // Invitations
+    createInvitation: db.prepare('INSERT INTO invitations (from_user_id, to_user_id) VALUES (?, ?)'),
+    getPendingInvitations: db.prepare('SELECT i.*, u.username as from_username FROM invitations i JOIN users u ON i.from_user_id = u.user_id WHERE i.to_user_id = ? AND i.status = ?'),
+    updateInvitation: db.prepare('UPDATE invitations SET status = ? WHERE id = ? AND to_user_id = ?'),
+    countPending: db.prepare('SELECT COUNT(*) as cnt FROM invitations WHERE to_user_id = ? AND status = ?'),
+    checkInvitationExists: db.prepare('SELECT id FROM invitations WHERE from_user_id = ? AND to_user_id = ? AND status = ?'),
 };
 
 // === ХЕЛПЕРЫ ДЛЯ БД ===
@@ -104,6 +134,37 @@ function ensureSession(sessionKey) {
             last_update: Date.now(),
         });
     }
+}
+
+// === ХЕЛПЕРЫ ПОЛЬЗОВАТЕЛЕЙ ===
+
+function generateUserId() {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let id;
+    do {
+        id = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    } while (stmts.getUserByUserId.get(id));
+    return id;
+}
+
+function generateUsername() {
+    let name;
+    do {
+        const num = String(Math.floor(10000 + Math.random() * 90000));
+        name = 'user' + num;
+    } while (stmts.getUserByUsername.get(name));
+    return name;
+}
+
+function ensureUser(sessionKey) {
+    let user = stmts.getUserBySession.get(sessionKey);
+    if (!user) {
+        const userId = generateUserId();
+        const username = generateUsername();
+        stmts.createUser.run(sessionKey, userId, username, null);
+        user = stmts.getUserBySession.get(sessionKey);
+    }
+    return user;
 }
 
 // === EXPRESS СЕРВЕР ===
@@ -171,6 +232,75 @@ app.post('/api/data/:sessionKey', (req, res) => {
     res.json({ ok: true, totalTasks: (tasks || []).length, totalDays: Object.keys(sessions || {}).length });
 });
 
+// === API: Пользователь — получить/создать профиль ===
+app.get('/api/user/:sessionKey', (req, res) => {
+    const user = ensureUser(req.params.sessionKey);
+    res.json({ userId: user.user_id, username: user.username, email: user.email });
+});
+
+// === API: Обновить имя ===
+app.post('/api/user/:sessionKey/username', (req, res) => {
+    const { username } = req.body;
+    if (!username || username.length < 3 || username.length > 20) return res.status(400).json({ error: 'Имя: 3–20 символов' });
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) return res.status(400).json({ error: 'Только буквы, цифры, _' });
+    const existing = stmts.getUserByUsername.get(username);
+    const me = stmts.getUserBySession.get(req.params.sessionKey);
+    if (existing && existing.session_key !== req.params.sessionKey) return res.status(409).json({ error: 'Имя занято' });
+    stmts.updateUsername.run(username, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+// === API: Обновить email ===
+app.post('/api/user/:sessionKey/email', (req, res) => {
+    const { email } = req.body;
+    stmts.updateEmail.run(email || null, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+// === API: Найти пользователя по userId или username ===
+app.get('/api/user/find/:query', (req, res) => {
+    const q = req.params.query.trim();
+    const user = stmts.getUserByUserId.get(q) || stmts.getUserByUsername.get(q);
+    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+    res.json({ userId: user.user_id, username: user.username });
+});
+
+// === API: Отправить приглашение ===
+app.post('/api/invite', (req, res) => {
+    const { fromSessionKey, toQuery } = req.body;
+    const fromUser = stmts.getUserBySession.get(fromSessionKey);
+    if (!fromUser) return res.status(400).json({ error: 'Профиль не найден' });
+    const toUser = stmts.getUserByUserId.get(toQuery) || stmts.getUserByUsername.get(toQuery);
+    if (!toUser) return res.status(404).json({ error: 'Пользователь не найден' });
+    if (toUser.user_id === fromUser.user_id) return res.status(400).json({ error: 'Нельзя пригласить себя' });
+    const exists = stmts.checkInvitationExists.get(fromUser.user_id, toUser.user_id, 'pending');
+    if (exists) return res.status(409).json({ error: 'Приглашение уже отправлено' });
+    stmts.createInvitation.run(fromUser.user_id, toUser.user_id);
+    // Уведомляем получателя через WS если онлайн
+    const cnt = stmts.countPending.get(toUser.user_id, 'pending').cnt;
+    notifyUser(toUser.session_key, { type: 'notification_count', count: cnt });
+    res.json({ ok: true });
+});
+
+// === API: Получить входящие приглашения ===
+app.get('/api/invitations/:sessionKey', (req, res) => {
+    const user = stmts.getUserBySession.get(req.params.sessionKey);
+    if (!user) return res.json({ invitations: [], count: 0 });
+    const invitations = stmts.getPendingInvitations.all(user.user_id, 'pending');
+    res.json({ invitations, count: invitations.length });
+});
+
+// === API: Ответить на приглашение ===
+app.post('/api/invite/:id/respond', (req, res) => {
+    const { sessionKey, action } = req.body; // action: 'accept' | 'decline'
+    const user = stmts.getUserBySession.get(sessionKey);
+    if (!user) return res.status(400).json({ error: 'Профиль не найден' });
+    const status = action === 'accept' ? 'accepted' : 'declined';
+    stmts.updateInvitation.run(status, req.params.id, user.user_id);
+    const cnt = stmts.countPending.get(user.user_id, 'pending').cnt;
+    res.json({ ok: true, count: cnt });
+});
+
 // Fallback — отдаём index.html для SPA
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -184,6 +314,15 @@ const wss = new WebSocket.Server({ noServer: true });
 
 // Хранилище активных подключений: { sessionKey: Set<ws> }
 const connections = new Map();
+
+// Отправить сообщение конкретному пользователю по sessionKey
+function notifyUser(sessionKey, message) {
+    if (!connections.has(sessionKey)) return;
+    const msg = JSON.stringify(message);
+    connections.get(sessionKey).forEach(client => {
+        if (client.readyState === WebSocket.OPEN) client.send(msg);
+    });
+}
 
 // Обработка upgrade
 server.on('upgrade', (request, socket, head) => {
