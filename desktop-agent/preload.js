@@ -1,16 +1,22 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+console.log('[Preload] Setting up Electron bridge...');
+
+// Expose Electron API
 contextBridge.exposeInMainWorld('electronAPI', {
+    // Флаг что это Electron
     isElectron: true,
-
-    // Config
-    getConfig: () => ipcRenderer.send('get-config'),
-    saveConfig: (config) => ipcRenderer.send('save-config', config),
-    testConnection: () => ipcRenderer.send('test-connection'),
-
-    // Listeners
-    onConfigData:       (cb) => ipcRenderer.on('config-data',       (_, d) => cb(d)),
-    onStatusUpdate:     (cb) => ipcRenderer.on('status-update',     (_, d) => cb(d)),
-    onConnectionStatus: (cb) => ipcRenderer.on('connection-status', (_, d) => cb(d)),
-    onConfigSaved:      (cb) => ipcRenderer.on('config-saved',      ()    => cb()),
+    
+    // Обновления
+    onUpdateInfo: (callback) => ipcRenderer.on('update-info', callback),
+    onUpdateAvailable: (callback) => ipcRenderer.on('update-available', callback),
+    onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
+    checkUpdates: () => ipcRenderer.send('check-updates'),
+    installUpdate: (downloadUrl) => ipcRenderer.send('install-update', downloadUrl),
+    
+    // Утилиты
+    removeListener: (channel, callback) => ipcRenderer.removeListener(channel, callback)
 });
+
+console.log('[Preload] Electron API exposed');
+
