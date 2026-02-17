@@ -500,7 +500,7 @@ showToast('Задача добавлена!', 'success');
 
 function toggleTask(taskId) {
 const tasks = getTasks();
-const task = tasks.find(t => t.id === taskId);
+const task = tasks.find(t => t.id === Number(taskId));
 if (task) {
 task.completed = !task.completed;
 if (task.completed) {
@@ -547,17 +547,12 @@ return data.totalWorkTime;
 }
 
 function deleteTask(taskId) {
-const taskItem = document.querySelector(`[data-task-id="${taskId}"]`);
-if (taskItem) {
-taskItem.classList.add('removing');
-setTimeout(() => {
-const tasks = getTasks().filter(t => t.id !== taskId);
+const id = Number(taskId);
+const tasks = getTasks().filter(t => t.id !== id);
 saveTasks(tasks);
 renderTasks();
 updateSelectedDateStats();
 showToast('Задача удалена', 'info');
-}, 300);
-}
 }
 
 function renderTasks() {
