@@ -604,6 +604,7 @@ console.log('Activity monitoring stopped');
 
 // IPC обработчики для окна настроек
 ipcMain.on('get-config', (event) => {
+    event.reply('config-data', config);
     const currentAutostart = getAutostartStatus();
     const configWithAutostart = { ...config, autostart: currentAutostart };
     event.reply('config-data', configWithAutostart);

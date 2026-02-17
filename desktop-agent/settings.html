@@ -169,6 +169,7 @@ const whiteList = document.getElementById('whiteList').value
 const blackList = document.getElementById('blackList').value
 .split('\n').map(s => s.trim()).filter(Boolean);
 
+            ipcRenderer.send('save-config', { sessionKey, whiteList, blackList });
             ipcRenderer.send('save-config', { sessionKey, autostart, whiteList, blackList });
 });
 
