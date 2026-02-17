@@ -8,8 +8,7 @@ let state = {
     sessionKey: null,
     currentDate: new Date().toISOString().split('T')[0],
     selectedDate: new Date().toISOString().split('T')[0], // Добавлена выбранная дата
-    totalPausedTime: 0,
-    lastTaskCompletionTime: 0 // Последняя точка фиксации задачи для интервального учёта
+    totalPausedTime: 0
 };
 
 let timerInterval = null;
@@ -55,9 +54,11 @@ function initializeApp() {
             localStorage.setItem('sessionKey', state.sessionKey);
         }
     }
-    
+
     // Подключаемся к WebSocket серверу
     connectWebSocket();
+    // Загружаем данные с сервера
+    loadFromServer();
 }
 
 // Генерация уникального ключа сессии
@@ -88,65 +89,16 @@ function setupEventListeners() {
     document.getElementById('scanQR').addEventListener('click', startQRScanner);
     document.getElementById('enterKey').addEventListener('click', showKeyInput);
     document.getElementById('connectKey').addEventListener('click', connectWithKey);
+    document.getElementById('migrateBtn').addEventListener('click', migrateFromLocalStorage);
+    
+    // Автозапуск (только для Electron)
+    if (window.__electronApp) {
+        document.getElementById('autostartCheckbox').addEventListener('change', saveAutostartSetting);
+    }
 
     // Календарь
     document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
     document.getElementById('nextMonth').addEventListener('click', () => changeMonth(1));
-    
-    // Обновления
-    const updateNowBtn = document.getElementById('updateNowBtn');
-    const installUpdateBtn = document.getElementById('installUpdateBtn');
-    const closeUpdateNotification = document.getElementById('closeUpdateNotification');
-    
-    if (updateNowBtn) {
-        updateNowBtn.addEventListener('click', installUpdate);
-    }
-    if (installUpdateBtn) {
-        installUpdateBtn.addEventListener('click', installUpdate);
-    }
-    if (closeUpdateNotification) {
-        closeUpdateNotification.addEventListener('click', () => {
-            document.getElementById('updateNotification').style.display = 'none';
-        });
-    }
-    
-    // IPC обработчики для Electron
-    if (window.electronAPI?.isElectron) {
-        console.log('[Update] Setting up IPC handlers for updates...');
-        
-        // Получение информации об обновлении
-        window.electronAPI.onUpdateInfo((event, info) => {
-            console.log('[Update] Info received:', info);
-            if (info.hasUpdate) {
-                updateInfo = info;
-                document.getElementById('updateAvailable').style.display = 'block';
-                document.getElementById('newVersion').textContent = info.latestVersion;
-            } else {
-                document.getElementById('updateAvailable').style.display = 'none';
-            }
-        });
-        
-        // Уведомление о доступном обновлении при запуске
-        window.electronAPI.onUpdateAvailable((event, info) => {
-            console.log('[Update] New version available:', info);
-            showUpdateNotification(info);
-        });
-        
-        // Ошибка обновления
-        window.electronAPI.onUpdateError((event, error) => {
-            console.error('[Update] Error:', error);
-            const message = error.details 
-                ? `${error.message}: ${error.details}` 
-                : error.message;
-            showToast(message, 'error');
-        });
-        
-        console.log('[Update] IPC handlers registered');
-    } else {
-        console.log('[Update] Not in Electron, skipping IPC setup', {
-            electronAPI: window.electronAPI
-        });
-    }
 }
 
 // Настройка обработчиков видимости и фокуса
@@ -154,7 +106,7 @@ function setupVisibilityHandlers() {
     // Visibility API - отслеживание скрытия/показа вкладки
     document.addEventListener('visibilitychange', () => {
         isTabVisible = !document.hidden;
-        
+
         if (isTabVisible) {
             console.log('Tab became visible');
             onUserReturned();
@@ -163,14 +115,14 @@ function setupVisibilityHandlers() {
             onUserLeft('tab_hidden');
         }
     });
-    
+
     // Отслеживание фокуса окна браузера
     window.addEventListener('blur', () => {
         hasWindowFocus = false;
         console.log('Window lost focus');
         onUserLeft('browser_blur');
     });
-    
+
     window.addEventListener('focus', () => {
         hasWindowFocus = true;
         console.log('Window gained focus');
@@ -181,20 +133,20 @@ function setupVisibilityHandlers() {
 // Пользователь ушёл с вкладки — запускаем обратный отсчёт авто-паузы
 function onUserLeft(reason) {
     // В Electron idle-паузой управляет main.js через powerMonitor
-    if (window.electronAPI?.isElectron) return;
+    if (window.__electronApp) return;
     if (!state.timerRunning || state.timerPaused) return;
     if (Date.now() < resumeGraceUntil) {
         console.log('Grace period active — skip auto-pause');
         return;
     }
-    
+
     sendBrowserEvent(reason);
-    
+
     if (autoPauseTimeout) clearTimeout(autoPauseTimeout);
-    
+
     const delay = 5000;
     console.log(`Auto-pause in ${delay/1000}s (reason: ${reason})...`);
-    
+
     autoPauseTimeout = setTimeout(() => {
         if (isTabVisible && hasWindowFocus) return;
         if (agentConnected && agentStatus === 'working') {
@@ -202,10 +154,10 @@ function onUserLeft(reason) {
             return;
         }
         if (!state.timerRunning || state.timerPaused) return;
-        
+
         console.log(`Auto-pausing timer (reason: ${reason})`);
         pauseTimer(true);
-        
+
         let message = 'Таймер приостановлен';
         if (reason === 'tab_hidden') message = 'Авто-Пауза: вкладка скрыта';
         if (reason === 'browser_blur') message = 'Авто-Пауза: окно не в фокусе';
@@ -216,21 +168,21 @@ function onUserLeft(reason) {
 // Пользователь вернулся на вкладку
 function onUserReturned() {
     // В Electron idle-паузой управляет main.js через powerMonitor
-    if (window.electronAPI?.isElectron) return;
+    if (window.__electronApp) return;
 
     // Отменяем обратный отсчёт авто-паузы
     if (autoPauseTimeout) {
         clearTimeout(autoPauseTimeout);
         autoPauseTimeout = null;
     }
-    
+
     sendBrowserEvent('browser_focus');
-    
+
     // Если была авто-пауза (не ручная) — автоматически возобновляем
     if (state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
         console.log('User returned — auto-resuming timer');
         resumeGraceUntil = Date.now() + 7000;
-        
+
         // Прямое возобновление без pauseTimer
         const pauseDuration = Date.now() - state.currentPauseStart;
         const sessions = getTodaySessions();
@@ -245,19 +197,19 @@ function onUserReturned() {
         state.currentPauseStart = null;
         autoPauseActive = false;
         manualPause = false;
-        
+
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 1000);
         updateTimer(); // Мгновенное обновление
-        
+
         document.getElementById('pauseBtn').textContent = 'Пауза';
         document.getElementById('pauseBtn').disabled = false;
-        
+
         syncTimerState('resume', {
             sessionStart: state.currentSessionStart,
             totalPausedTime: state.totalPausedTime
         });
-        
+
         showToast('Таймер возобновлён', 'success');
     } else {
         // Запрашиваем состояние только если не было авто-возобновления
@@ -294,29 +246,28 @@ function startTimer() {
         updateTasksTitle();
         renderTasks();
         updateSelectedDateStats();
-        
+
         state.timerRunning = true;
         state.currentSessionStart = Date.now();
         state.totalPausedTime = 0;
-        state.lastTaskCompletionTime = 0; // Сбрасываем счётчик интервального времени
         manualPause = false;
         autoPauseActive = false;
-        
+
         // Создаём новую сессию
         const session = {
             start: state.currentSessionStart,
             pauses: []
         };
-        
+
         saveTodaySession(session);
-        
+
         timerInterval = setInterval(updateTimer, 1000);
         updateTimer();
-        
+
         document.getElementById('startBtn').disabled = true;
         document.getElementById('pauseBtn').disabled = false;
         document.getElementById('stopBtn').disabled = false;
-        
+
         // Синхронизируем старт таймера
         syncTimerState('start', {
             sessionStart: state.currentSessionStart,
@@ -332,31 +283,31 @@ function startTimer() {
             currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
             saveTodaySessions(sessions);
         }
-        
+
         state.totalPausedTime += pauseDuration;
-        
+
         state.timerPaused = false;
         state.currentPauseStart = null;
-        
+
         // Запускаем таймер снова
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 1000);
         updateTimer();
-        
+
         // Обновляем кнопки
         document.getElementById('startBtn').disabled = true;
         document.getElementById('pauseBtn').disabled = false;
         document.getElementById('pauseBtn').textContent = 'Пауза';
         document.getElementById('stopBtn').disabled = false;
-        
+
         updateSelectedDateStats();
-        
+
         // Синхронизируем продолжение таймера
         syncTimerState('resume', {
             sessionStart: state.currentSessionStart,
             totalPausedTime: state.totalPausedTime
         });
-        
+
         // Сбрасываем флаг авто-паузы
         autoPauseActive = false;
     }
@@ -373,25 +324,25 @@ function pauseTimer(isAutoPause = false) {
             currentSession.pauses[currentSession.pauses.length - 1].duration = pauseDuration;
             saveTodaySessions(sessions);
         }
-        
+
         state.totalPausedTime += pauseDuration;
-        
+
         state.timerPaused = false;
         state.currentPauseStart = null;
-        
+
         // Запускаем таймер снова
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 1000);
         updateTimer();
-        
+
         // Обновляем кнопки
         document.getElementById('startBtn').disabled = true;
         document.getElementById('pauseBtn').disabled = false;
         document.getElementById('pauseBtn').textContent = 'Пауза';
         document.getElementById('stopBtn').disabled = false;
-        
+
         updateSelectedDateStats();
-        
+
         // Синхронизируем продолжение таймера
         syncTimerState('resume', {
             sessionStart: state.currentSessionStart,
@@ -401,13 +352,13 @@ function pauseTimer(isAutoPause = false) {
         // Ставим на паузу
         state.timerPaused = true;
         state.currentPauseStart = Date.now();
-        
+
         // Останавливаем таймер
         if (timerInterval) {
             clearInterval(timerInterval);
             timerInterval = null;
         }
-        
+
         // Добавляем паузу к текущей сессии
         const sessions = getTodaySessions();
         const currentSession = sessions[sessions.length - 1];
@@ -419,7 +370,7 @@ function pauseTimer(isAutoPause = false) {
             });
             saveTodaySessions(sessions);
         }
-        
+
         // Обновляем текст кнопки и флаги в зависимости от типа паузы
         if (isAutoPause) {
             document.getElementById('pauseBtn').textContent = 'Продолжить (Авто-Пауза)';
@@ -430,7 +381,7 @@ function pauseTimer(isAutoPause = false) {
             autoPauseActive = false;
             manualPause = true;
         }
-        
+
         // Синхронизируем паузу таймера
         syncTimerState('pause', {
             sessionStart: state.currentSessionStart,
@@ -454,7 +405,7 @@ function stopTimer() {
                 saveTodaySessions(sessions);
             }
         }
-        
+
         // Завершаем сессию
         const sessions = getTodaySessions();
         const currentSession = sessions[sessions.length - 1];
@@ -463,7 +414,7 @@ function stopTimer() {
             currentSession.duration = currentSession.end - currentSession.start;
             saveTodaySessions(sessions);
         }
-        
+
         clearInterval(timerInterval);
         state.timerRunning = false;
         state.timerPaused = false;
@@ -471,21 +422,19 @@ function stopTimer() {
         state.currentPauseStart = null;
         state.elapsedTime = 0;
         state.totalPausedTime = 0;
-        state.lastTaskCompletionTime = 0; // Сбрасываем счётчик интервального времени
         autoPauseActive = false;
         manualPause = false;
         if (autoPauseTimeout) { clearTimeout(autoPauseTimeout); autoPauseTimeout = null; }
-        
+
         document.getElementById('timerDisplay').textContent = '00:00:00';
         document.getElementById('startBtn').disabled = false;
         document.getElementById('pauseBtn').disabled = true;
         document.getElementById('pauseBtn').textContent = 'Пауза';
         document.getElementById('stopBtn').disabled = true;
-        
+
         updateSelectedDateStats();
-        renderCalendar();
         showToast('Сессия завершена!', 'success');
-        
+
         // Синхронизируем остановку таймера
         syncTimerState('stop', {});
     }
@@ -504,7 +453,7 @@ function formatTime(ms) {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    
+
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
@@ -529,11 +478,11 @@ function saveTask() {
             completed: false,
             date: state.selectedDate // Сохраняем задачу для выбранной даты
         };
-        
+
         const tasks = getTasks();
         tasks.push(task);
         saveTasks(tasks);
-        
+
         hideTaskInput();
         renderTasks();
         updateSelectedDateStats();
@@ -547,29 +496,9 @@ function toggleTask(taskId) {
     if (task) {
         task.completed = !task.completed;
         if (task.completed) {
-            // Фиксируем интервальное время с последней выполненной задачи
+            // Записываем текущее рабочее время при выполнении
             task.completedAt = Date.now();
-            
-            // Если таймер запущен - фиксируем разницу времени
-            if (state.timerRunning && state.currentSessionStart) {
-                // Текущее время таймера (без пауз)
-                let currentElapsed = Date.now() - state.currentSessionStart - state.totalPausedTime;
-                if (state.timerPaused && state.currentPauseStart) {
-                    currentElapsed -= (Date.now() - state.currentPauseStart);
-                }
-                
-                // Интервальное время = текущее время - последняя точка фиксации
-                task.timeSpent = Math.max(0, currentElapsed - state.lastTaskCompletionTime);
-                
-                // Обновляем точку фиксации для следующей задачи
-                state.lastTaskCompletionTime = currentElapsed;
-                
-                console.log(`[Task] Completed: ${task.text}, Time: ${formatTime(task.timeSpent)}, Next checkpoint: ${formatTime(state.lastTaskCompletionTime)}`);
-            } else {
-                // Таймер не запущен - время не фиксируется
-                task.timeSpent = 0;
-            }
-            
+            task.timeSpent = getTotalWorkTimeForDate(task.date);
             showToast('Задача выполнена! 🎉', 'success');
         } else {
             // Снимаем отметку — убираем время
@@ -613,12 +542,12 @@ function deleteTask(taskId) {
 function renderTasks() {
     const tasks = getTasks().filter(t => t.date === state.selectedDate);
     const tasksList = document.getElementById('tasksList');
-    
+
     if (tasks.length === 0) {
         tasksList.innerHTML = '<li style="text-align: center; color: rgba(255, 255, 255, 0.5); padding: 20px;">Нет задач на эту дату</li>';
         return;
     }
-    
+
     tasksList.innerHTML = tasks.map(task => `
         <li class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
             <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask(${task.id})">
@@ -634,14 +563,14 @@ function renderTasks() {
 function updateTasksTitle() {
     const dateObj = new Date(state.selectedDate + 'T00:00:00');
     const today = new Date().toISOString().split('T')[0];
-    
+
     let titleText;
     if (state.selectedDate === today) {
         titleText = 'Задачи на сегодня';
     } else {
         titleText = 'Задачи на ' + dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
     }
-    
+
     document.getElementById('tasksTitle').textContent = titleText;
 }
 
@@ -652,17 +581,17 @@ let currentMonth = new Date();
 function renderCalendar() {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
-    
+
     document.getElementById('currentMonth').textContent = 
         currentMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
-    
+
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const startingDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
-    
+
     const calendar = document.getElementById('calendar');
     calendar.innerHTML = '';
-    
+
     // Дни недели
     const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     weekdays.forEach(day => {
@@ -671,42 +600,42 @@ function renderCalendar() {
         div.textContent = day;
         calendar.appendChild(div);
     });
-    
+
     // Пустые ячейки до начала месяца
     for (let i = 0; i < startingDayOfWeek; i++) {
         calendar.appendChild(document.createElement('div'));
     }
-    
+
     // Дни месяца
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    
+
     for (let day = 1; day <= lastDay.getDate(); day++) {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dayData = getDataForDate(dateStr);
-        
+
         const div = document.createElement('div');
         div.className = 'calendar-day';
-        
+
         // Зелёным - сегодняшний день
         if (dateStr === todayStr) {
             div.classList.add('today');
         }
-        
+
         // Жёлтым - выбранный день
         if (dateStr === state.selectedDate) {
             div.classList.add('selected');
         }
-        
+
         if (dayData.totalWorkTime > 0) {
             div.classList.add('has-data');
         }
-        
+
         div.innerHTML = `
             <div class="day-number">${day}</div>
             ${dayData.totalWorkTime > 0 ? `<div class="day-time">${formatTime(dayData.totalWorkTime)}</div>` : ''}
         `;
-        
+
         div.addEventListener('click', () => selectDate(dateStr));
         calendar.appendChild(div);
     }
@@ -726,12 +655,12 @@ function selectDate(dateStr) {
 }
 
 function getDataForDate(dateStr) {
-    const sessions = JSON.parse(localStorage.getItem(`sessions_${dateStr}`) || '[]');
+    const sessions = dataCache.sessions[`sessions_${dateStr}`] || [];
     const tasks = getTasks().filter(t => t.date === dateStr);
-    
+
     let totalWorkTime = 0;
     let totalPauseTime = 0;
-    
+
     sessions.forEach(session => {
         if (session.end) {
             let sessionTime = session.end - session.start;
@@ -744,7 +673,7 @@ function getDataForDate(dateStr) {
             totalWorkTime += sessionTime;
         }
     });
-    
+
     return {
         totalWorkTime,
         totalPauseTime,
@@ -758,7 +687,7 @@ function getDataForDate(dateStr) {
 function updateSelectedDateStats() {
     const data = getDataForDate(state.selectedDate);
     const today = new Date().toISOString().split('T')[0];
-    
+
     // Обновляем метку рабочего времени
     const workTimeLabel = document.getElementById('workTimeLabel');
     if (state.selectedDate === today) {
@@ -767,10 +696,10 @@ function updateSelectedDateStats() {
         const dateObj = new Date(state.selectedDate + 'T00:00:00');
         workTimeLabel.textContent = 'Рабочее время (' + dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + '):';
     }
-    
+
     document.getElementById('totalWorkTime').textContent = formatTime(data.totalWorkTime);
     document.getElementById('sessionCount').textContent = data.sessionCount;
-    
+
     const completedTasks = data.tasks.filter(t => t.completed).length;
     const totalTasks = data.tasks.length;
     document.getElementById('tasksCompleted').textContent = `${completedTasks} из ${totalTasks}`;
@@ -787,33 +716,13 @@ function loadSelectedDateData() {
 function openSettings() {
     document.getElementById('settingsModal').classList.add('active');
     renderAppLists();
-    
+
     // Показываем секцию автозапуска только в Electron
-    if (window.electronAPI?.isElectron) {
+    if (window.__electronApp) {
         document.getElementById('autostartSection').style.display = 'block';
         loadAutostartSetting();
-        
-        // Добавляем обработчик (удаляем старый если был)
-        const checkbox = document.getElementById('autostartCheckbox');
-        const newCheckbox = checkbox.cloneNode(true);
-        checkbox.parentNode.replaceChild(newCheckbox, checkbox);
-        newCheckbox.addEventListener('change', saveAutostartSetting);
-        console.log('[Autostart] Event listener attached');
-        
-        // Показываем секцию автообновлений
-        document.getElementById('autoUpdateSection').style.display = 'block';
-        loadAutoUpdateSetting();
-        
-        const updateCheckbox = document.getElementById('autoUpdateCheckbox');
-        const newUpdateCheckbox = updateCheckbox.cloneNode(true);
-        updateCheckbox.parentNode.replaceChild(newUpdateCheckbox, updateCheckbox);
-        newUpdateCheckbox.addEventListener('change', saveAutoUpdateSetting);
-        
-        // Проверяем обновления при открытии настроек
-        checkForUpdates();
     } else {
         document.getElementById('autostartSection').style.display = 'none';
-        document.getElementById('autoUpdateSection').style.display = 'none';
     }
     
     // Enter для добавления в списки
@@ -835,15 +744,15 @@ function closeSettings() {
 function generateQRCode() {
     const qrSection = document.getElementById('qrSection');
     const qrcode = document.getElementById('qrcode');
-    
+
     qrcode.innerHTML = '';
-    
+
     new QRCode(qrcode, {
         text: state.sessionKey,
         width: 256,
         height: 256
     });
-    
+
     document.getElementById('keyDisplay').textContent = state.sessionKey;
     qrSection.style.display = 'block';
     document.getElementById('scanQRSection').style.display = 'none';
@@ -864,11 +773,11 @@ function startQRScanner() {
     scanSection.style.display = 'block';
     document.getElementById('qrSection').style.display = 'none';
     document.getElementById('keyInputSection').style.display = 'none';
-    
+
     const video = document.getElementById('qrVideo');
     const canvas = document.getElementById('qrCanvas');
     const ctx = canvas.getContext('2d');
-    
+
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
         .then(stream => {
             video.srcObject = stream;
@@ -887,10 +796,10 @@ function scanQRCode(video, canvas, ctx, stream) {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
+
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const code = jsQR(imageData.data, imageData.width, imageData.height);
-            
+
             if (code) {
                 stream.getTracks().forEach(track => track.stop());
                 handleQRCodeScanned(code.data);
@@ -904,16 +813,14 @@ function scanQRCode(video, canvas, ctx, stream) {
 
 function handleQRCodeScanned(key) {
     document.getElementById('scanQRSection').style.display = 'none';
-    
     state.sessionKey = key;
     localStorage.setItem('sessionKey', key);
     showToast('Устройство успешно подключено!', 'success');
     closeSettings();
-    // Переподключаемся к WebSocket с новым ключом
-    if (ws) {
-        ws.close();
-    }
+    if (ws) ws.close();
     connectWebSocket();
+    dataCache = { tasks: [], sessions: {} };
+    loadFromServer();
 }
 
 function showKeyInput() {
@@ -929,31 +836,70 @@ function connectWithKey() {
         localStorage.setItem('sessionKey', key);
         showToast('Устройство успешно подключено!', 'success');
         closeSettings();
-        // Переподключаемся к WebSocket с новым ключом
-        if (ws) {
-            ws.close();
-        }
+        if (ws) ws.close();
         connectWebSocket();
+        dataCache = { tasks: [], sessions: {} };
+        loadFromServer();
     }
 }
 
-// === ХРАНИЛИЩЕ ===
+// === ХРАНИЛИЩЕ (SQLite через сервер API) ===
+
+const API_BASE = 'https://linktime.go-tit.ru';
+let dataCache = { tasks: [], sessions: {} };
+let saveTimeout = null;
+let dataLoaded = false;
+
+async function loadFromServer() {
+    try {
+        const res = await fetch(`${API_BASE}/api/data/${state.sessionKey}`);
+        const data = await res.json();
+        dataCache.tasks = data.tasks || [];
+        dataCache.sessions = data.sessions || {};
+        dataLoaded = true;
+        renderTasks();
+        updateSelectedDateStats();
+        renderCalendar();
+    } catch (e) {
+        console.warn('[Storage] Load failed', e);
+        dataLoaded = true;
+    }
+}
+
+function scheduleSave() {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => saveToServer(), 500);
+}
+
+async function saveToServer() {
+    try {
+        await fetch(`${API_BASE}/api/data/${state.sessionKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tasks: dataCache.tasks, sessions: dataCache.sessions })
+        });
+    } catch (e) {
+        console.warn('[Storage] Save failed', e);
+    }
+}
 
 function getTasks() {
-    return JSON.parse(localStorage.getItem('tasks') || '[]');
+    return dataCache.tasks;
 }
 
 function saveTasks(tasks) {
-    localStorage.setItem('tasks', JSON.stringify(tasks));
+    dataCache.tasks = tasks;
+    scheduleSave();
     syncData();
 }
 
 function getTodaySessions() {
-    return JSON.parse(localStorage.getItem(`sessions_${state.currentDate}`) || '[]');
+    return dataCache.sessions[`sessions_${state.currentDate}`] || [];
 }
 
 function saveTodaySessions(sessions) {
-    localStorage.setItem(`sessions_${state.currentDate}`, JSON.stringify(sessions));
+    dataCache.sessions[`sessions_${state.currentDate}`] = sessions;
+    scheduleSave();
     syncData();
 }
 
@@ -963,12 +909,54 @@ function saveTodaySession(session) {
     saveTodaySessions(sessions);
 }
 
+async function migrateFromLocalStorage() {
+    const btn = document.getElementById('migrateBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Переношу...'; }
+    try {
+        const lsTasks = JSON.parse(localStorage.getItem('tasks') || '[]');
+        const lsSessions = {};
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('sessions_')) {
+                lsSessions[key] = JSON.parse(localStorage.getItem(key));
+            }
+        }
+        if (lsTasks.length === 0 && Object.keys(lsSessions).length === 0) {
+            showToast('Нет данных в браузере для переноса', 'info');
+            if (btn) { btn.disabled = false; btn.textContent = 'Перенести данные из браузера в базу'; }
+            return;
+        }
+        const mergedMap = new Map();
+        dataCache.tasks.forEach(t => mergedMap.set(t.id, t));
+        lsTasks.forEach(t => mergedMap.set(t.id, t));
+        dataCache.tasks = Array.from(mergedMap.values());
+        Object.keys(lsSessions).forEach(key => {
+            const remote = lsSessions[key];
+            const local = dataCache.sessions[key] || [];
+            dataCache.sessions[key] = remote.length > local.length ? remote : local;
+        });
+        await saveToServer();
+        localStorage.removeItem('tasks');
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('sessions_')) localStorage.removeItem(key);
+        }
+        showToast('Данные перенесены в базу', 'success');
+        renderTasks();
+        updateSelectedDateStats();
+        renderCalendar();
+    } catch (e) {
+        showToast('Ошибка при переносе данных', 'error');
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Перенести данные из браузера в базу'; }
+}
+
 // === WEBSOCKET СИНХРОНИЗАЦИЯ ===
 
 function connectWebSocket() {
     try {
         ws = new WebSocket(WS_URL);
-        
+
         ws.onopen = () => {
             console.log('WebSocket connected');
             // Присоединяемся к сессии
@@ -976,23 +964,23 @@ function connectWebSocket() {
                 type: 'join',
                 sessionKey: state.sessionKey
             }));
-            
+
             // Останавливаем попытки переподключения
             if (reconnectInterval) {
                 clearInterval(reconnectInterval);
                 reconnectInterval = null;
             }
-            
+
             // Запускаем heartbeat (каждые 5 секунд)
             startHeartbeat();
-            
+
             // Синхронизируем локальные данные на сервер (чтобы другие клиенты получили)
             setTimeout(() => syncData(), 500);
         };
-        
+
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
-            
+
             switch (message.type) {
                 case 'init':
                     // Получаем начальные данные при подключении
@@ -1026,17 +1014,17 @@ function connectWebSocket() {
                     break;
             }
         };
-        
+
         ws.onerror = (error) => {
             console.error('WebSocket error:', error);
         };
-        
+
         ws.onclose = () => {
             console.log('WebSocket disconnected');
-            
+
             // Останавливаем heartbeat
             stopHeartbeat();
-            
+
             // Пытаемся переподключиться через 5 секунд
             if (!reconnectInterval) {
                 reconnectInterval = setInterval(() => {
@@ -1052,22 +1040,11 @@ function connectWebSocket() {
 
 function syncData() {
     if (ws && ws.readyState === WebSocket.OPEN) {
-        const tasks = getTasks();
-        const allSessions = {};
-        
-        // Собираем все сессии со всех дат
-        for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key.startsWith('sessions_')) {
-                allSessions[key] = JSON.parse(localStorage.getItem(key));
-            }
-        }
-        
         ws.send(JSON.stringify({
             type: 'sync',
             sessionKey: state.sessionKey,
-            tasks: tasks,
-            sessions: allSessions,
+            tasks: dataCache.tasks,
+            sessions: dataCache.sessions,
             date: state.currentDate
         }));
     }
@@ -1086,7 +1063,7 @@ function syncTimerState(action, data) {
 
 function applyTimerState(data) {
     const { action, ...timerData } = data;
-    
+
     switch (action) {
         case 'start': {
             // При получении старта от другого устройства тоже выбираем сегодняшнюю дату
@@ -1094,24 +1071,24 @@ function applyTimerState(data) {
             renderCalendar();
             updateTasksTitle();
             renderTasks();
-            
+
             // Запускаем таймер, даже если он уже был запущен
             if (timerInterval) clearInterval(timerInterval);
-            
+
             state.timerRunning = true;
             state.timerPaused = false;
             state.currentSessionStart = timerData.sessionStart;
             state.totalPausedTime = timerData.totalPausedTime || 0;
-            
+
             timerInterval = setInterval(updateTimer, 1000);
             updateTimer(); // Мгновенное обновление дисплея
-            
+
             // Создаём сессию если её нет
             const sessions = getTodaySessions();
             const hasActiveSession = sessions.length > 0 && 
                                       !sessions[sessions.length - 1].end &&
                                       sessions[sessions.length - 1].start === timerData.sessionStart;
-            
+
             if (!hasActiveSession && (sessions.length === 0 || sessions[sessions.length - 1].end)) {
                 const session = {
                     start: timerData.sessionStart,
@@ -1119,14 +1096,14 @@ function applyTimerState(data) {
                 };
                 saveTodaySession(session);
             }
-            
+
             document.getElementById('startBtn').disabled = true;
             document.getElementById('pauseBtn').disabled = false;
             document.getElementById('pauseBtn').textContent = 'Пауза';
             document.getElementById('stopBtn').disabled = false;
             break;
         }
-            
+
         case 'pause': {
             // Игнорируем если мы только что возобновили (grace period)
             if (Date.now() < resumeGraceUntil) {
@@ -1137,18 +1114,18 @@ function applyTimerState(data) {
             state.timerPaused = true;
             state.currentPauseStart = timerData.pauseStart;
             state.totalPausedTime = timerData.totalPausedTime;
-            
+
             // Убеждаемся что таймер работает для паузы
             if (!state.timerRunning) {
                 state.timerRunning = true;
                 state.currentSessionStart = timerData.sessionStart || Date.now();
             }
-            
+
             if (timerInterval) {
                 clearInterval(timerInterval);
                 timerInterval = null;
             }
-            
+
             // Сохраняем паузу в сессии
             const sessions = getTodaySessions();
             if (sessions.length > 0) {
@@ -1161,7 +1138,7 @@ function applyTimerState(data) {
                     saveTodaySessions(sessions);
                 }
             }
-            
+
             document.getElementById('startBtn').disabled = true;
             document.getElementById('pauseBtn').disabled = false;
             // Сохраняем текст кнопки если авто-пауза активна
@@ -1169,7 +1146,7 @@ function applyTimerState(data) {
                 document.getElementById('pauseBtn').textContent = 'Продолжить';
             }
             document.getElementById('stopBtn').disabled = false;
-            
+
             // Показываем время на момент паузы
             if (state.currentPauseStart && state.currentSessionStart) {
                 const displayTime = (state.currentPauseStart - state.currentSessionStart) - state.totalPausedTime;
@@ -1177,7 +1154,7 @@ function applyTimerState(data) {
             }
             break;
         }
-            
+
         case 'resume': {
             // Не возобновляем если системная idle-пауза активна
             if (window.__idlePaused) {
@@ -1190,11 +1167,11 @@ function applyTimerState(data) {
             state.currentPauseStart = null;
             state.currentSessionStart = timerData.sessionStart;
             state.totalPausedTime = timerData.totalPausedTime;
-            
+
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(updateTimer, 1000);
             updateTimer(); // Мгновенное обновление дисплея
-            
+
             // Завершаем последнюю паузу в сессии
             const sessions = getTodaySessions();
             if (sessions.length > 0) {
@@ -1209,18 +1186,18 @@ function applyTimerState(data) {
                     }
                 }
             }
-            
+
             document.getElementById('startBtn').disabled = true;
             document.getElementById('pauseBtn').disabled = false;
             document.getElementById('pauseBtn').textContent = 'Пауза';
             document.getElementById('stopBtn').disabled = false;
             break;
         }
-            
+
         case 'stop': {
             // Останавливаем таймер независимо от текущего состояния
             if (timerInterval) clearInterval(timerInterval);
-            
+
             // Завершаем текущую сессию если она есть
             const sessions = getTodaySessions();
             if (sessions.length > 0) {
@@ -1231,25 +1208,25 @@ function applyTimerState(data) {
                     saveTodaySessions(sessions);
                 }
             }
-            
+
             state.timerRunning = false;
             state.timerPaused = false;
             state.currentSessionStart = null;
             state.currentPauseStart = null;
             state.elapsedTime = 0;
             state.totalPausedTime = 0;
-            
+
             document.getElementById('timerDisplay').textContent = '00:00:00';
             document.getElementById('startBtn').disabled = false;
             document.getElementById('pauseBtn').disabled = true;
             document.getElementById('pauseBtn').textContent = 'Пауза';
             document.getElementById('stopBtn').disabled = true;
-            
+
             updateSelectedDateStats();
             break;
         }
     }
-    
+
     // Сбрасываем флаг авто-паузы при синхронизации состояния
     if (data.action === 'resume' || data.action === 'start') {
         autoPauseActive = false;
@@ -1260,7 +1237,7 @@ function applyTimerState(data) {
 function startHeartbeat() {
     // Останавливаем предыдущий heartbeat если есть
     stopHeartbeat();
-    
+
     // Отправляем heartbeat каждые 5 секунд
     heartbeatInterval = setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1284,7 +1261,7 @@ function stopHeartbeat() {
 function handleAgentStatus(connected) {
     console.log(`Desktop Agent ${connected ? 'connected' : 'disconnected'}`);
     agentConnected = connected;
-    
+
     const indicator = document.getElementById('activityIndicator');
     if (connected) {
         indicator.textContent = '🟢 Desktop Agent подключён';
@@ -1299,26 +1276,26 @@ function handleAgentStatus(connected) {
 function handleActivityStatus(status, windowTitle) {
     console.log(`[ACTIVITY] status=${status}, window="${windowTitle}", idle=${window.__idlePaused || false}`);
     agentStatus = status;
-    
+
     updateActivityIndicator(status, windowTitle);
-    
+
     // Если системная idle-пауза — не даём activity менять таймер
     if (window.__idlePaused) {
         console.log('[ACTIVITY] System idle pause active — ignoring activity status');
         return;
     }
-    
+
     // Если агент говорит distracted/idle и таймер идёт — ставим авто-паузу
     if (status !== 'working' && state.timerRunning && !state.timerPaused && Date.now() >= resumeGraceUntil) {
         console.log(`[ACTIVITY] Agent reports ${status} — auto-pausing`);
         pauseTimer(true);
-        
+
         let message = 'Авто-Пауза';
         if (status === 'distracted') message = `Авто-Пауза: обнаружена нецелевая активность (${windowTitle})`;
         if (status === 'idle') message = 'Авто-Пауза: неактивность';
         showToast(message, 'info');
     }
-    
+
     // Если агент говорит working и была авто-пауза — возобновляем
     if (status === 'working' && state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
         console.log('[ACTIVITY] Agent reports working — auto-resuming');
@@ -1329,22 +1306,22 @@ function handleActivityStatus(status, windowTitle) {
 
 function handleForcePause(reason) {
     console.log(`Force pause received: ${reason}`);
-    
+
     // Если вкладка активна и в фокусе — игнорируем
     if (isTabVisible && hasWindowFocus) {
         console.log('Tab is active — ignoring force_pause');
         return;
     }
-    
+
     // Если в grace period — игнорируем
     if (Date.now() < resumeGraceUntil) {
         console.log('Grace period — ignoring force_pause');
         return;
     }
-    
+
     if (state.timerRunning && !state.timerPaused) {
         pauseTimer(true);
-        
+
         // Показываем уведомление
         let message = 'Таймер приостановлен';
         if (reason === 'distracted') {
@@ -1354,7 +1331,7 @@ function handleForcePause(reason) {
         } else if (reason === 'timeout') {
             message = 'Авто-Пауза: потеря соединения';
         }
-        
+
         showToast(message, 'info');
     }
 }
@@ -1362,22 +1339,22 @@ function handleForcePause(reason) {
 function updateActivityIndicator(status, windowTitle) {
     // Создаем или обновляем индикатор активности в UI
     let indicator = document.getElementById('activityIndicator');
-    
+
     if (!indicator) {
         // Создаем индикатор если его нет
         indicator = document.createElement('div');
         indicator.id = 'activityIndicator';
         indicator.className = 'activity-indicator';
-        
+
         // Вставляем после timerDisplay
         const timerDisplay = document.getElementById('timerDisplay');
         timerDisplay.parentNode.insertBefore(indicator, timerDisplay.nextSibling);
     }
-    
+
     // Обновляем содержимое
     let statusText = '';
     let statusClass = '';
-    
+
     if (status === 'working') {
         statusText = '🟢 Работа';
         statusClass = 'working';
@@ -1388,40 +1365,24 @@ function updateActivityIndicator(status, windowTitle) {
         statusText = '🔴 Неактивен';
         statusClass = 'idle';
     }
-    
+
     if (windowTitle) {
         statusText += `: ${windowTitle}`;
     }
-    
+
     indicator.textContent = statusText;
     indicator.className = `activity-indicator ${statusClass}`;
 }
 
 function applyRemoteData(data) {
     if (!data) return;
-    
-    // Объединяем задачи (по id, без дубликатов)
     if (data.tasks && Array.isArray(data.tasks)) {
-        const localTasks = getTasks();
-        const mergedMap = new Map();
-        localTasks.forEach(t => mergedMap.set(t.id, t));
-        data.tasks.forEach(t => mergedMap.set(t.id, t));
-        const merged = Array.from(mergedMap.values());
-        localStorage.setItem('tasks', JSON.stringify(merged));
+        dataCache.tasks = data.tasks;
         renderTasks();
+        updateSelectedDateStats();
     }
-    
-    // Объединяем сессии (по дате, берём больший набор)
     if (data.sessions) {
-        Object.keys(data.sessions).forEach(key => {
-            const remote = data.sessions[key];
-            const localRaw = localStorage.getItem(key);
-            const local = localRaw ? JSON.parse(localRaw) : [];
-            // Берём набор с большим количеством сессий, либо remote если local пуст
-            if (!localRaw || remote.length > local.length) {
-                localStorage.setItem(key, JSON.stringify(remote));
-            }
-        });
+        dataCache.sessions = { ...dataCache.sessions, ...data.sessions };
         updateSelectedDateStats();
         renderCalendar();
     }
@@ -1433,7 +1394,7 @@ function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
     toast.textContent = message;
     toast.className = `toast ${type} show`;
-    
+
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
@@ -1478,100 +1439,21 @@ function renderAppLists() {
 // === АВТОЗАПУСК (только Electron) ===
 function loadAutostartSetting() {
     const autostart = localStorage.getItem('autostart');
-    // Используем querySelectorAll на случай если элемент был клонирован
-    const checkboxes = document.querySelectorAll('#autostartCheckbox');
-    const checkbox = checkboxes[checkboxes.length - 1]; // Берём последний (актуальный)
+    const checkbox = document.getElementById('autostartCheckbox');
     if (checkbox) {
         checkbox.checked = autostart === 'true';
-        console.log('[Autostart] Loaded from localStorage:', autostart, '→ checkbox:', checkbox.checked);
     }
 }
 
-function saveAutostartSetting(event) {
-    const checkbox = event ? event.target : document.getElementById('autostartCheckbox');
+function saveAutostartSetting() {
+    const checkbox = document.getElementById('autostartCheckbox');
     if (!checkbox) return;
     
     const autostart = checkbox.checked;
-    localStorage.setItem('autostart', String(autostart));
-    console.log('[Autostart] Saved to localStorage:', autostart);
+    localStorage.setItem('autostart', autostart);
     
     // Electron main.js синхронизирует эту настройку автоматически
     showToast(autostart ? 'Автозапуск включен' : 'Автозапуск выключен', 'success');
-}
-
-// === АВТООБНОВЛЕНИЯ (только Electron) ===
-let updateInfo = null;
-
-function loadAutoUpdateSetting() {
-    const autoUpdate = localStorage.getItem('autoUpdate');
-    const checkbox = document.getElementById('autoUpdateCheckbox');
-    if (checkbox) {
-        checkbox.checked = autoUpdate !== 'false'; // По умолчанию true
-        console.log('[AutoUpdate] Loaded from localStorage:', autoUpdate, '→ checkbox:', checkbox.checked);
-    }
-}
-
-function saveAutoUpdateSetting(event) {
-    const checkbox = event ? event.target : document.getElementById('autoUpdateCheckbox');
-    if (!checkbox) return;
-    
-    const autoUpdate = checkbox.checked;
-    localStorage.setItem('autoUpdate', String(autoUpdate));
-    console.log('[AutoUpdate] Saved to localStorage:', autoUpdate);
-    
-    showToast(autoUpdate ? 'Автообновления включены' : 'Автообновления выключены', 'success');
-}
-
-function showUpdateNotification(info) {
-    console.log('[Update] showUpdateNotification called with:', info);
-    updateInfo = info;
-    const notification = document.getElementById('updateNotification');
-    const versionText = document.getElementById('updateVersionText');
-    
-    console.log('[Update] Notification element:', notification);
-    console.log('[Update] Version text element:', versionText);
-    
-    if (notification && versionText) {
-        versionText.textContent = `LinkTime v${info.latestVersion}`;
-        notification.style.display = 'block';
-        console.log('[Update] Notification displayed');
-        
-        // Автоматически скрыть через 15 секунд
-        setTimeout(() => {
-            if (notification.style.display === 'block') {
-                notification.style.display = 'none';
-                console.log('[Update] Notification auto-hidden after 15s');
-            }
-        }, 15000);
-    } else {
-        console.error('[Update] Notification elements not found!');
-    }
-}
-
-function checkForUpdates() {
-    console.log('[Update] checkForUpdates called');
-    if (window.electronAPI?.isElectron) {
-        console.log('[Update] Sending check-updates request...');
-        window.electronAPI.checkUpdates();
-    } else {
-        console.log('[Update] electronAPI not available');
-    }
-}
-
-function installUpdate() {
-    console.log('[Update] installUpdate called', updateInfo);
-    if (!updateInfo || !updateInfo.downloadUrl) {
-        console.error('[Update] No update info or download URL');
-        return;
-    }
-    
-    if (window.electronAPI?.isElectron) {
-        console.log('[Update] Installing update from:', updateInfo.downloadUrl);
-        showToast('Загрузка обновления...', 'info');
-        window.electronAPI.installUpdate(updateInfo.downloadUrl);
-    } else {
-        console.error('[Update] electronAPI not available');
-    }
 }
 
 function renderListItems(type) {
@@ -1617,10 +1499,10 @@ window.removeListItem = removeListItem;
 (function initMobileNav() {
     const nav = document.getElementById('mobileNav');
     if (!nav) return;
-    
+
     const buttons = nav.querySelectorAll('.mobile-nav-item');
     const sections = document.querySelectorAll('[data-tab-content]');
-    
+
     function switchTab(tabName) {
         buttons.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.tab === tabName);
@@ -1638,11 +1520,11 @@ window.removeListItem = removeListItem;
             }
         });
     }
-    
+
     buttons.forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
-    
+
     // Reset tabs when resizing to desktop
     window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
@@ -1652,7 +1534,7 @@ window.removeListItem = removeListItem;
             if (activeTab) switchTab(activeTab.dataset.tab);
         }
     });
-    
+
     // Init: on mobile show only timer
     if (window.innerWidth <= 768) {
         switchTab('timer');

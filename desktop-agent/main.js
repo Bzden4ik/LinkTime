@@ -1,8 +1,7 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, powerMonitor, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const WebSocket = require('ws');
-const https = require('https');
 
 // GPU оптимизация — убираем ошибки и ускоряем рендер
 app.commandLine.appendSwitch('disable-gpu-compositing');
@@ -12,8 +11,6 @@ app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder');
 // Конфигурация
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
 const WS_URL = 'wss://linktime.go-tit.ru';
-const GITHUB_REPO = 'Bzden4ik/LinkTime';
-const CURRENT_VERSION = require('./package.json').version;
 
 // Состояние приложения
 let mainWindow = null;
@@ -21,44 +18,43 @@ let settingsWindow = null;
 let tray = null;
 let ws = null;
 let config = {
-    sessionKey: '',
-    checkInterval: 5000,
-    idleTimeout: 30000,
+sessionKey: '',
+checkInterval: 5000,
+idleTimeout: 30000,
     autostart: false,
-    autoUpdate: true,
-    whiteList: [
-        'LinkTime',
-        'Visual Studio Code',
-        'Code.exe',
-        'Terminal',
-        'cmd.exe',
-        'PowerShell',
-        'Figma',
-        'Adobe Photoshop',
-        'Sublime Text',
-        'WebStorm',
-        'PyCharm',
-        'IntelliJ IDEA',
-        'Eclipse',
-        'Postman',
-        'Docker',
-        'Git',
-        'GitHub Desktop'
-    ],
-    blackList: [
-        'YouTube',
-        'Netflix',
-        'Facebook',
-        'Twitter',
-        'Instagram',
-        'TikTok',
-        'Reddit',
-        'Twitch',
-        'Steam',
-        'Discord - ',
-        'Telegram',
-        'WhatsApp'
-    ]
+whiteList: [
+'LinkTime',
+'Visual Studio Code',
+'Code.exe',
+'Terminal',
+'cmd.exe',
+'PowerShell',
+'Figma',
+'Adobe Photoshop',
+'Sublime Text',
+'WebStorm',
+'PyCharm',
+'IntelliJ IDEA',
+'Eclipse',
+'Postman',
+'Docker',
+'Git',
+'GitHub Desktop'
+],
+blackList: [
+'YouTube',
+'Netflix',
+'Facebook',
+'Twitter',
+'Instagram',
+'TikTok',
+'Reddit',
+'Twitch',
+'Steam',
+'Discord - ',
+'Telegram',
+'WhatsApp'
+]
 };
 
 let lastActivity = Date.now();
@@ -72,19 +68,19 @@ const IDLE_THRESHOLD = 30; // секунд бездействия до авто-
 
 // Загрузка конфигурации
 function loadConfig() {
-    try {
-        if (fs.existsSync(CONFIG_FILE)) {
-            const data = fs.readFileSync(CONFIG_FILE, 'utf8');
-            const savedConfig = JSON.parse(data);
-            config = { ...config, ...savedConfig };
-        }
-    } catch (error) {
-        console.error('Error loading config:', error);
-    }
-    if (!config.whiteList.some(a => a.toLowerCase() === 'linktime')) {
-        config.whiteList.unshift('LinkTime');
-    }
-    console.log('WhiteList:', config.whiteList);
+try {
+if (fs.existsSync(CONFIG_FILE)) {
+const data = fs.readFileSync(CONFIG_FILE, 'utf8');
+const savedConfig = JSON.parse(data);
+config = { ...config, ...savedConfig };
+}
+} catch (error) {
+console.error('Error loading config:', error);
+}
+if (!config.whiteList.some(a => a.toLowerCase() === 'linktime')) {
+config.whiteList.unshift('LinkTime');
+}
+console.log('WhiteList:', config.whiteList);
     
     // Применяем настройку автозапуска при загрузке
     applyAutostartSetting();
@@ -92,27 +88,23 @@ function loadConfig() {
 
 // Сохранение конфигурации
 function saveConfig() {
-    try {
-        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-        console.log('Config saved');
+try {
+fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+console.log('Config saved');
         applyAutostartSetting();
-    } catch (error) {
-        console.error('Error saving config:', error);
-    }
+} catch (error) {
+console.error('Error saving config:', error);
+}
 }
 
 // Применить настройку автозапуска
 function applyAutostartSetting() {
     try {
-        // Не добавляем в автозагрузку если запущено в dev режиме (npm start)
-        if (!app.isPackaged) {
-            console.log('Autostart skipped: running in development mode');
-            return;
-        }
-        
         app.setLoginItemSettings({
             openAtLogin: config.autostart,
-            openAsHidden: false
+            openAsHidden: false,
+            path: process.execPath,
+            args: []
         });
         console.log(`Autostart ${config.autostart ? 'enabled' : 'disabled'}`);
     } catch (error) {
@@ -131,310 +123,129 @@ function getAutostartStatus() {
     }
 }
 
-// === СИСТЕМА ОБНОВЛЕНИЙ ===
-
-// Сравнение семантических версий (x.y.z)
-function compareVersions(v1, v2) {
-    const parts1 = v1.split('.').map(Number);
-    const parts2 = v2.split('.').map(Number);
-    
-    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-        const num1 = parts1[i] || 0;
-        const num2 = parts2[i] || 0;
-        
-        if (num1 > num2) return 1;   // v1 новее
-        if (num1 < num2) return -1;  // v2 новее
-    }
-    
-    return 0; // версии равны
-}
-
-async function checkForUpdates() {
-    console.log('[Update] Checking for updates...');
-    console.log('[Update] Current version:', CURRENT_VERSION);
-    
-    return new Promise((resolve) => {
-        const options = {
-            hostname: 'api.github.com',
-            path: `/repos/${GITHUB_REPO}/releases/latest`,
-            method: 'GET',
-            headers: {
-                'User-Agent': 'LinkTime-Desktop-Agent'
-            }
-        };
-
-        https.get(options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', () => {
-                try {
-                    const release = JSON.parse(data);
-                    console.log('[Update] GitHub response:', {
-                        tag_name: release.tag_name,
-                        name: release.name,
-                        html_url: release.html_url
-                    });
-                    
-                    // Парсим версию из названия релиза "Version 1.1.0 (Beta)"
-                    const versionMatch = release.name.match(/(\d+\.\d+\.\d+)/);
-                    const latestVersion = versionMatch ? versionMatch[1] : release.tag_name.replace(/^v/, '');
-                    
-                    console.log('[Update] Latest version:', latestVersion);
-                    console.log('[Update] Current version:', CURRENT_VERSION);
-                    
-                    // Семантическое сравнение: latestVersion > currentVersion?
-                    const hasUpdate = compareVersions(latestVersion, CURRENT_VERSION) > 0;
-                    
-                    console.log('[Update] Version comparison result:', {
-                        latest: latestVersion,
-                        current: CURRENT_VERSION,
-                        hasUpdate: hasUpdate
-                    });
-                    
-                    const downloadUrl = release.assets.find(asset => 
-                        asset.name.endsWith('.exe')
-                    )?.browser_download_url;
-                    
-                    console.log('[Update] Download URL:', downloadUrl);
-
-                    resolve({
-                        hasUpdate: hasUpdate,
-                        latestVersion,
-                        currentVersion: CURRENT_VERSION,
-                        downloadUrl,
-                        releaseUrl: release.html_url
-                    });
-                } catch (error) {
-                    console.error('[Update] Error parsing GitHub release:', error);
-                    resolve({ hasUpdate: false });
-                }
-            });
-        }).on('error', (error) => {
-            console.error('[Update] Error checking for updates:', error);
-            resolve({ hasUpdate: false });
-        });
-    });
-}
-
-async function downloadAndInstallUpdate(downloadUrl) {
-    console.log('[Update] Starting download from:', downloadUrl);
-    const https = require('https');
-    const fs = require('fs');
-    const path = require('path');
-
-    const tempPath = path.join(app.getPath('temp'), 'LinkTime-Update.exe');
-    console.log('[Update] Temp path:', tempPath);
-    
-    // Удаляем старый файл если существует
-    if (fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
-        console.log('[Update] Removed old temp file');
-    }
-
-    return new Promise((resolve, reject) => {
-        const downloadFile = (url, redirectCount = 0) => {
-            if (redirectCount > 5) {
-                reject(new Error('Too many redirects'));
-                return;
-            }
-
-            console.log('[Update] Making request to:', url);
-            
-            https.get(url, {
-                headers: {
-                    'User-Agent': 'LinkTime-Desktop-Agent'
-                }
-            }, (response) => {
-                console.log('[Update] Response status:', response.statusCode);
-                console.log('[Update] Response headers:', response.headers);
-                
-                // Обработка редиректов
-                if (response.statusCode === 301 || response.statusCode === 302) {
-                    console.log('[Update] Following redirect to:', response.headers.location);
-                    downloadFile(response.headers.location, redirectCount + 1);
-                    return;
-                }
-                
-                if (response.statusCode !== 200) {
-                    reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
-                    return;
-                }
-                
-                const file = fs.createWriteStream(tempPath);
-                let downloaded = 0;
-                const total = parseInt(response.headers['content-length'], 10);
-                
-                response.on('data', (chunk) => {
-                    downloaded += chunk.length;
-                    const percent = ((downloaded / total) * 100).toFixed(1);
-                    console.log(`[Update] Downloaded: ${percent}% (${downloaded}/${total} bytes)`);
-                });
-                
-                response.pipe(file);
-                
-                file.on('finish', () => {
-                    file.close();
-                    console.log('[Update] Download completed, file size:', fs.statSync(tempPath).size, 'bytes');
-                    console.log('[Update] Launching installer...');
-                    
-                    // Запускаем установщик
-                    shell.openPath(tempPath).then(() => {
-                        console.log('[Update] Installer launched, quitting app...');
-                        setTimeout(() => app.quit(), 1000);
-                        resolve();
-                    }).catch((err) => {
-                        console.error('[Update] Failed to launch installer:', err);
-                        reject(err);
-                    });
-                });
-                
-                file.on('error', (err) => {
-                    console.error('[Update] File write error:', err);
-                    fs.unlink(tempPath, () => {});
-                    reject(err);
-                });
-            }).on('error', (err) => {
-                console.error('[Update] Download error:', err);
-                reject(err);
-            });
-        };
-        
-        downloadFile(downloadUrl);
-    });
-}
-
 // Создание главного окна (веб-приложение LinkTime)
 function createWindow() {
-    mainWindow = new BrowserWindow({
-        width: 1300,
-        height: 850,
-        minWidth: 800,
-        minHeight: 600,
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            backgroundThrottling: false,
-            preload: path.join(__dirname, 'preload.js')
-        },
-        icon: path.join(__dirname, 'icon.png'),
-        skipTaskbar: false,
-        title: 'LinkTime'
-    });
+mainWindow = new BrowserWindow({
+width: 1300,
+height: 850,
+minWidth: 800,
+minHeight: 600,
+webPreferences: {
+nodeIntegration: false,
+contextIsolation: true,
+backgroundThrottling: false
+},
+icon: path.join(__dirname, 'icon.png'),
+skipTaskbar: false,
+title: 'LinkTime'
+});
 
-    // Убираем меню в продакшн версии
-    if (app.isPackaged) {
-        mainWindow.setMenu(null);
-        console.log('[App] Menu hidden (production mode)');
-    } else {
-        console.log('[App] Menu visible (development mode)');
-    }
+mainWindow.loadURL('https://linktime.go-tit.ru');
 
-    mainWindow.loadURL('https://linktime.go-tit.ru');
+// Помечаем что это Electron — web-код не будет управлять авто-паузой
+mainWindow.webContents.on('did-finish-load', () => {
+mainWindow.webContents.executeJavaScript('window.__electronApp = true;').catch(() => {});
+});
 
-    mainWindow.on('close', (event) => {
-        if (!app.isQuitting) {
-            event.preventDefault();
-            mainWindow.hide();
-        }
-    });
+mainWindow.on('close', (event) => {
+if (!app.isQuitting) {
+event.preventDefault();
+mainWindow.hide();
+}
+});
 
-    mainWindow.on('closed', () => {
-        mainWindow = null;
-        stopSessionKeySync();
-    });
+mainWindow.on('closed', () => {
+mainWindow = null;
+stopSessionKeySync();
+});
 
-    // Запускаем синхронизацию ключа сессии из веб-страницы
-    startSessionKeySync();
+// Запускаем синхронизацию ключа сессии из веб-страницы
+startSessionKeySync();
 }
 
 // Создание окна настроек агента
 function createSettingsWindow() {
-    if (settingsWindow) {
-        settingsWindow.show();
-        settingsWindow.focus();
-        return;
-    }
+if (settingsWindow) {
+settingsWindow.show();
+settingsWindow.focus();
+return;
+}
 
-    settingsWindow = new BrowserWindow({
-        width: 500,
-        height: 650,
-        webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
-        },
-        icon: path.join(__dirname, 'icon.png'),
-        skipTaskbar: false,
-        title: 'LinkTime Agent - Настройки',
-        parent: mainWindow || undefined,
-        modal: false
-    });
+settingsWindow = new BrowserWindow({
+width: 500,
+height: 650,
+webPreferences: {
+nodeIntegration: true,
+contextIsolation: false
+},
+icon: path.join(__dirname, 'icon.png'),
+skipTaskbar: false,
+title: 'LinkTime Agent - Настройки',
+parent: mainWindow || undefined,
+modal: false
+});
 
-    // Убираем меню в продакшн версии
-    if (app.isPackaged) {
-        settingsWindow.setMenu(null);
-    }
+settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
 
-    settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
-
-    settingsWindow.on('closed', () => {
-        settingsWindow = null;
-    });
+settingsWindow.on('closed', () => {
+settingsWindow = null;
+});
 }
 
 // Синхронизация ключа сессии из веб-страницы
 function startSessionKeySync() {
-    // Первая проверка через 2 секунды (дать странице загрузиться)
-    setTimeout(() => syncSessionKeyFromWeb(), 2000);
+// Первая проверка через 2 секунды (дать странице загрузиться)
+setTimeout(() => syncSessionKeyFromWeb(), 2000);
 
-    // Проверяем каждые 3 секунды
-    sessionKeySyncInterval = setInterval(() => syncSessionKeyFromWeb(), 3000);
+// Проверяем каждые 3 секунды
+sessionKeySyncInterval = setInterval(() => syncSessionKeyFromWeb(), 3000);
 }
 
 function stopSessionKeySync() {
-    if (sessionKeySyncInterval) {
-        clearInterval(sessionKeySyncInterval);
-        sessionKeySyncInterval = null;
-    }
+if (sessionKeySyncInterval) {
+clearInterval(sessionKeySyncInterval);
+sessionKeySyncInterval = null;
+}
 }
 
 async function syncSessionKeyFromWeb() {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
+if (!mainWindow || mainWindow.isDestroyed()) return;
 
-    try {
-        const webSessionKey = await mainWindow.webContents.executeJavaScript(
-            "localStorage.getItem('sessionKey')"
-        );
+try {
+const webSessionKey = await mainWindow.webContents.executeJavaScript(
+"localStorage.getItem('sessionKey')"
+);
 
-        if (webSessionKey && webSessionKey !== config.sessionKey) {
-            console.log(`Session key synced from web: ${webSessionKey}`);
-            config.sessionKey = webSessionKey;
-            saveConfig();
+if (webSessionKey && webSessionKey !== config.sessionKey) {
+console.log(`Session key synced from web: ${webSessionKey}`);
+config.sessionKey = webSessionKey;
+saveConfig();
 
-            // Переподключаем WebSocket агента с новым ключом
-            if (ws) {
-                ws.close();
-            }
-            connectWebSocket();
+// Переподключаем WebSocket агента с новым ключом
+if (ws) {
+ws.close();
+}
+connectWebSocket();
 
-            // Обновляем settings window если открыто
-            if (settingsWindow && !settingsWindow.isDestroyed()) {
-                settingsWindow.webContents.send('config-data', config);
-            }
-        }
+// Обновляем settings window если открыто
+if (settingsWindow && !settingsWindow.isDestroyed()) {
+settingsWindow.webContents.send('config-data', config);
+}
+}
 
-        // Синхронизируем списки приложений из веб-страницы
-        const webWhiteList = await mainWindow.webContents.executeJavaScript(
-            "localStorage.getItem('whiteList')"
-        );
-        const webBlackList = await mainWindow.webContents.executeJavaScript(
-            "localStorage.getItem('blackList')"
-        );
-        if (webWhiteList) {
-            config.whiteList = JSON.parse(webWhiteList);
-        }
-        if (webBlackList) {
-            config.blackList = JSON.parse(webBlackList);
-        }
+// Синхронизируем списки приложений из веб-страницы
+const webWhiteList = await mainWindow.webContents.executeJavaScript(
+"localStorage.getItem('whiteList')"
+);
+const webBlackList = await mainWindow.webContents.executeJavaScript(
+"localStorage.getItem('blackList')"
+);
+if (webWhiteList) {
+config.whiteList = JSON.parse(webWhiteList);
+}
+if (webBlackList) {
+config.blackList = JSON.parse(webBlackList);
+}
         
         // Синхронизируем настройку автозапуска из веб-страницы
         const webAutostart = await mainWindow.webContents.executeJavaScript(
@@ -448,484 +259,412 @@ async function syncSessionKeyFromWeb() {
                 saveConfig(); // saveConfig уже вызывает applyAutostartSetting()
             }
         }
-        
-        // Синхронизируем настройку автообновлений из веб-страницы
-        const webAutoUpdate = await mainWindow.webContents.executeJavaScript(
-            "localStorage.getItem('autoUpdate')"
-        );
-        if (webAutoUpdate !== null) {
-            const newAutoUpdate = webAutoUpdate === 'true';
-            if (newAutoUpdate !== config.autoUpdate) {
-                console.log(`AutoUpdate setting synced from web: ${newAutoUpdate}`);
-                config.autoUpdate = newAutoUpdate;
-                saveConfig();
-            }
-        }
-    } catch (error) {
-        // Страница ещё не загрузилась — игнорируем
-    }
+} catch (error) {
+// Страница ещё не загрузилась — игнорируем
+}
 }
 
 // Создание системного трея
 function createTray() {
-    tray = new Tray(path.join(__dirname, 'icon.png'));
-    updateTrayMenu('Запуск...');
+tray = new Tray(path.join(__dirname, 'icon.png'));
+updateTrayMenu('Запуск...');
 
-    tray.setToolTip('LinkTime Agent');
+tray.setToolTip('LinkTime Agent');
 
-    tray.on('click', () => {
-        if (mainWindow) {
-            mainWindow.show();
-            mainWindow.focus();
-        } else {
-            createWindow();
-        }
-    });
+tray.on('click', () => {
+if (mainWindow) {
+mainWindow.show();
+mainWindow.focus();
+} else {
+createWindow();
+}
+});
 }
 
 // Обновление меню трея
 function updateTrayMenu(statusLabel) {
-    if (!tray) return;
+if (!tray) return;
 
-    const contextMenu = Menu.buildFromTemplate([
-        { label: `Статус: ${statusLabel}`, enabled: false },
-        { type: 'separator' },
-        {
-            label: 'Открыть LinkTime',
-            click: () => {
-                if (mainWindow) {
-                    mainWindow.show();
-                    mainWindow.focus();
-                } else {
-                    createWindow();
-                }
-            }
-        },
-        {
-            label: 'Настройки агента',
-            click: () => createSettingsWindow()
-        },
-        { type: 'separator' },
-        {
-            label: 'Выход',
-            click: () => {
-                app.isQuitting = true;
-                app.quit();
-            }
-        }
-    ]);
+const contextMenu = Menu.buildFromTemplate([
+{ label: `Статус: ${statusLabel}`, enabled: false },
+{ type: 'separator' },
+{
+label: 'Открыть LinkTime',
+click: () => {
+if (mainWindow) {
+mainWindow.show();
+mainWindow.focus();
+} else {
+createWindow();
+}
+}
+},
+{
+label: 'Настройки агента',
+click: () => createSettingsWindow()
+},
+{ type: 'separator' },
+{
+label: 'Выход',
+click: () => {
+app.isQuitting = true;
+app.quit();
+}
+}
+]);
 
-    tray.setContextMenu(contextMenu);
+tray.setContextMenu(contextMenu);
 }
 
 // Обновление статуса в трее
 function updateTrayStatus(status, windowTitle = '') {
-    if (!tray) return;
+if (!tray) return;
 
-    let statusText = '';
-    switch (status) {
-        case 'working':
-            statusText = '🟢 Работа';
-            break;
-        case 'distracted':
-            statusText = '🟡 Отвлечение';
-            break;
-        case 'idle':
-            statusText = '🔴 Неактивен';
-            break;
-    }
-    if (windowTitle) statusText += `: ${windowTitle}`;
+let statusText = '';
+switch (status) {
+case 'working':
+statusText = '🟢 Работа';
+break;
+case 'distracted':
+statusText = '🟡 Отвлечение';
+break;
+case 'idle':
+statusText = '🔴 Неактивен';
+break;
+}
+if (windowTitle) statusText += `: ${windowTitle}`;
 
-    updateTrayMenu(statusText);
+updateTrayMenu(statusText);
 }
 
 // Подключение к WebSocket
 function connectWebSocket() {
-    if (!config.sessionKey) {
-        console.log('No session key configured');
-        return;
-    }
+if (!config.sessionKey) {
+console.log('No session key configured');
+return;
+}
 
-    try {
-        ws = new WebSocket(WS_URL);
+try {
+ws = new WebSocket(WS_URL);
 
-        ws.on('open', () => {
-            console.log('Agent WebSocket connected');
+ws.on('open', () => {
+console.log('Agent WebSocket connected');
 
-            setTimeout(() => {
-                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+setTimeout(() => {
+if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-                wsSend({ type: 'join', sessionKey: config.sessionKey });
-                wsSend({ type: 'agent_connected', sessionKey: config.sessionKey });
+wsSend({ type: 'join', sessionKey: config.sessionKey });
+wsSend({ type: 'agent_connected', sessionKey: config.sessionKey });
 
-                // Обновляем settings window если открыто
-                if (settingsWindow && !settingsWindow.isDestroyed()) {
-                    settingsWindow.webContents.send('status-update', {
-                        status: 'working',
-                        windowTitle: 'Подключено, мониторинг запущен'
-                    });
-                }
+// Обновляем settings window если открыто
+if (settingsWindow && !settingsWindow.isDestroyed()) {
+settingsWindow.webContents.send('status-update', {
+status: 'working',
+windowTitle: 'Подключено, мониторинг запущен'
+});
+}
 
-                isFirstCheck = true;
-                startActivityMonitoring();
-            }, 500);
-        });
+isFirstCheck = true;
+startActivityMonitoring();
+}, 500);
+});
 
-        ws.on('message', (data) => {
-            try {
-                const message = JSON.parse(data);
-                console.log('Agent received:', message.type);
-            } catch (error) {
-                console.error('Error parsing message:', error);
-            }
-        });
+ws.on('message', (data) => {
+try {
+const message = JSON.parse(data);
+console.log('Agent received:', message.type);
+} catch (error) {
+console.error('Error parsing message:', error);
+}
+});
 
-        ws.on('error', (error) => {
-            console.error('Agent WebSocket error:', error);
-        });
+ws.on('error', (error) => {
+console.error('Agent WebSocket error:', error);
+});
 
-        ws.on('close', () => {
-            console.log('Agent WebSocket disconnected');
-            stopActivityMonitoring();
+ws.on('close', () => {
+console.log('Agent WebSocket disconnected');
+stopActivityMonitoring();
 
-            setTimeout(() => {
-                console.log('Agent reconnecting...');
-                connectWebSocket();
-            }, 5000);
-        });
-    } catch (error) {
-        console.error('Failed to connect WebSocket:', error);
-    }
+setTimeout(() => {
+console.log('Agent reconnecting...');
+connectWebSocket();
+}, 5000);
+});
+} catch (error) {
+console.error('Failed to connect WebSocket:', error);
+}
 }
 
 // Безопасная отправка через WebSocket
 function wsSend(data) {
-    try {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(data));
-            return true;
-        }
-    } catch (error) {
-        console.error('WebSocket send error:', error.message);
-    }
-    return false;
+try {
+if (ws && ws.readyState === WebSocket.OPEN) {
+ws.send(JSON.stringify(data));
+return true;
+}
+} catch (error) {
+console.error('WebSocket send error:', error.message);
+}
+return false;
 }
 
 // Отправка обновления активности
 function sendActivityUpdate(status, windowTitle) {
-    if (wsSend({
-        type: 'activity_update',
-        sessionKey: config.sessionKey,
-        status: status,
-        windowTitle: windowTitle
-    })) {
-        console.log(`Activity update sent: ${status}`);
-    }
+if (wsSend({
+type: 'activity_update',
+sessionKey: config.sessionKey,
+status: status,
+windowTitle: windowTitle
+})) {
+console.log(`Activity update sent: ${status}`);
+}
 }
 
 // Определение статуса на основе заголовка окна
 function determineStatus(windowTitle) {
-    if (!windowTitle) return 'idle';
+if (!windowTitle) return 'idle';
 
-    const lower = windowTitle.toLowerCase();
-    console.log(`[DETERMINE] Checking: "${lower}"`);
+const lower = windowTitle.toLowerCase();
+console.log(`[DETERMINE] Checking: "${lower}"`);
 
-    for (const appName of config.whiteList) {
-        if (lower.includes(appName.toLowerCase())) {
-            console.log(`[DETERMINE] MATCH whiteList: "${appName}"`);
-            return 'working';
-        }
-    }
+for (const appName of config.whiteList) {
+if (lower.includes(appName.toLowerCase())) {
+console.log(`[DETERMINE] MATCH whiteList: "${appName}"`);
+return 'working';
+}
+}
 
-    for (const appName of config.blackList) {
-        if (lower.includes(appName.toLowerCase())) {
-            console.log(`[DETERMINE] MATCH blackList: "${appName}"`);
-            return 'distracted';
-        }
-    }
+for (const appName of config.blackList) {
+if (lower.includes(appName.toLowerCase())) {
+console.log(`[DETERMINE] MATCH blackList: "${appName}"`);
+return 'distracted';
+}
+}
 
-    console.log(`[DETERMINE] No match — distracted by default`);
-    return 'distracted';
+console.log(`[DETERMINE] No match — distracted by default`);
+return 'distracted';
 }
 
 // Проверка активного окна
 async function checkActiveWindow() {
-    try {
-        const { execFile } = require('child_process');
+try {
+const { execFile } = require('child_process');
 
-        const windowInfo = await new Promise((resolve, reject) => {
-            const script = `
+const windowInfo = await new Promise((resolve, reject) => {
+const script = `
 $code = @"
 using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 public class WinHelper {
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")]
-    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-    public static string GetActiveWindow() {
-        IntPtr hwnd = GetForegroundWindow();
-        uint pid;
-        GetWindowThreadProcessId(hwnd, out pid);
-        try {
-            Process p = Process.GetProcessById((int)pid);
-            return p.ProcessName + "|||" + p.MainWindowTitle;
-        } catch { return ""; }
-    }
+   [DllImport("user32.dll")]
+   public static extern IntPtr GetForegroundWindow();
+   [DllImport("user32.dll")]
+   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+   public static string GetActiveWindow() {
+       IntPtr hwnd = GetForegroundWindow();
+       uint pid;
+       GetWindowThreadProcessId(hwnd, out pid);
+       try {
+           Process p = Process.GetProcessById((int)pid);
+           return p.ProcessName + "|||" + p.MainWindowTitle;
+       } catch { return ""; }
+   }
 }
 "@
 Add-Type -TypeDefinition $code
 [WinHelper]::GetActiveWindow()
 `;
-            execFile('powershell.exe', ['-NoProfile', '-Command', '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ' + script], { timeout: 4000, encoding: 'utf8' }, (error, stdout) => {
-                if (error) return reject(error);
-                const output = stdout.trim();
-                if (!output) return resolve(null);
-                const parts = output.split('|||');
-                resolve({ processName: parts[0] || '', title: parts[1] || '' });
-            });
-        });
+execFile('powershell.exe', ['-NoProfile', '-Command', '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ' + script], { timeout: 4000, encoding: 'utf8' }, (error, stdout) => {
+if (error) return reject(error);
+const output = stdout.trim();
+if (!output) return resolve(null);
+const parts = output.split('|||');
+resolve({ processName: parts[0] || '', title: parts[1] || '' });
+});
+});
 
-        if (!windowInfo) {
-            console.log('[MONITOR] No active window');
-            updateStatus('idle', 'Нет активного окна');
-            return;
-        }
+if (!windowInfo) {
+console.log('[MONITOR] No active window');
+updateStatus('idle', 'Нет активного окна');
+return;
+}
 
-        lastActivity = Date.now();
+lastActivity = Date.now();
 
-        let displayTitle = windowInfo.title;
-        const pName = windowInfo.processName.toLowerCase();
+let displayTitle = windowInfo.title;
+const pName = windowInfo.processName.toLowerCase();
 
-        if (['msedge', 'chrome', 'firefox', 'opera', 'brave'].includes(pName)) {
-            displayTitle = windowInfo.title
-                .replace(/\s*и еще \d+ страниц?/gi, '')
-                .replace(/\s*—\s*(Личный|Personal|InPrivate):?\s*Microsoft Edge/gi, '')
-                .replace(/\s*-\s*(Google Chrome|Mozilla Firefox|Opera|Brave)/gi, '')
-                .trim();
-        }
+if (['msedge', 'chrome', 'firefox', 'opera', 'brave'].includes(pName)) {
+displayTitle = windowInfo.title
+.replace(/\s*и еще \d+ страниц?/gi, '')
+.replace(/\s*—\s*(Личный|Personal|InPrivate):?\s*Microsoft Edge/gi, '')
+.replace(/\s*-\s*(Google Chrome|Mozilla Firefox|Opera|Brave)/gi, '')
+.trim();
+}
 
-        const fullTitle = `${windowInfo.processName} - ${windowInfo.title}`;
-        console.log(`[MONITOR] Active: "${fullTitle}"`);
+const fullTitle = `${windowInfo.processName} - ${windowInfo.title}`;
+console.log(`[MONITOR] Active: "${fullTitle}"`);
 
-        const status = determineStatus(fullTitle);
-        console.log(`[MONITOR] Status: ${status}`);
-        updateStatus(status, displayTitle);
+const status = determineStatus(fullTitle);
+console.log(`[MONITOR] Status: ${status}`);
+updateStatus(status, displayTitle);
 
-    } catch (error) {
-        console.error('[MONITOR] ERROR:', error.message);
-        updateStatus('idle', 'Ошибка мониторинга');
-    }
+} catch (error) {
+console.error('[MONITOR] ERROR:', error.message);
+updateStatus('idle', 'Ошибка мониторинга');
+}
 }
 
 // Обновление и отправка статуса
 function updateStatus(status, windowTitle) {
-    const changed = status !== currentStatus || isFirstCheck;
-    currentStatus = status;
-    isFirstCheck = false;
+const changed = status !== currentStatus || isFirstCheck;
+currentStatus = status;
+isFirstCheck = false;
 
-    if (changed) {
-        console.log(`[STATUS] Changed: ${status} (${windowTitle})`);
-    }
+if (changed) {
+console.log(`[STATUS] Changed: ${status} (${windowTitle})`);
+}
 
-    updateTrayStatus(status, windowTitle);
-    sendActivityUpdate(status, windowTitle);
+updateTrayStatus(status, windowTitle);
+sendActivityUpdate(status, windowTitle);
 
-    if (settingsWindow && !settingsWindow.isDestroyed()) {
-        settingsWindow.webContents.send('status-update', { status, windowTitle });
-    }
+if (settingsWindow && !settingsWindow.isDestroyed()) {
+settingsWindow.webContents.send('status-update', { status, windowTitle });
+}
 }
 
 // Запуск мониторинга активности
 function startActivityMonitoring() {
-    if (checkIntervalId) clearInterval(checkIntervalId);
+if (checkIntervalId) clearInterval(checkIntervalId);
 
-    console.log('Activity monitoring started');
-    checkActiveWindow();
+console.log('Activity monitoring started');
+checkActiveWindow();
 
-    checkIntervalId = setInterval(() => {
-        checkActiveWindow();
-    }, config.checkInterval);
+checkIntervalId = setInterval(() => {
+checkActiveWindow();
+}, config.checkInterval);
 
-    // Запускаем idle-мониторинг
-    startIdleMonitoring();
+// Запускаем idle-мониторинг
+startIdleMonitoring();
 }
 
 // Мониторинг бездействия (мышь/клавиатура)
 function startIdleMonitoring() {
-    if (idleCheckInterval) clearInterval(idleCheckInterval);
+if (idleCheckInterval) clearInterval(idleCheckInterval);
 
-    idleCheckInterval = setInterval(() => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
+idleCheckInterval = setInterval(() => {
+if (!mainWindow || mainWindow.isDestroyed()) return;
 
-        const idleTime = powerMonitor.getSystemIdleTime(); // в секундах
+const idleTime = powerMonitor.getSystemIdleTime(); // в секундах
 
-        if (idleTime >= IDLE_THRESHOLD && !isUserIdle) {
-            // Пользователь бездействует — авто-пауза
-            isUserIdle = true;
-            console.log(`[IDLE] User idle for ${idleTime}s — triggering auto-pause`);
-            mainWindow.webContents.executeJavaScript(`
-                window.__idlePaused = true;
-                console.log('[IDLE-JS] Setting idle pause');
-                if (typeof state !== 'undefined' && state.timerRunning && !state.timerPaused) {
-                    pauseTimer(true);
-                    showToast('Авто-Пауза: нет активности ${IDLE_THRESHOLD} сек', 'info');
-                }
-            `).catch(() => {});
-        } else if (idleTime < IDLE_THRESHOLD && isUserIdle) {
-            // Пользователь вернулся — авто-возобновление
-            isUserIdle = false;
-            console.log('[IDLE] User returned — triggering auto-resume');
-            mainWindow.webContents.executeJavaScript(`
-                window.__idlePaused = false;
-                console.log('[IDLE-JS] Clearing idle pause, timerPaused=' + state.timerPaused + ', autoPauseActive=' + autoPauseActive + ', manualPause=' + manualPause);
-                if (typeof state !== 'undefined' && state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
-                    console.log('[IDLE-JS] Calling pauseTimer() to resume');
-                    pauseTimer(false);
-                    showToast('Таймер возобновлён', 'success');
-                }
-            `).catch(() => {});
-        }
-    }, 2000); // проверяем каждые 2 секунды
+if (idleTime >= IDLE_THRESHOLD && !isUserIdle) {
+// Пользователь бездействует — авто-пауза
+isUserIdle = true;
+console.log(`[IDLE] User idle for ${idleTime}s — triggering auto-pause`);
+mainWindow.webContents.executeJavaScript(`
+               window.__idlePaused = true;
+               console.log('[IDLE-JS] Setting idle pause');
+               if (typeof state !== 'undefined' && state.timerRunning && !state.timerPaused) {
+                   pauseTimer(true);
+                   showToast('Авто-Пауза: нет активности ${IDLE_THRESHOLD} сек', 'info');
+               }
+           `).catch(() => {});
+} else if (idleTime < IDLE_THRESHOLD && isUserIdle) {
+// Пользователь вернулся — авто-возобновление
+isUserIdle = false;
+console.log('[IDLE] User returned — triggering auto-resume');
+mainWindow.webContents.executeJavaScript(`
+               window.__idlePaused = false;
+               console.log('[IDLE-JS] Clearing idle pause, timerPaused=' + state.timerPaused + ', autoPauseActive=' + autoPauseActive + ', manualPause=' + manualPause);
+               if (typeof state !== 'undefined' && state.timerRunning && state.timerPaused && autoPauseActive && !manualPause) {
+                   console.log('[IDLE-JS] Calling pauseTimer() to resume');
+                   pauseTimer(false);
+                   showToast('Таймер возобновлён', 'success');
+               }
+           `).catch(() => {});
+}
+}, 2000); // проверяем каждые 2 секунды
 }
 
 // Остановка мониторинга
 function stopActivityMonitoring() {
-    if (checkIntervalId) {
-        clearInterval(checkIntervalId);
-        checkIntervalId = null;
-    }
-    if (idleCheckInterval) {
-        clearInterval(idleCheckInterval);
-        idleCheckInterval = null;
-    }
-    isUserIdle = false;
-    console.log('Activity monitoring stopped');
+if (checkIntervalId) {
+clearInterval(checkIntervalId);
+checkIntervalId = null;
+}
+if (idleCheckInterval) {
+clearInterval(idleCheckInterval);
+idleCheckInterval = null;
+}
+isUserIdle = false;
+console.log('Activity monitoring stopped');
 }
 
 // IPC обработчики для окна настроек
 ipcMain.on('get-config', (event) => {
+    event.reply('config-data', config);
     const currentAutostart = getAutostartStatus();
     const configWithAutostart = { ...config, autostart: currentAutostart };
     event.reply('config-data', configWithAutostart);
 });
 
 ipcMain.on('save-config', (event, newConfig) => {
-    config = { ...config, ...newConfig };
-    saveConfig();
+config = { ...config, ...newConfig };
+saveConfig();
 
-    // Если изменился sessionKey — инжектим его в веб-страницу
-    if (newConfig.sessionKey && mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.executeJavaScript(
-            `localStorage.setItem('sessionKey', '${newConfig.sessionKey}'); location.reload();`
-        ).catch(() => {});
-    }
+// Если изменился sessionKey — инжектим его в веб-страницу
+if (newConfig.sessionKey && mainWindow && !mainWindow.isDestroyed()) {
+mainWindow.webContents.executeJavaScript(
+`localStorage.setItem('sessionKey', '${newConfig.sessionKey}'); location.reload();`
+).catch(() => {});
+}
 
-    // Переподключаем WebSocket
-    if (ws) ws.close();
-    connectWebSocket();
+// Переподключаем WebSocket
+if (ws) ws.close();
+connectWebSocket();
 
-    event.reply('config-saved');
+event.reply('config-saved');
 });
 
 ipcMain.on('test-connection', (event) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        event.reply('connection-status', { connected: true });
-    } else {
-        event.reply('connection-status', { connected: false });
-    }
-});
-
-// Обработчики обновлений
-ipcMain.on('check-updates', async (event) => {
-    if (!config.autoUpdate) {
-        event.reply('update-info', { hasUpdate: false, disabled: true });
-        return;
-    }
-    const updateInfo = await checkForUpdates();
-    event.reply('update-info', updateInfo);
-});
-
-ipcMain.on('install-update', async (event, downloadUrl) => {
-    console.log('[Update] Received install-update request for:', downloadUrl);
-    try {
-        await downloadAndInstallUpdate(downloadUrl);
-        // Приложение закроется автоматически после успешного запуска установщика
-    } catch (error) {
-        console.error('[Update] Failed to install update:', error);
-        event.reply('update-error', { 
-            message: 'Не удалось установить обновление',
-            details: error.message || String(error)
-        });
-    }
+if (ws && ws.readyState === WebSocket.OPEN) {
+event.reply('connection-status', { connected: true });
+} else {
+event.reply('connection-status', { connected: false });
+}
 });
 
 // Инициализация приложения
 app.whenReady().then(() => {
-    loadConfig();
-    createTray();
-    createWindow();
+loadConfig();
+createTray();
+createWindow();
 
-    // Инжектим настройки в веб-страницу при загрузке
-    mainWindow.webContents.on('did-finish-load', () => {
-        // SessionKey
-        if (config.sessionKey) {
-            mainWindow.webContents.executeJavaScript(
-                `if (!localStorage.getItem('sessionKey')) { localStorage.setItem('sessionKey', '${config.sessionKey}'); }`
-            ).catch(() => {});
-        }
-        
-        // Autostart
-        mainWindow.webContents.executeJavaScript(
-            `localStorage.setItem('autostart', '${config.autostart}');`
-        ).catch(() => {});
-        
-        // AutoUpdate
-        mainWindow.webContents.executeJavaScript(
-            `localStorage.setItem('autoUpdate', '${config.autoUpdate}');`
-        ).catch(() => {});
-        
-        // Проверка обновлений при запуске
-        console.log('[Update] AutoUpdate enabled:', config.autoUpdate);
-        console.log('[Update] App packaged:', app.isPackaged);
-        
-        if (config.autoUpdate) {
-            console.log('[Update] Starting update check in 3 seconds...');
-            setTimeout(async () => {
-                console.log('[Update] Performing update check...');
-                const updateInfo = await checkForUpdates();
-                console.log('[Update] Check result:', updateInfo);
-                
-                if (updateInfo.hasUpdate && mainWindow && !mainWindow.isDestroyed()) {
-                    console.log('[Update] Sending update notification to renderer...');
-                    mainWindow.webContents.send('update-available', updateInfo);
-                } else {
-                    console.log('[Update] No update available or window destroyed');
-                }
-            }, 3000);
-        } else {
-            console.log('[Update] AutoUpdate disabled, skipping check');
-        }
-    });
-    
-    if (config.sessionKey) {
-        connectWebSocket();
-    }
+// Если есть сохранённый ключ — инжектим его в веб-страницу при загрузке
+if (config.sessionKey) {
+mainWindow.webContents.on('did-finish-load', () => {
+mainWindow.webContents.executeJavaScript(
+`if (!localStorage.getItem('sessionKey')) { localStorage.setItem('sessionKey', '${config.sessionKey}'); location.reload(); }`
+).catch(() => {});
+});
+connectWebSocket();
+}
 
-    app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-            createWindow();
-        }
-    });
+app.on('activate', () => {
+if (BrowserWindow.getAllWindows().length === 0) {
+createWindow();
+}
+});
 });
 
 app.on('window-all-closed', () => {
-    // Продолжаем работать в фоне
+// Продолжаем работать в фоне
 });
 
 app.on('before-quit', () => {
-    stopActivityMonitoring();
-    stopSessionKeySync();
-    if (ws) ws.close();
+stopActivityMonitoring();
+stopSessionKeySync();
+if (ws) ws.close();
 });
