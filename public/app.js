@@ -501,9 +501,18 @@ const task = tasks.find(t => t.id === taskId);
 if (task) {
 task.completed = !task.completed;
 if (task.completed) {
-// Записываем текущее рабочее время при выполнении
+// Записываем время на дисплее таймера в момент отметки
 task.completedAt = Date.now();
+if (state.timerRunning && state.currentSessionStart) {
+// Берём ровно то, что сейчас показывает таймер
+let displayMs = Date.now() - state.currentSessionStart - state.totalPausedTime;
+if (state.timerPaused && state.currentPauseStart) {
+displayMs -= (Date.now() - state.currentPauseStart);
+}
+task.timeSpent = Math.max(0, displayMs);
+} else {
 task.timeSpent = getTotalWorkTimeForDate(task.date);
+}
 showToast('Задача выполнена! 🎉', 'success');
 } else {
 // Снимаем отметку — убираем время
