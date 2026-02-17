@@ -41,6 +41,7 @@ db.exec(`
         user_id TEXT UNIQUE NOT NULL,
         username TEXT UNIQUE NOT NULL,
         email TEXT DEFAULT NULL,
+        avatar TEXT DEFAULT NULL,
         created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
     );
 
@@ -66,6 +67,14 @@ db.exec(`
         PRIMARY KEY (team_id, user_id)
     );
 `);
+
+// Миграция: добавляем avatar если его нет
+try {
+    db.exec(`ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL`);
+    console.log('[DB] Migration: avatar column added');
+} catch (e) {
+    // Колонка уже существует, игнорируем
+}
 
 console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
 
@@ -108,6 +117,7 @@ const stmts = {
     createUser: db.prepare('INSERT INTO users (session_key, user_id, username, email) VALUES (?, ?, ?, ?)'),
     updateUsername: db.prepare('UPDATE users SET username = ? WHERE session_key = ?'),
     updateEmail: db.prepare('UPDATE users SET email = ? WHERE session_key = ?'),
+    updateAvatar: db.prepare('UPDATE users SET avatar = ? WHERE session_key = ?'),
     // Invitations
     createInvitation: db.prepare('INSERT INTO invitations (from_user_id, to_user_id) VALUES (?, ?)'),
     getPendingInvitations: db.prepare('SELECT i.*, u.username as from_username FROM invitations i JOIN users u ON i.from_user_id = u.user_id WHERE i.to_user_id = ? AND i.status = ?'),
@@ -118,7 +128,7 @@ const stmts = {
     createTeam: db.prepare('INSERT INTO teams (name) VALUES (?)'),
     addTeamMember: db.prepare('INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)'),
     getUserTeam: db.prepare('SELECT t.* FROM teams t JOIN team_members tm ON t.id = tm.team_id WHERE tm.user_id = ?'),
-    getTeamMembers: db.prepare('SELECT u.user_id, u.username, u.email, tm.role, tm.joined_at FROM team_members tm JOIN users u ON tm.user_id = u.user_id WHERE tm.team_id = ?'),
+    getTeamMembers: db.prepare('SELECT u.user_id, u.username, u.email, u.avatar, tm.role, tm.joined_at FROM team_members tm JOIN users u ON tm.user_id = u.user_id WHERE tm.team_id = ?'),
     checkTeamMember: db.prepare('SELECT team_id FROM team_members WHERE user_id = ?'),
 };
 
@@ -255,7 +265,7 @@ app.post('/api/data/:sessionKey', (req, res) => {
 // === API: Пользователь — получить/создать профиль ===
 app.get('/api/user/:sessionKey', (req, res) => {
     const user = ensureUser(req.params.sessionKey);
-    res.json({ userId: user.user_id, username: user.username, email: user.email });
+    res.json({ userId: user.user_id, username: user.username, email: user.email, avatar: user.avatar });
 });
 
 // === API: Обновить имя ===
@@ -274,6 +284,26 @@ app.post('/api/user/:sessionKey/username', (req, res) => {
 app.post('/api/user/:sessionKey/email', (req, res) => {
     const { email } = req.body;
     stmts.updateEmail.run(email || null, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+// === API: Обновить аватар ===
+app.post('/api/user/:sessionKey/avatar', (req, res) => {
+    const { avatar } = req.body; // base64 data URL
+    if (avatar && avatar.length > 500000) return res.status(400).json({ error: 'Аватар слишком большой (макс 500 КБ)' });
+    stmts.updateAvatar.run(avatar || null, req.params.sessionKey);
+    // Уведомляем команду
+    const user = stmts.getUserBySession.get(req.params.sessionKey);
+    if (user) {
+        const team = stmts.getUserTeam.get(user.user_id);
+        if (team) {
+            const members = stmts.getTeamMembers.all(team.id);
+            members.forEach(m => {
+                const memberUser = stmts.getUserByUserId.get(m.user_id);
+                notifyUser(memberUser.session_key, { type: 'team_updated', teamId: team.id });
+            });
+        }
+    }
     res.json({ ok: true });
 });
 

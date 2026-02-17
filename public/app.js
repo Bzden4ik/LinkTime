@@ -100,6 +100,8 @@ document.getElementById('closeInvite').addEventListener('click', closeInviteModa
 document.getElementById('saveUsername').addEventListener('click', saveUsername);
 document.getElementById('saveEmail').addEventListener('click', saveEmail);
 document.getElementById('sendInviteBtn').addEventListener('click', sendInvite);
+document.getElementById('avatarInput').addEventListener('change', handleAvatarUpload);
+document.getElementById('removeAvatar').addEventListener('click', removeAvatar);
 document.addEventListener('click', (e) => {
   if (!document.getElementById('burgerWrap').contains(e.target)) closeBurger();
 });
@@ -1504,7 +1506,7 @@ async function initUserProfile() {
   try {
     const res = await fetch(`${getApiBase()}/api/user/${state.sessionKey}`);
     userProfile = await res.json();
-    updateAvatarLetter();
+    updateAvatarDisplay();
     loadNotificationCount();
     loadTeam();
   } catch (e) {
@@ -1512,9 +1514,22 @@ async function initUserProfile() {
   }
 }
 
-function updateAvatarLetter() {
+function updateAvatarDisplay() {
   if (!userProfile) return;
-  document.getElementById('avatarLetter').textContent = (userProfile.username || '?')[0].toUpperCase();
+  const letter = (userProfile.username || '?')[0].toUpperCase();
+  
+  // Header avatar
+  const avatarBtn = document.getElementById('avatarBtn');
+  if (userProfile.avatar) {
+    avatarBtn.innerHTML = `<img src="${userProfile.avatar}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  } else {
+    avatarBtn.innerHTML = `<span class="avatar-letter">${letter}</span>`;
+  }
+}
+
+function updateAvatarLetter() {
+  // Deprecated - use updateAvatarDisplay instead
+  updateAvatarDisplay();
 }
 
 // === КОМАНДА ===
@@ -1542,19 +1557,25 @@ function renderTeam() {
     
     // Сначала я
     if (me) {
+      const avatarContent = userProfile.avatar 
+        ? `<img src="${userProfile.avatar}" alt="${me.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+        : me.username[0].toUpperCase();
       html += `
         <div class="team-member-avatar me" title="${me.username} (вы)">
-          ${me.username[0].toUpperCase()}
+          ${avatarContent}
           <div class="member-tooltip">${me.username} (вы)</div>
         </div>
       `;
     }
     
-    // Потом остальные
+    // Потом остальные (нужно получить их аватарки с сервера)
     others.forEach(m => {
+      const avatarContent = m.avatar
+        ? `<img src="${m.avatar}" alt="${m.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+        : m.username[0].toUpperCase();
       html += `
         <div class="team-member-avatar" title="${m.username}">
-          ${m.username[0].toUpperCase()}
+          ${avatarContent}
           <div class="member-tooltip">${m.username}</div>
         </div>
       `;
@@ -1656,6 +1677,20 @@ function openProfile() {
   document.getElementById('profileUsername').value = userProfile.username || '';
   document.getElementById('profileEmail').value = userProfile.email || '';
   document.getElementById('usernameHint').textContent = '';
+  
+  // Аватар
+  const preview = document.getElementById('profileAvatarPreview');
+  const letter = document.getElementById('profileAvatarLetter');
+  const removeBtn = document.getElementById('removeAvatar');
+  
+  if (userProfile.avatar) {
+    preview.innerHTML = `<img src="${userProfile.avatar}" alt="Avatar">`;
+    removeBtn.style.display = 'inline-block';
+  } else {
+    preview.innerHTML = `<span id="profileAvatarLetter">${(userProfile.username||'?')[0].toUpperCase()}</span>`;
+    removeBtn.style.display = 'none';
+  }
+  
   document.getElementById('profileModal').classList.add('active');
 }
 function closeProfile() {
@@ -1697,6 +1732,58 @@ async function saveEmail() {
     });
     userProfile.email = email;
     showToast('Email сохранён', 'success');
+  } catch (e) {
+    showToast('Ошибка', 'error');
+  }
+}
+
+async function handleAvatarUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 500000) {
+    showToast('Файл слишком большой (макс 500 КБ)', 'error');
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    const base64 = ev.target.result;
+    try {
+      const res = await fetch(`${getApiBase()}/api/user/${state.sessionKey}/avatar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar: base64 })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        userProfile.avatar = base64;
+        updateAvatarDisplay();
+        document.getElementById('profileAvatarPreview').innerHTML = `<img src="${base64}" alt="Avatar">`;
+        document.getElementById('removeAvatar').style.display = 'inline-block';
+        showToast('Аватар обновлён!', 'success');
+      } else {
+        showToast(data.error || 'Ошибка', 'error');
+      }
+    } catch (e) {
+      showToast('Ошибка загрузки', 'error');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+async function removeAvatar() {
+  try {
+    await fetch(`${getApiBase()}/api/user/${state.sessionKey}/avatar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ avatar: null })
+    });
+    userProfile.avatar = null;
+    updateAvatarDisplay();
+    const letter = (userProfile.username||'?')[0].toUpperCase();
+    document.getElementById('profileAvatarPreview').innerHTML = `<span id="profileAvatarLetter">${letter}</span>`;
+    document.getElementById('removeAvatar').style.display = 'none';
+    showToast('Аватар удалён', 'info');
   } catch (e) {
     showToast('Ошибка', 'error');
   }

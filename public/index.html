@@ -169,6 +169,16 @@
     <button class="close-btn" id="closeProfile">×</button>
   </div>
   <div class="modal-body">
+    <div class="profile-avatar-section">
+      <div class="profile-avatar-preview" id="profileAvatarPreview">
+        <span id="profileAvatarLetter">?</span>
+      </div>
+      <label class="profile-avatar-upload">
+        <input type="file" id="avatarInput" accept="image/*" style="display:none">
+        <button class="btn btn-small" onclick="document.getElementById('avatarInput').click(); return false;">Выбрать фото</button>
+      </label>
+      <button class="btn btn-small btn-cancel" id="removeAvatar" style="display:none">Удалить</button>
+    </div>
     <div class="profile-id-block">
       <span class="profile-label">Ваш ID <small>(нельзя изменить)</small></span>
       <div class="profile-id-value" id="profileUserId">—</div>
