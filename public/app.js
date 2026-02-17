@@ -1532,40 +1532,38 @@ async function loadTeam() {
 
 function renderTeam() {
   const container = document.getElementById('teamSlots');
-  if (!userTeam || !userTeam.team) {
-    container.innerHTML = '';
-    return;
-  }
-  
-  const members = userTeam.members || [];
-  const me = members.find(m => m.user_id === userProfile.userId);
-  const others = members.filter(m => m.user_id !== userProfile.userId);
   
   let html = '';
   
-  // Сначала я
-  if (me) {
-    html += `
-      <div class="team-member-avatar me" title="${me.username} (вы)">
-        ${me.username[0].toUpperCase()}
-        <div class="member-tooltip">${me.username} (вы)</div>
-      </div>
-    `;
+  if (userTeam && userTeam.team) {
+    const members = userTeam.members || [];
+    const me = members.find(m => m.user_id === userProfile.userId);
+    const others = members.filter(m => m.user_id !== userProfile.userId);
+    
+    // Сначала я
+    if (me) {
+      html += `
+        <div class="team-member-avatar me" title="${me.username} (вы)">
+          ${me.username[0].toUpperCase()}
+          <div class="member-tooltip">${me.username} (вы)</div>
+        </div>
+      `;
+    }
+    
+    // Потом остальные
+    others.forEach(m => {
+      html += `
+        <div class="team-member-avatar" title="${m.username}">
+          ${m.username[0].toUpperCase()}
+          <div class="member-tooltip">${m.username}</div>
+        </div>
+      `;
+    });
   }
   
-  // Потом остальные
-  others.forEach(m => {
-    html += `
-      <div class="team-member-avatar" title="${m.username}">
-        ${m.username[0].toUpperCase()}
-        <div class="member-tooltip">${m.username}</div>
-      </div>
-    `;
-  });
-  
-  // Слот для приглашения (если есть команда)
+  // Слот + показываем ВСЕГДА (даже если команды нет)
   html += `
-    <div class="team-add-slot" onclick="openInviteModal()" title="Пригласить">+</div>
+    <div class="team-add-slot" onclick="openInviteModal()" title="Пригласить в команду">+</div>
   `;
   
   container.innerHTML = html;
