@@ -154,19 +154,49 @@ app.get('/api/data/:sessionKey', (req, res) => {
     });
 });
 
-// === API: Сохранить данные сессии ===
+// === API: Сохранить данные сессии (с мержем) ===
 app.post('/api/data/:sessionKey', (req, res) => {
     const { sessionKey } = req.params;
     const { tasks, sessions } = req.body;
     if (!sessionKey) return res.status(400).json({ error: 'sessionKey required' });
     ensureSession(sessionKey);
+
+    // Получаем существующие данные
+    const existing = getSessionData(sessionKey);
+
+    // Мержим задачи по id (без дублей)
+    const mergedTasksMap = new Map();
+    (existing.tasks || []).forEach(t => mergedTasksMap.set(t.id, t));
+    (tasks || []).forEach(t => mergedTasksMap.set(t.id, t));
+    const mergedTasks = Array.from(mergedTasksMap.values());
+
+    // Мержим сессии по дате — берём набор с большим количеством записей
+    const mergedSessions = { ...(existing.sessions || {}) };
+    Object.keys(sessions || {}).forEach(key => {
+        const incoming = sessions[key];
+        const current = mergedSessions[key] || [];
+        if (!current.length || incoming.length >= current.length) {
+            mergedSessions[key] = incoming;
+        }
+    });
+
     stmts.updateSync.run(
-        JSON.stringify(tasks || []),
-        JSON.stringify(sessions || {}),
+        JSON.stringify(mergedTasks),
+        JSON.stringify(mergedSessions),
         Date.now(),
         sessionKey
     );
-    res.json({ ok: true });
+
+    const newTasks = mergedTasks.length - (existing.tasks || []).length;
+    const newDays = Object.keys(mergedSessions).length - Object.keys(existing.sessions || {}).length;
+
+    res.json({
+        ok: true,
+        totalTasks: mergedTasks.length,
+        totalDays: Object.keys(mergedSessions).length,
+        newTasks: Math.max(0, newTasks),
+        newDays: Math.max(0, newDays)
+    });
 });
 
 // Fallback — отдаём index.html для SPA
@@ -300,9 +330,28 @@ wss.on('connection', (ws) => {
         const { sessionKey, tasks, sessions: userSessions } = data;
         const now = Date.now();
 
+        // Мержим вместо перезаписи
+        const existing = getSessionData(sessionKey);
+
+        // Мержим задачи по id
+        const mergedTasksMap = new Map();
+        (existing ? existing.tasks : []).forEach(t => mergedTasksMap.set(t.id, t));
+        (tasks || []).forEach(t => mergedTasksMap.set(t.id, t));
+        const mergedTasks = Array.from(mergedTasksMap.values());
+
+        // Мержим сессии по дате
+        const mergedSessions = existing ? { ...existing.sessions } : {};
+        Object.keys(userSessions || {}).forEach(key => {
+            const incoming = userSessions[key];
+            const current = mergedSessions[key] || [];
+            if (!current.length || incoming.length >= current.length) {
+                mergedSessions[key] = incoming;
+            }
+        });
+
         stmts.updateSync.run(
-            JSON.stringify(tasks || []),
-            JSON.stringify(userSessions || {}),
+            JSON.stringify(mergedTasks),
+            JSON.stringify(mergedSessions),
             now,
             sessionKey
         );
@@ -311,7 +360,7 @@ wss.on('connection', (ws) => {
         const sessionData = getSessionData(sessionKey);
         broadcast(sessionKey, { type: 'update', data: sessionData, from: 'server' }, ws);
 
-        console.log(`[WS] Sync received for session: ${sessionKey}`);
+        console.log(`[WS] Sync received for session: ${sessionKey} (${mergedTasks.length} tasks, ${Object.keys(mergedSessions).length} days)`);
     }
 
     function handleTimerSync(ws, data) {

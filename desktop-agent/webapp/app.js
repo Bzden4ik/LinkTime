@@ -1458,28 +1458,65 @@ const migrateBtn = document.getElementById('migrateBtn');
 migrateBtn.disabled = true;
 migrateBtn.textContent = 'Переносим данные...';
 try {
-const tasks = getTasks();
-const allSessions = {};
+const serverUrl = WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
+const apiUrl = `${serverUrl}/api/data/${encodeURIComponent(state.sessionKey)}`;
+
+// 1. Получаем данные из БД
+const getResp = await fetch(apiUrl);
+if (!getResp.ok) throw new Error(`Не удалось получить данные с сервера: ${getResp.status}`);
+const serverData = await getResp.json();
+
+// 2. Собираем локальные данные
+const localTasks = getTasks();
+const localSessions = {};
 for (let i = 0; i < localStorage.length; i++) {
 const key = localStorage.key(i);
 if (key.startsWith('sessions_')) {
-allSessions[key] = JSON.parse(localStorage.getItem(key));
+localSessions[key] = JSON.parse(localStorage.getItem(key));
 }
 }
-const serverUrl = WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
-const response = await fetch(`${serverUrl}/api/data/${encodeURIComponent(state.sessionKey)}`, {
+
+// 3. Мержим задачи по id (без дублей)
+const mergedTasksMap = new Map();
+(serverData.tasks || []).forEach(t => mergedTasksMap.set(t.id, t));
+localTasks.forEach(t => mergedTasksMap.set(t.id, t));
+const mergedTasks = Array.from(mergedTasksMap.values());
+
+// 4. Мержим сессии по дате (берём больший набор)
+const mergedSessions = { ...(serverData.sessions || {}) };
+Object.keys(localSessions).forEach(key => {
+const local = localSessions[key];
+const remote = mergedSessions[key] || [];
+if (!remote.length || local.length >= remote.length) {
+mergedSessions[key] = local;
+}
+});
+
+// 5. Отправляем мерженные данные
+const postResp = await fetch(apiUrl, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ tasks, sessions: allSessions })
+body: JSON.stringify({ tasks: mergedTasks, sessions: mergedSessions })
 });
-if (!response.ok) throw new Error(`Сервер вернул ошибку: ${response.status}`);
-const result = await response.json();
+if (!postResp.ok) throw new Error(`Сервер вернул ошибку: ${postResp.status}`);
+const result = await postResp.json();
+
+// 6. Обновляем localStorage мерженными данными
+localStorage.setItem('tasks', JSON.stringify(mergedTasks));
+Object.keys(mergedSessions).forEach(key => {
+localStorage.setItem(key, JSON.stringify(mergedSessions[key]));
+});
+
+// 7. Обновляем UI
+renderTasks();
+updateSelectedDateStats();
+renderCalendar();
+
 if (result.ok) {
-const taskCount = tasks.length;
-const sessionDays = Object.keys(allSessions).length;
-showToast(`Данные перенесены: ${taskCount} задач, ${sessionDays} дней`, 'success');
-} else {
-throw new Error('Сервер не подтвердил сохранение');
+const msg = result.newTasks > 0 || result.newDays > 0
+? `Синхронизировано! +${result.newTasks} задач, +${result.newDays} дней. Итого: ${result.totalTasks} задач, ${result.totalDays} дней`
+: `Все данные уже в базе (${result.totalTasks} задач, ${result.totalDays} дней)`;
+showToast(msg, 'success');
 }
 } catch (error) {
 console.error('Migration error:', error);
