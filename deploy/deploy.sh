@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# LinkTime — скрипт деплоя на Ubuntu 24.04
+# LinkTime — первичный деплой на Ubuntu 24.04
 # Сервер: 138.124.53.246
 # Домен: linktime.go-tit.ru
 # Порт: 3002
@@ -8,10 +8,6 @@
 
 set -e
 
-echo "=== LinkTime Deploy Script ==="
-echo ""
-
-# Цвета
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -21,94 +17,93 @@ info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-# --- Шаг 1: Проверяем Node.js ---
+REPO_URL="https://github.com/Bzden4ik/LinkTime.git"
+DEPLOY_DIR="/var/www/linktime"
+DATA_DIR="/var/lib/linktime"
+
+# --- Шаг 1: Node.js ---
 info "Проверяю Node.js..."
 if ! command -v node &> /dev/null; then
     warn "Node.js не установлен. Устанавливаю Node.js 20..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt-get install -y nodejs
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
 fi
-NODE_VERSION=$(node -v)
-info "Node.js version: $NODE_VERSION"
+info "Node.js: $(node -v)"
 
-# --- Шаг 2: Создаём директории ---
+# --- Шаг 2: Git ---
+info "Проверяю git..."
+if ! command -v git &> /dev/null; then
+    apt-get install -y git
+fi
+
+# --- Шаг 3: Директории ---
 info "Создаю директории..."
-sudo mkdir -p /var/www/linktime
-sudo mkdir -p /var/lib/linktime
-sudo mkdir -p /var/log/linktime
-sudo mkdir -p /var/www/certbot
+mkdir -p "$DATA_DIR"
+mkdir -p /var/www/certbot
 
-# --- Шаг 3: Копируем файлы ---
-info "Копирую файлы проекта..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+# --- Шаг 4: Клонируем или обновляем репозиторий ---
+info "Разворачиваю репозиторий..."
+if [ -d "$DEPLOY_DIR/.git" ]; then
+    info "Репозиторий уже есть — обновляю..."
+    cd "$DEPLOY_DIR"
+    git pull origin main
+else
+    git clone "$REPO_URL" "$DEPLOY_DIR"
+    cd "$DEPLOY_DIR"
+fi
 
-sudo cp "$PROJECT_DIR/server.js" /var/www/linktime/
-sudo cp "$PROJECT_DIR/package.json" /var/www/linktime/
+# --- Шаг 5: npm install ---
+info "Устанавливаю зависимости..."
+npm install --omit=dev
 
-sudo mkdir -p /var/www/linktime/public
-sudo cp "$PROJECT_DIR/public/index.html" /var/www/linktime/public/
-sudo cp "$PROJECT_DIR/public/app.js" /var/www/linktime/public/
-sudo cp "$PROJECT_DIR/public/style.css" /var/www/linktime/public/
+# --- Шаг 6: Права доступа ---
+info "Настраиваю права..."
+chown -R www-data:www-data "$DEPLOY_DIR"
+chown -R www-data:www-data "$DATA_DIR"
+# git-директория должна быть доступна для pull от root
+chmod -R 755 "$DEPLOY_DIR"
 
-# --- Шаг 4: Устанавливаем зависимости ---
-info "Устанавливаю npm зависимости..."
-cd /var/www/linktime
-sudo npm install --omit=dev
-
-# --- Шаг 5: Права доступа ---
-info "Настраиваю права доступа..."
-sudo chown -R www-data:www-data /var/www/linktime
-sudo chown -R www-data:www-data /var/lib/linktime
-sudo chown -R www-data:www-data /var/log/linktime
-
-# --- Шаг 6: Systemd сервис ---
+# --- Шаг 7: Systemd сервис ---
 info "Настраиваю systemd сервис..."
-sudo cp "$SCRIPT_DIR/linktime.service" /etc/systemd/system/linktime.service
-sudo systemctl daemon-reload
-sudo systemctl enable linktime
-sudo systemctl restart linktime
+cp "$DEPLOY_DIR/deploy/linktime.service" /etc/systemd/system/linktime.service
+systemctl daemon-reload
+systemctl enable linktime
+systemctl restart linktime
 sleep 2
 
 if systemctl is-active --quiet linktime; then
-    info "LinkTime сервис: РАБОТАЕТ"
+    info "Сервис linktime: РАБОТАЕТ"
 else
-    error "LinkTime сервис не запустился. Смотри: sudo journalctl -u linktime -n 50"
+    error "Сервис не запустился. Смотри: journalctl -u linktime -n 50"
 fi
 
-# --- Шаг 7: Nginx (HTTP сначала) ---
-info "Настраиваю Nginx (HTTP)..."
-sudo cp "$SCRIPT_DIR/nginx-linktime.conf" /etc/nginx/sites-available/linktime.go-tit.ru
+# --- Шаг 8: Nginx ---
+info "Настраиваю Nginx..."
+cp "$DEPLOY_DIR/deploy/nginx-linktime.conf" /etc/nginx/sites-available/linktime.go-tit.ru
 
 if [ ! -L /etc/nginx/sites-enabled/linktime.go-tit.ru ]; then
-    sudo ln -s /etc/nginx/sites-available/linktime.go-tit.ru /etc/nginx/sites-enabled/
+    ln -s /etc/nginx/sites-available/linktime.go-tit.ru /etc/nginx/sites-enabled/
 fi
 
-sudo nginx -t || error "Nginx config test failed!"
-sudo systemctl reload nginx
-info "Nginx перезагружен (HTTP)"
+nginx -t || error "Ошибка конфига nginx!"
+systemctl reload nginx
 
-# --- Шаг 8: SSL сертификат ---
-info "Проверяю SSL сертификат..."
+# --- Шаг 9: SSL ---
+info "Проверяю SSL..."
 if [ ! -d /etc/letsencrypt/live/linktime.go-tit.ru ]; then
-    warn "SSL сертификат не найден. Получаю через certbot..."
-
+    warn "SSL не найден. Получаю через certbot..."
     if ! command -v certbot &> /dev/null; then
-        info "Устанавливаю certbot..."
-        sudo apt-get install -y certbot python3-certbot-nginx
+        apt-get install -y certbot python3-certbot-nginx
     fi
-
-    sudo certbot --nginx -d linktime.go-tit.ru --non-interactive --agree-tos --email deniskazah33@gmail.com
-    info "SSL сертификат получен, Nginx обновлён certbot'ом"
+    certbot --nginx -d linktime.go-tit.ru --non-interactive --agree-tos --email deniskazah33@gmail.com
+    info "SSL получен."
 else
-    info "SSL сертификат уже существует"
-    sudo nginx -t && sudo systemctl reload nginx
+    info "SSL уже есть."
+    nginx -t && systemctl reload nginx
 fi
 
-# --- Шаг 9: Проверка ---
+# --- Шаг 10: Проверка ---
 sleep 2
-info "Проверяю работоспособность..."
-
 if curl -s http://localhost:3002/api/health | grep -q '"status":"ok"'; then
     info "Health check: OK"
 else
@@ -120,11 +115,12 @@ echo "==========================================="
 echo -e "${GREEN}  LinkTime успешно развёрнут!${NC}"
 echo ""
 echo "  Сайт:   https://linktime.go-tit.ru"
-echo "  Порт:   3002"
-echo "  БД:     /var/lib/linktime/linktime.db"
+echo "  Код:    $DEPLOY_DIR"
+echo "  БД:     $DATA_DIR/linktime.db"
 echo ""
-echo "  Команды управления:"
-echo "    sudo systemctl status linktime"
-echo "    sudo systemctl restart linktime"
-echo "    sudo journalctl -u linktime -f"
+echo "  Обновить с GitHub:"
+echo "    bash $DEPLOY_DIR/deploy/update.sh"
+echo ""
+echo "  Логи:"
+echo "    journalctl -u linktime -f"
 echo "==========================================="
