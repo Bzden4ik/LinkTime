@@ -473,6 +473,10 @@ if (state.timerRunning && !state.timerPaused) {
 state.elapsedTime = Date.now() - state.currentSessionStart;
 const displayTime = state.elapsedTime - state.totalPausedTime;
 document.getElementById('timerDisplay').textContent = formatTime(displayTime);
+// Обновляем рабочее время в реальном времени
+if (state.selectedDate === state.currentDate) {
+updateSelectedDateStats();
+}
 }
 }
 
@@ -696,13 +700,20 @@ let totalPauseTime = 0;
 sessions.forEach(session => {
 if (session.end) {
 let sessionTime = session.end - session.start;
-session.pauses.forEach(pause => {
+(session.pauses || []).forEach(pause => {
 if (pause.duration) {
 totalPauseTime += pause.duration;
 sessionTime -= pause.duration;
 }
 });
-totalWorkTime += sessionTime;
+totalWorkTime += Math.max(0, sessionTime);
+} else if (dateStr === state.currentDate && state.timerRunning && state.currentSessionStart && session.start === state.currentSessionStart) {
+// Текущая активная сессия — считаем в реальном времени
+let currentWork = Date.now() - session.start - state.totalPausedTime;
+if (state.timerPaused && state.currentPauseStart) {
+currentWork -= (Date.now() - state.currentPauseStart);
+}
+totalWorkTime += Math.max(0, currentWork);
 }
 });
 
