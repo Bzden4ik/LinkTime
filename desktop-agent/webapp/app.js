@@ -473,6 +473,9 @@ if (state.timerRunning && !state.timerPaused) {
 state.elapsedTime = Date.now() - state.currentSessionStart;
 const displayTime = state.elapsedTime - state.totalPausedTime;
 document.getElementById('timerDisplay').textContent = formatTime(displayTime);
+if (state.selectedDate === state.currentDate) {
+updateSelectedDateStats();
+}
 }
 }
 
@@ -696,13 +699,19 @@ let totalPauseTime = 0;
 sessions.forEach(session => {
 if (session.end) {
 let sessionTime = session.end - session.start;
-session.pauses.forEach(pause => {
+(session.pauses || []).forEach(pause => {
 if (pause.duration) {
 totalPauseTime += pause.duration;
 sessionTime -= pause.duration;
 }
 });
-totalWorkTime += sessionTime;
+totalWorkTime += Math.max(0, sessionTime);
+} else if (dateStr === state.currentDate && state.timerRunning && state.currentSessionStart && session.start === state.currentSessionStart) {
+let currentWork = Date.now() - session.start - state.totalPausedTime;
+if (state.timerPaused && state.currentPauseStart) {
+currentWork -= (Date.now() - state.currentPauseStart);
+}
+totalWorkTime += Math.max(0, currentWork);
 }
 });
 
@@ -1548,69 +1557,92 @@ async function loadTeam() {
     const res = await fetch(`${getApiBase()}/api/team/${state.sessionKey}`);
     userTeam = await res.json();
     renderTeam();
+    updateShareTimeBtnLabel();
   } catch (e) {
     console.error('Team load error:', e);
   }
 }
 
+function updateShareTimeBtnLabel() {
+  const btn = document.getElementById('burgerShareTime');
+  if (!btn || !userTeam || !userTeam.members) return;
+  const me = userTeam.members.find(m => m.user_id === userProfile.userId);
+  if (me && me.sharing_time) {
+    btn.textContent = '📊 Выключить шеринг времени';
+  } else {
+    btn.textContent = '📊 Поделиться временем с командой';
+  }
+}
+
 function renderTeam() {
   const container = document.getElementById('teamSlots');
-  
   let html = '';
-  
+
   if (userTeam && userTeam.team) {
     const members = userTeam.members || [];
     const me = members.find(m => m.user_id === userProfile.userId);
     const others = members.filter(m => m.user_id !== userProfile.userId);
-    
-    // Сначала я
+
     if (me) {
-      const avatarContent = userProfile.avatar 
+      const avatarContent = userProfile.avatar
         ? `<img src="${userProfile.avatar}" alt="${me.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
         : me.username[0].toUpperCase();
       html += `
-        <div class="team-member-avatar me" title="${me.username} (вы)" data-user-id="${me.user_id}">
+        <div class="team-member-avatar me" data-user-id="${me.user_id}">
           ${avatarContent}
-          <div class="member-tooltip">${me.username} (вы)</div>
+          <div class="member-tooltip">
+            <div class="tooltip-username">${me.username} <span class="tooltip-you">(вы)</span></div>
+          </div>
         </div>
       `;
     }
-    
-    // Потом остальные
+
     others.forEach(m => {
       const avatarContent = m.avatar
         ? `<img src="${m.avatar}" alt="${m.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
         : m.username[0].toUpperCase();
-      
-      // Проверяем есть ли таймер для этого пользователя
+
       const timer = teamTimers[m.user_id];
-      let timerHtml = '';
-      if (timer && m.sharing_time && timer.action !== 'stop') {
-        const currentTime = formatTimerFromState(timer);
-        timerHtml = `
-          <div class="member-timer-display" id="timer-${m.user_id}">${currentTime}</div>
-        `;
-      }
-      
+      const hasTimer = timer && m.sharing_time && timer.action && timer.action !== 'stop';
+
+      const timerSection = hasTimer ? `
+        <div class="tooltip-divider"></div>
+        <div class="tooltip-timer-val" id="mtimer-${m.user_id}">${formatTimerFromState(timer)}</div>
+        <div class="tooltip-work-label">За день: <span id="mwork-${m.user_id}">${formatWorkTimeForMember(timer)}</span></div>
+      ` : '';
+
+      const dot = (m.sharing_time && hasTimer) ? `<div class="member-sharing-dot"></div>` : '';
+
       html += `
-        <div class="team-member-avatar" title="${m.username}" data-user-id="${m.user_id}">
+        <div class="team-member-avatar" data-user-id="${m.user_id}">
           ${avatarContent}
-          <div class="member-tooltip">${m.username}</div>
-          ${timerHtml}
+          ${dot}
+          <div class="member-tooltip">
+            <div class="tooltip-username">${m.username}</div>
+            ${timerSection}
+          </div>
         </div>
       `;
     });
   }
-  
-  // Слот + показываем ВСЕГДА
-  html += `
-    <div class="team-add-slot" onclick="openInviteModal()" title="Пригласить в команду">+</div>
-  `;
-  
+
+  html += `<div class="team-add-slot" onclick="openInviteModal()" title="Пригласить в команду">+</div>`;
   container.innerHTML = html;
-  
-  // Запускаем обновление таймеров команды
   startTeamTimerUpdates();
+}
+
+function formatWorkTimeForMember(timer) {
+  if (!timer) return '00:00:00';
+  const completed = timer.completedWorkMs || 0;
+  if ((timer.action === 'start' || timer.action === 'resume') && timer.sessionStart) {
+    const running = Date.now() - timer.sessionStart - (timer.totalPausedTime || 0);
+    return formatTime(completed + Math.max(0, running));
+  }
+  if (timer.action === 'pause' && timer.pauseStart && timer.sessionStart) {
+    const running = timer.pauseStart - timer.sessionStart - (timer.totalPausedTime || 0);
+    return formatTime(completed + Math.max(0, running));
+  }
+  return formatTime(completed);
 }
 
 function formatTimerFromState(timerState) {
@@ -1632,23 +1664,31 @@ let teamTimerInterval = null;
 
 function startTeamTimerUpdates() {
   if (teamTimerInterval) clearInterval(teamTimerInterval);
-  
+
   teamTimerInterval = setInterval(() => {
-    Object.keys(teamTimers).forEach(userId => {
-      const timer = teamTimers[userId];
-      const display = document.getElementById(`timer-${userId}`);
-      if (display && timer.action !== 'stop' && timer.action !== 'pause') {
-        const currentTime = formatTimerFromState(timer);
-        display.textContent = currentTime;
-      }
+    Object.entries(teamTimers).forEach(([userId, timer]) => {
+      if (!timer || timer.action === 'stop' || timer.action === 'pause') return;
+      const timerEl = document.getElementById(`mtimer-${userId}`);
+      const workEl = document.getElementById(`mwork-${userId}`);
+      if (timerEl) timerEl.textContent = formatTimerFromState(timer);
+      if (workEl) workEl.textContent = formatWorkTimeForMember(timer);
     });
   }, 1000);
 }
 
 function handleTeamTimerUpdate(data) {
-  const { userId, timerState } = data;
-  teamTimers[userId] = timerState;
-  renderTeam();
+  const { userId, timerState, completedWorkMs } = data;
+  teamTimers[userId] = { ...timerState, completedWorkMs: completedWorkMs || 0 };
+
+  const timerEl = document.getElementById(`mtimer-${userId}`);
+  const workEl = document.getElementById(`mwork-${userId}`);
+  if (timerEl) timerEl.textContent = formatTimerFromState(timerState);
+  if (workEl) workEl.textContent = formatWorkTimeForMember(teamTimers[userId]);
+
+  if (!timerEl || timerState.action === 'stop') {
+    loadTeam();
+  }
+}
 }
 
 // === БУРГЕР ===
@@ -1888,10 +1928,34 @@ async function sendInvite() {
 // === ШЕРИНГ ВРЕМЕНИ ===
 
 function openShareTimeModal() {
+  if (userTeam && userTeam.members) {
+    const me = userTeam.members.find(m => m.user_id === userProfile.userId);
+    if (me && me.sharing_time) {
+      disableShareTime();
+      return;
+    }
+  }
   document.getElementById('shareTimeModal').classList.add('active');
 }
 function closeShareTimeModal() {
   document.getElementById('shareTimeModal').classList.remove('active');
+}
+
+async function disableShareTime() {
+  try {
+    const res = await fetch(`${getApiBase()}/api/team/sharing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionKey: state.sessionKey, enabled: false })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Шеринг времени выключен', 'info');
+      loadTeam();
+    }
+  } catch (e) {
+    showToast('Ошибка', 'error');
+  }
 }
 
 async function confirmShareTime() {
