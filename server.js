@@ -592,6 +592,20 @@ wss.on('connection', (ws) => {
                 const members = stmts.getTeamMembers.all(team.id);
                 const me = members.find(m => m.user_id === user.user_id);
                 if (me && me.sharing_time) {
+                    // Считаем завершённые сессии за сегодня (без текущей)
+                    const sessionData = getSessionData(sessionKey);
+                    const today = new Date().toISOString().split('T')[0];
+                    const todayKey = `sessions_${today}`;
+                    const todaySessions = (sessionData && sessionData.sessions && sessionData.sessions[todayKey]) || [];
+                    let completedWorkMs = 0;
+                    todaySessions.forEach(s => {
+                        if (s.end) {
+                            let dur = s.end - s.start;
+                            (s.pauses || []).forEach(p => { if (p.duration) dur -= p.duration; });
+                            completedWorkMs += Math.max(0, dur);
+                        }
+                    });
+
                     // Broadcast всем участникам команды (кроме себя)
                     members.forEach(m => {
                         if (m.user_id !== user.user_id) {
@@ -601,7 +615,8 @@ wss.on('connection', (ws) => {
                                 userId: user.user_id,
                                 username: user.username,
                                 avatar: user.avatar,
-                                timerState: timerState
+                                timerState: timerState,
+                                completedWorkMs: completedWorkMs
                             });
                         }
                     });
