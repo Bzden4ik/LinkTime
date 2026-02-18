@@ -63,6 +63,7 @@ db.exec(`
         team_id INTEGER NOT NULL,
         user_id TEXT NOT NULL,
         role TEXT DEFAULT 'member',
+        sharing_time INTEGER DEFAULT 0,
         joined_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
         PRIMARY KEY (team_id, user_id)
     );
@@ -72,6 +73,14 @@ db.exec(`
 try {
     db.exec(`ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL`);
     console.log('[DB] Migration: avatar column added');
+} catch (e) {
+    // Колонка уже существует, игнорируем
+}
+
+// Миграция: добавляем sharing_time если его нет
+try {
+    db.exec(`ALTER TABLE team_members ADD COLUMN sharing_time INTEGER DEFAULT 0`);
+    console.log('[DB] Migration: sharing_time column added');
 } catch (e) {
     // Колонка уже существует, игнорируем
 }
@@ -128,8 +137,9 @@ const stmts = {
     createTeam: db.prepare('INSERT INTO teams (name) VALUES (?)'),
     addTeamMember: db.prepare('INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)'),
     getUserTeam: db.prepare('SELECT t.* FROM teams t JOIN team_members tm ON t.id = tm.team_id WHERE tm.user_id = ?'),
-    getTeamMembers: db.prepare('SELECT u.user_id, u.username, u.email, u.avatar, tm.role, tm.joined_at FROM team_members tm JOIN users u ON tm.user_id = u.user_id WHERE tm.team_id = ?'),
+    getTeamMembers: db.prepare('SELECT u.user_id, u.username, u.email, u.avatar, tm.role, tm.sharing_time, tm.joined_at FROM team_members tm JOIN users u ON tm.user_id = u.user_id WHERE tm.team_id = ?'),
     checkTeamMember: db.prepare('SELECT team_id FROM team_members WHERE user_id = ?'),
+    updateSharingTime: db.prepare('UPDATE team_members SET sharing_time = ? WHERE team_id = ? AND user_id = ?'),
 };
 
 // === ХЕЛПЕРЫ ДЛЯ БД ===
@@ -390,6 +400,26 @@ app.get('/api/team/:sessionKey', (req, res) => {
     res.json({ team, members });
 });
 
+// === API: Включить/выключить шеринг времени ===
+app.post('/api/team/sharing', (req, res) => {
+    const { sessionKey, enabled } = req.body;
+    const user = stmts.getUserBySession.get(sessionKey);
+    if (!user) return res.status(400).json({ error: 'Профиль не найден' });
+    const team = stmts.getUserTeam.get(user.user_id);
+    if (!team) return res.status(404).json({ error: 'Команда не найдена' });
+    
+    stmts.updateSharingTime.run(enabled ? 1 : 0, team.id, user.user_id);
+    
+    // Уведомляем всех участников команды
+    const members = stmts.getTeamMembers.all(team.id);
+    members.forEach(m => {
+        const memberUser = stmts.getUserByUserId.get(m.user_id);
+        notifyUser(memberUser.session_key, { type: 'team_updated', teamId: team.id });
+    });
+    
+    res.json({ ok: true });
+});
+
 // Fallback — отдаём index.html для SPA
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -551,8 +581,33 @@ wss.on('connection', (ws) => {
         const timerState = { action, ...timerData };
         stmts.updateTimerState.run(JSON.stringify(timerState), now, now, sessionKey);
 
-        // Рассылаем обновление таймера
+        // Рассылаем обновление таймера своей сессии
         broadcast(sessionKey, { type: 'timer_state', data: timerState }, ws);
+
+        // Если включён шеринг времени — broadcast команде
+        const user = stmts.getUserBySession.get(sessionKey);
+        if (user) {
+            const team = stmts.getUserTeam.get(user.user_id);
+            if (team) {
+                const members = stmts.getTeamMembers.all(team.id);
+                const me = members.find(m => m.user_id === user.user_id);
+                if (me && me.sharing_time) {
+                    // Broadcast всем участникам команды (кроме себя)
+                    members.forEach(m => {
+                        if (m.user_id !== user.user_id) {
+                            const memberUser = stmts.getUserByUserId.get(m.user_id);
+                            notifyUser(memberUser.session_key, {
+                                type: 'team_timer_update',
+                                userId: user.user_id,
+                                username: user.username,
+                                avatar: user.avatar,
+                                timerState: timerState
+                            });
+                        }
+                    });
+                }
+            }
+        }
 
         console.log(`[WS] Timer sync (${action}) for session: ${sessionKey}`);
     }

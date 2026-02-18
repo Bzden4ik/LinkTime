@@ -21,6 +21,7 @@
     </button>
     <div class="burger-dropdown" id="burgerDropdown">
       <button class="burger-item" id="burgerSettings">⚙️ Настройки</button>
+      <button class="burger-item" id="burgerShareTime">📊 Поделиться временем с командой</button>
       <button class="burger-item burger-bell" id="burgerBell">
         🔔 Уведомления
         <span class="bell-badge" id="bellBadge" style="display:none"></span>
@@ -219,6 +220,31 @@
         <button class="btn btn-small btn-add" id="sendInviteBtn">Пригласить</button>
       </div>
       <p class="setting-hint" id="inviteHint"></p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Модальное окно: подтверждение шеринга времени -->
+<div class="modal" id="shareTimeModal">
+<div class="modal-content">
+  <div class="modal-header">
+    <h2>⚠️ Achtung! Achtung!</h2>
+    <button class="close-btn" id="closeShareTime">×</button>
+  </div>
+  <div class="modal-body">
+    <div class="share-time-warning">
+      <p>Вы собираетесь поделиться <strong>общим рабочим временем</strong> и <strong>таймером</strong> с командой!</p>
+      <p>При подтверждении они будут видеть:</p>
+      <ul>
+        <li>✓ Ваш текущий таймер в реальном времени</li>
+        <li>✓ Ваше общее рабочее время за сегодня</li>
+      </ul>
+      <p class="share-time-note">Вы можете отключить это в любой момент через это же меню.</p>
+    </div>
+    <div class="share-time-actions">
+      <button class="btn btn-add" id="confirmShareTime">Подтвердить</button>
+      <button class="btn btn-cancel" id="cancelShareTime">Отмена</button>
     </div>
   </div>
 </div>

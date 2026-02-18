@@ -93,6 +93,7 @@ if (e.key === 'Enter') saveTask();
 document.getElementById('settingsBtn') && document.getElementById('settingsBtn').addEventListener('click', openSettings);
 document.getElementById('burgerBtn').addEventListener('click', toggleBurger);
 document.getElementById('burgerSettings').addEventListener('click', () => { closeBurger(); openSettings(); });
+document.getElementById('burgerShareTime').addEventListener('click', () => { closeBurger(); openShareTimeModal(); });
 document.getElementById('burgerBell').addEventListener('click', toggleNotifications);
 document.getElementById('avatarBtn').addEventListener('click', () => { closeBurger(); openProfile(); });
 document.getElementById('closeProfile').addEventListener('click', closeProfile);
@@ -102,6 +103,9 @@ document.getElementById('saveEmail').addEventListener('click', saveEmail);
 document.getElementById('sendInviteBtn').addEventListener('click', sendInvite);
 document.getElementById('avatarInput').addEventListener('change', handleAvatarUpload);
 document.getElementById('removeAvatar').addEventListener('click', removeAvatar);
+document.getElementById('closeShareTime').addEventListener('click', closeShareTimeModal);
+document.getElementById('confirmShareTime').addEventListener('click', confirmShareTime);
+document.getElementById('cancelShareTime').addEventListener('click', closeShareTimeModal);
 document.addEventListener('click', (e) => {
   if (!document.getElementById('burgerWrap').contains(e.target)) closeBurger();
 });
@@ -978,6 +982,9 @@ break;
 case 'team_updated':
 loadTeam();
 break;
+case 'team_timer_update':
+handleTeamTimerUpdate(message);
+break;
 }
 };
 
@@ -1497,6 +1504,7 @@ migrateBtn.textContent = 'Перенести данные из браузера 
 
 let userProfile = null; // { userId, username, email }
 let userTeam = null; // { team, members: [] }
+let teamTimers = {}; // { userId: { action, sessionStart, totalPausedTime, ... } }
 
 function getApiBase() {
   return WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
@@ -1561,33 +1569,91 @@ function renderTeam() {
         ? `<img src="${userProfile.avatar}" alt="${me.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
         : me.username[0].toUpperCase();
       html += `
-        <div class="team-member-avatar me" title="${me.username} (вы)">
+        <div class="team-member-avatar me" title="${me.username} (вы)" data-user-id="${me.user_id}">
           ${avatarContent}
           <div class="member-tooltip">${me.username} (вы)</div>
         </div>
       `;
     }
     
-    // Потом остальные (нужно получить их аватарки с сервера)
+    // Потом остальные
     others.forEach(m => {
       const avatarContent = m.avatar
         ? `<img src="${m.avatar}" alt="${m.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
         : m.username[0].toUpperCase();
+      
+      // Проверяем есть ли таймер для этого пользователя
+      const timer = teamTimers[m.user_id];
+      let timerHtml = '';
+      if (timer && m.sharing_time) {
+        const currentTime = formatTimerFromState(timer);
+        const totalTime = formatTime(timer.totalWorkTime || 0);
+        timerHtml = `
+          <div class="member-timer-display" id="timer-${m.user_id}">
+            <div class="member-timer-current">${currentTime}</div>
+            <div class="member-timer-total">За день: ${totalTime}</div>
+          </div>
+        `;
+      }
+      
       html += `
-        <div class="team-member-avatar" title="${m.username}">
+        <div class="team-member-avatar" title="${m.username}" data-user-id="${m.user_id}">
           ${avatarContent}
           <div class="member-tooltip">${m.username}</div>
+          ${timerHtml}
         </div>
       `;
     });
   }
   
-  // Слот + показываем ВСЕГДА (даже если команды нет)
+  // Слот + показываем ВСЕГДА
   html += `
     <div class="team-add-slot" onclick="openInviteModal()" title="Пригласить в команду">+</div>
   `;
   
   container.innerHTML = html;
+  
+  // Запускаем обновление таймеров команды
+  startTeamTimerUpdates();
+}
+
+function formatTimerFromState(timerState) {
+  if (!timerState || timerState.action === 'stop') return '00:00:00';
+  
+  const now = Date.now();
+  let elapsed = 0;
+  
+  if (timerState.action === 'start' || timerState.action === 'resume') {
+    elapsed = now - timerState.sessionStart - (timerState.totalPausedTime || 0);
+  } else if (timerState.action === 'pause' && timerState.pauseStart) {
+    elapsed = timerState.pauseStart - timerState.sessionStart - (timerState.totalPausedTime || 0);
+  }
+  
+  return formatTime(Math.max(0, elapsed));
+}
+
+let teamTimerInterval = null;
+
+function startTeamTimerUpdates() {
+  if (teamTimerInterval) clearInterval(teamTimerInterval);
+  
+  teamTimerInterval = setInterval(() => {
+    Object.keys(teamTimers).forEach(userId => {
+      const timer = teamTimers[userId];
+      const display = document.getElementById(`timer-${userId}`);
+      if (display && timer.action !== 'stop' && timer.action !== 'pause') {
+        const currentTime = formatTimerFromState(timer);
+        const currentDiv = display.querySelector('.member-timer-current');
+        if (currentDiv) currentDiv.textContent = currentTime;
+      }
+    });
+  }, 1000);
+}
+
+function handleTeamTimerUpdate(data) {
+  const { userId, timerState } = data;
+  teamTimers[userId] = timerState;
+  renderTeam();
 }
 
 // === БУРГЕР ===
@@ -1821,6 +1887,33 @@ async function sendInvite() {
   } catch (e) {
     hint.style.color = '#ef4444';
     hint.textContent = 'Ошибка соединения';
+  }
+}
+
+// === ШЕРИНГ ВРЕМЕНИ ===
+
+function openShareTimeModal() {
+  document.getElementById('shareTimeModal').classList.add('active');
+}
+function closeShareTimeModal() {
+  document.getElementById('shareTimeModal').classList.remove('active');
+}
+
+async function confirmShareTime() {
+  try {
+    const res = await fetch(`${getApiBase()}/api/team/sharing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionKey: state.sessionKey, enabled: true })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Шеринг времени включён!', 'success');
+      closeShareTimeModal();
+      loadTeam();
+    }
+  } catch (e) {
+    showToast('Ошибка', 'error');
   }
 }
 

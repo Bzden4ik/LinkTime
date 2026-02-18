@@ -1889,3 +1889,87 @@ will-change: contents;
   display: flex;
   gap: 8px;
 }
+
+/* ===== SHARE TIME MODAL ===== */
+.share-time-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 2px solid rgba(245, 158, 11, 0.3);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.share-time-warning p {
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.share-time-warning strong {
+  color: #f59e0b;
+}
+
+.share-time-warning ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 12px 0;
+}
+
+.share-time-warning li {
+  padding: 6px 0;
+  font-size: 0.95rem;
+}
+
+.share-time-note {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.6);
+  margin-top: 16px;
+  font-style: italic;
+}
+
+.share-time-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.share-time-actions .btn {
+  flex: 1;
+  padding: 14px;
+}
+
+/* ===== TEAM TIMER DISPLAY ===== */
+.team-member-avatar {
+  position: relative;
+}
+
+.member-timer-display {
+  position: absolute;
+  bottom: -42px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(16, 185, 129, 0.95);
+  backdrop-filter: blur(10px);
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 100px;
+}
+
+.member-timer-current {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.member-timer-total {
+  font-size: 0.7rem;
+  opacity: 0.9;
+}
