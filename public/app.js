@@ -1585,14 +1585,10 @@ function renderTeam() {
       // Проверяем есть ли таймер для этого пользователя
       const timer = teamTimers[m.user_id];
       let timerHtml = '';
-      if (timer && m.sharing_time) {
+      if (timer && m.sharing_time && timer.action !== 'stop') {
         const currentTime = formatTimerFromState(timer);
-        const totalTime = formatTime(timer.totalWorkTime || 0);
         timerHtml = `
-          <div class="member-timer-display" id="timer-${m.user_id}">
-            <div class="member-timer-current">${currentTime}</div>
-            <div class="member-timer-total">За день: ${totalTime}</div>
-          </div>
+          <div class="member-timer-display" id="timer-${m.user_id}">${currentTime}</div>
         `;
       }
       
@@ -1643,8 +1639,7 @@ function startTeamTimerUpdates() {
       const display = document.getElementById(`timer-${userId}`);
       if (display && timer.action !== 'stop' && timer.action !== 'pause') {
         const currentTime = formatTimerFromState(timer);
-        const currentDiv = display.querySelector('.member-timer-current');
-        if (currentDiv) currentDiv.textContent = currentTime;
+        display.textContent = currentTime;
       }
     });
   }, 1000);
