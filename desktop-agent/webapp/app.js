@@ -1689,7 +1689,6 @@ function handleTeamTimerUpdate(data) {
     loadTeam();
   }
 }
-}
 
 // === БУРГЕР ===
 
