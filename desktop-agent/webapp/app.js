@@ -109,7 +109,28 @@ document.getElementById('cancelShareTime').addEventListener('click', closeShareT
 document.addEventListener('click', (e) => {
   if (!document.getElementById('burgerWrap').contains(e.target)) closeBurger();
 });
-document.getElementById('closeSettings').addEventListener('click', closeSettings);
+// Доска задач
+document.getElementById('boardBtn').addEventListener('click', openBoard);
+document.getElementById('boardCloseBtn').addEventListener('click', closeBoard);
+document.getElementById('boardAddBtn').addEventListener('click', () => openCardModal(null, 'todo'));
+document.getElementById('cardModalClose').addEventListener('click', closeCardModal);
+document.getElementById('cardModalCancel').addEventListener('click', closeCardModal);
+document.getElementById('cardModalSave').addEventListener('click', saveCard);
+document.querySelectorAll('.col-add-btn').forEach(btn => {
+  btn.addEventListener('click', () => openCardModal(null, btn.dataset.status));
+});
+document.querySelectorAll('.priority-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+document.querySelectorAll('.color-dot').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.color-dot').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
 document.getElementById('generateQR').addEventListener('click', generateQRCode);
 document.getElementById('showKey').addEventListener('click', showSessionKey);
 document.getElementById('scanQR').addEventListener('click', startQRScanner);
@@ -2023,3 +2044,203 @@ if (window.innerWidth <= 768) {
 switchTab('timer');
 }
 })();
+
+// ===== TASKBOARD =====
+
+let boardEditingCardId = null;
+let dragSrcCardId = null;
+
+function getBoardTasks() {
+  return cache.tasks.filter(t => t.date === state.selectedDate);
+}
+
+function openBoard() {
+  const overlay = document.getElementById('boardOverlay');
+  overlay.classList.add('open');
+  document.getElementById('boardSubtitle').textContent =
+    state.selectedDate === state.currentDate ? 'Сегодня' :
+    new Date(state.selectedDate + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  renderBoard();
+}
+
+function closeBoard() {
+  document.getElementById('boardOverlay').classList.remove('open');
+}
+
+function renderBoard() {
+  const cols = { todo: [], in_progress: [], review: [], done: [] };
+  getBoardTasks().forEach(t => {
+    const status = t.boardStatus || (t.completed ? 'done' : 'todo');
+    if (cols[status]) cols[status].push(t);
+    else cols.todo.push(t);
+  });
+
+  Object.entries(cols).forEach(([status, tasks]) => {
+    const container = document.getElementById(`col-${status}`);
+    const counter   = document.getElementById(`col-count-${status}`);
+    if (!container) return;
+    counter.textContent = tasks.length;
+    container.innerHTML = tasks.map(t => renderCard(t)).join('');
+
+    container.querySelectorAll('.board-card').forEach(card => {
+      card.addEventListener('dragstart', onCardDragStart);
+      card.addEventListener('dragend',   onCardDragEnd);
+    });
+
+    container.addEventListener('dragover', onColDragOver);
+    container.addEventListener('dragleave', onColDragLeave);
+    container.addEventListener('drop', onColDrop);
+  });
+}
+
+function renderCard(task) {
+  const priority = task.boardPriority || 'medium';
+  const color    = task.boardColor || '';
+  const desc     = task.boardDesc  || '';
+  const date     = new Date(task.id).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const colorBar = color ? `<div class="card-color-bar" style="background:${color}"></div>` : '';
+  const priorityLabels = { low: 'Низкий', medium: 'Средний', high: 'Высокий' };
+
+  return `
+    <div class="board-card" draggable="true" data-card-id="${task.id}">
+      ${colorBar}
+      <div class="card-top">
+        <div class="card-title">${escapeHTML(task.text)}</div>
+        <div class="card-actions">
+          <button class="card-action-btn" onclick="editCard(${task.id})" title="Редактировать">✏️</button>
+          <button class="card-action-btn delete" onclick="deleteCard(${task.id})" title="Удалить">🗑</button>
+        </div>
+      </div>
+      ${desc ? `<div class="card-desc">${escapeHTML(desc)}</div>` : ''}
+      <div class="card-footer">
+        <span class="card-priority ${priority}">${priorityLabels[priority]}</span>
+        <span class="card-time">${date}</span>
+      </div>
+    </div>`;
+}
+
+function onCardDragStart(e) {
+  dragSrcCardId = e.currentTarget.dataset.cardId;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onCardDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.board-col').forEach(c => c.classList.remove('drag-over'));
+}
+function onColDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const col = e.currentTarget.closest('.board-col');
+  if (col) col.classList.add('drag-over');
+}
+function onColDragLeave(e) {
+  const col = e.currentTarget.closest('.board-col');
+  if (col) col.classList.remove('drag-over');
+}
+function onColDrop(e) {
+  e.preventDefault();
+  const col = e.currentTarget.closest('.board-col');
+  if (col) col.classList.remove('drag-over');
+  const newStatus = e.currentTarget.dataset.status;
+  if (!dragSrcCardId || !newStatus) return;
+
+  const tasks = getTasks();
+  const task = tasks.find(t => t.id === Number(dragSrcCardId));
+  if (task) {
+    task.boardStatus = newStatus;
+    task.completed = newStatus === 'done';
+    if (task.completed && !task.completedAt) task.completedAt = Date.now();
+    saveTasks(tasks);
+    renderBoard();
+    renderTasks();
+    updateSelectedDateStats();
+  }
+  dragSrcCardId = null;
+}
+
+function openCardModal(taskId, status) {
+  boardEditingCardId = taskId;
+  document.getElementById('cardModalTitle').textContent = taskId ? 'Редактировать' : 'Новая задача';
+  document.getElementById('cardTitleInput').value   = '';
+  document.getElementById('cardDescInput').value    = '';
+  document.getElementById('cardStatusSelect').value = status || 'todo';
+  document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.priority-btn[data-priority="medium"]').classList.add('active');
+  document.querySelectorAll('.color-dot').forEach(b => b.classList.remove('active'));
+  document.querySelector('.color-dot[data-color=""]').classList.add('active');
+
+  if (taskId) {
+    const task = getTasks().find(t => t.id === Number(taskId));
+    if (task) {
+      document.getElementById('cardTitleInput').value   = task.text;
+      document.getElementById('cardDescInput').value    = task.boardDesc || '';
+      document.getElementById('cardStatusSelect').value = task.boardStatus || (task.completed ? 'done' : 'todo');
+      document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('active'));
+      const pb = document.querySelector(`.priority-btn[data-priority="${task.boardPriority || 'medium'}"]`);
+      if (pb) pb.classList.add('active');
+      document.querySelectorAll('.color-dot').forEach(b => b.classList.remove('active'));
+      const cb = document.querySelector(`.color-dot[data-color="${task.boardColor || ''}"]`);
+      if (cb) cb.classList.add('active');
+    }
+  }
+
+  document.getElementById('cardModal').classList.add('open');
+  document.getElementById('cardTitleInput').focus();
+}
+
+function closeCardModal() {
+  document.getElementById('cardModal').classList.remove('open');
+  boardEditingCardId = null;
+}
+
+function saveCard() {
+  const title = document.getElementById('cardTitleInput').value.trim();
+  if (!title) { document.getElementById('cardTitleInput').focus(); return; }
+  const desc     = document.getElementById('cardDescInput').value.trim();
+  const status   = document.getElementById('cardStatusSelect').value;
+  const priority = document.querySelector('.priority-btn.active')?.dataset.priority || 'medium';
+  const color    = document.querySelector('.color-dot.active')?.dataset.color || '';
+
+  const tasks = getTasks();
+  if (boardEditingCardId) {
+    const task = tasks.find(t => t.id === Number(boardEditingCardId));
+    if (task) {
+      task.text          = title;
+      task.boardDesc     = desc;
+      task.boardStatus   = status;
+      task.boardPriority = priority;
+      task.boardColor    = color;
+      task.completed     = status === 'done';
+    }
+  } else {
+    tasks.push({
+      id:            Date.now(),
+      text:          title,
+      completed:     status === 'done',
+      date:          state.selectedDate,
+      boardDesc:     desc,
+      boardStatus:   status,
+      boardPriority: priority,
+      boardColor:    color,
+    });
+  }
+  saveTasks(tasks);
+  renderBoard();
+  renderTasks();
+  updateSelectedDateStats();
+  closeCardModal();
+}
+
+function editCard(taskId) { openCardModal(taskId, null); }
+
+function deleteCard(taskId) {
+  const tasks = getTasks().filter(t => t.id !== Number(taskId));
+  saveTasks(tasks);
+  renderBoard();
+  renderTasks();
+  updateSelectedDateStats();
+}
+
+window.editCard   = editCard;
+window.deleteCard = deleteCard;

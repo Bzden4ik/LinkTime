@@ -66,7 +66,10 @@
 <section class="tasks-section glass-card" data-tab-content="tasks">
 <div class="tasks-header">
 <h2 id="tasksTitle">Задачи на сегодня</h2>
+<div class="tasks-header-btns">
+<button class="btn btn-board" id="boardBtn">⬛ Доска</button>
 <button class="btn btn-add" id="addTaskBtn">+ Добавить</button>
+</div>
 </div>
 <div class="task-input" id="taskInput" style="display: none;">
 <input type="text" id="taskText" placeholder="Введите задачу...">
@@ -265,6 +268,96 @@
 <span class="mobile-nav-label">Календарь</span>
 </button>
 </nav>
+
+<!-- ===== TASKBOARD ===== -->
+<div class="board-overlay" id="boardOverlay">
+  <div class="board-container">
+    <div class="board-header">
+      <div class="board-header-left">
+        <div class="board-logo">⬛</div>
+        <div>
+          <h2 class="board-title">Доска задач</h2>
+          <p class="board-subtitle" id="boardSubtitle">Сегодня</p>
+        </div>
+      </div>
+      <div class="board-header-right">
+        <button class="board-add-btn" id="boardAddBtn">+ Новая задача</button>
+        <button class="board-close-btn" id="boardCloseBtn">✕</button>
+      </div>
+    </div>
+    <div class="board-columns">
+      <div class="board-col" data-status="todo">
+        <div class="board-col-header todo"><span class="col-dot"></span><span class="col-title">К выполнению</span><span class="col-count" id="col-count-todo">0</span></div>
+        <div class="board-cards" id="col-todo" data-status="todo"></div>
+        <button class="col-add-btn" data-status="todo">+ Добавить карточку</button>
+      </div>
+      <div class="board-col" data-status="in_progress">
+        <div class="board-col-header in-progress"><span class="col-dot"></span><span class="col-title">В процессе</span><span class="col-count" id="col-count-in_progress">0</span></div>
+        <div class="board-cards" id="col-in_progress" data-status="in_progress"></div>
+        <button class="col-add-btn" data-status="in_progress">+ Добавить карточку</button>
+      </div>
+      <div class="board-col" data-status="review">
+        <div class="board-col-header review"><span class="col-dot"></span><span class="col-title">На проверке</span><span class="col-count" id="col-count-review">0</span></div>
+        <div class="board-cards" id="col-review" data-status="review"></div>
+        <button class="col-add-btn" data-status="review">+ Добавить карточку</button>
+      </div>
+      <div class="board-col" data-status="done">
+        <div class="board-col-header done"><span class="col-dot"></span><span class="col-title">Готово</span><span class="col-count" id="col-count-done">0</span></div>
+        <div class="board-cards" id="col-done" data-status="done"></div>
+        <button class="col-add-btn" data-status="done">+ Добавить карточку</button>
+      </div>
+    </div>
+  </div>
+  <div class="card-modal" id="cardModal">
+    <div class="card-modal-content">
+      <div class="card-modal-header">
+        <h3 id="cardModalTitle">Новая задача</h3>
+        <button class="board-close-btn" id="cardModalClose">✕</button>
+      </div>
+      <div class="card-modal-body">
+        <div class="card-field"><label>Название</label><input type="text" id="cardTitleInput" placeholder="Что нужно сделать?"></div>
+        <div class="card-field"><label>Описание</label><textarea id="cardDescInput" placeholder="Подробности..."></textarea></div>
+        <div class="card-field-row">
+          <div class="card-field">
+            <label>Приоритет</label>
+            <div class="priority-selector" id="prioritySelector">
+              <button class="priority-btn" data-priority="low">🟢 Низкий</button>
+              <button class="priority-btn active" data-priority="medium">🟡 Средний</button>
+              <button class="priority-btn" data-priority="high">🔴 Высокий</button>
+            </div>
+          </div>
+          <div class="card-field">
+            <label>Колонка</label>
+            <select id="cardStatusSelect">
+              <option value="todo">К выполнению</option>
+              <option value="in_progress">В процессе</option>
+              <option value="review">На проверке</option>
+              <option value="done">Готово</option>
+            </select>
+          </div>
+        </div>
+        <div class="card-field">
+          <label>Цвет метки</label>
+          <div class="color-picker" id="cardColorPicker">
+            <button class="color-dot active" data-color="" style="background:rgba(255,255,255,0.15);border:2px dashed rgba(255,255,255,0.3)" title="Без цвета">✕</button>
+            <button class="color-dot" data-color="#6366f1" style="background:#6366f1"></button>
+            <button class="color-dot" data-color="#8b5cf6" style="background:#8b5cf6"></button>
+            <button class="color-dot" data-color="#ec4899" style="background:#ec4899"></button>
+            <button class="color-dot" data-color="#ef4444" style="background:#ef4444"></button>
+            <button class="color-dot" data-color="#f97316" style="background:#f97316"></button>
+            <button class="color-dot" data-color="#eab308" style="background:#eab308"></button>
+            <button class="color-dot" data-color="#10b981" style="background:#10b981"></button>
+            <button class="color-dot" data-color="#06b6d4" style="background:#06b6d4"></button>
+          </div>
+        </div>
+      </div>
+      <div class="card-modal-footer">
+        <button class="btn btn-cancel card-cancel-btn" id="cardModalCancel">Отмена</button>
+        <button class="btn btn-add card-save-btn" id="cardModalSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
