@@ -290,6 +290,7 @@ pauses: []
 
 saveTodaySession(session);
 
+if (timerInterval) clearInterval(timerInterval);
 timerInterval = setInterval(updateTimer, 1000);
 updateTimer();
 
@@ -569,11 +570,27 @@ return data.totalWorkTime;
 
 function deleteTask(taskId) {
 const id = Number(taskId);
-const tasks = getTasks().filter(t => t.id !== id);
-saveTasks(tasks);
-renderTasks();
-updateSelectedDateStats();
-showToast('Задача удалена', 'info');
+const btn = document.querySelector(`[data-task-id="${id}"] .delete-btn`);
+if (!btn) return;
+
+if (btn.dataset.confirming === '1') {
+    const tasks = getTasks().filter(t => t.id !== id);
+    saveTasks(tasks);
+    renderTasks();
+    updateSelectedDateStats();
+    showToast('Задача удалена', 'info');
+} else {
+    btn.dataset.confirming = '1';
+    btn.textContent = 'Точно?';
+    btn.style.background = 'rgba(239,68,68,0.3)';
+    setTimeout(() => {
+        if (btn && btn.dataset.confirming === '1') {
+            btn.dataset.confirming = '';
+            btn.textContent = 'Удалить';
+            btn.style.background = '';
+        }
+    }, 3000);
+}
 }
 
 function renderTasks() {
@@ -592,7 +609,7 @@ tasksList.innerHTML = tasks.map(task => `
                <span class="task-text">${escapeHTML(task.text)}</span>
                ${task.completed && task.timeSpent ? `<span class="task-time">⏱ ${formatTime(task.timeSpent)}</span>` : ''}
            </div>
-           <button onclick="deleteTask(${task.id})">Удалить</button>
+           <button class="delete-btn" onclick="deleteTask(${task.id})">Удалить</button>
        </li>
    `).join('');
 }
@@ -752,6 +769,91 @@ function loadSelectedDateData() {
 updateTasksTitle();
 renderTasks();
 updateSelectedDateStats();
+}
+
+// === ЭКСПОРТ ДАННЫХ ===
+
+function exportJSON() {
+    const data = {
+        exportedAt: new Date().toISOString(),
+        tasks: cache.tasks || [],
+        sessions: cache.sessions || {}
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `linktime-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('JSON экспортирован', 'success');
+}
+
+function exportCSV() {
+    const sessions = cache.sessions || {};
+    const rows = [['Дата', 'Начало', 'Конец', 'Длительность (мин)', 'Задачи']];
+    for (const key of Object.keys(sessions).sort()) {
+        const date = key.replace('sessions_', '');
+        const daySessions = sessions[key] || [];
+        const tasks = (cache.tasks || [])
+            .filter(t => t.date === date && t.completed)
+            .map(t => t.text).join('; ');
+        for (const s of daySessions) {
+            const start = new Date(s.startTime);
+            const end = s.endTime ? new Date(s.endTime) : new Date();
+            const dur = Math.round((end - start - (s.totalPausedTime || 0)) / 60000);
+            rows.push([date, start.toLocaleTimeString('ru'), s.endTime ? end.toLocaleTimeString('ru') : '', dur, tasks]);
+        }
+    }
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `linktime-export-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('CSV экспортирован', 'success');
+}
+
+function importJSON() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const data = JSON.parse(ev.target.result);
+                if (data.tasks) {
+                    const existing = cache.tasks || [];
+                    const existingIds = new Set(existing.map(t => t.id));
+                    const newTasks = data.tasks.filter(t => !existingIds.has(t.id));
+                    cache.tasks = [...existing, ...newTasks];
+                    saveTasks(cache.tasks);
+                }
+                if (data.sessions) {
+                    for (const key of Object.keys(data.sessions)) {
+                        const existing = cache.sessions[key] || [];
+                        const byStart = new Map(existing.map(s => [s.startTime, s]));
+                        for (const s of data.sessions[key]) byStart.set(s.startTime, s);
+                        cache.sessions[key] = Array.from(byStart.values());
+                        localStorage.setItem(key, JSON.stringify(cache.sessions[key]));
+                    }
+                }
+                renderTasks();
+                renderCalendar();
+                updateSelectedDateStats();
+                showToast('Данные импортированы', 'success');
+            } catch {
+                showToast('Ошибка чтения файла', 'error');
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
 }
 
 // === НАСТРОЙКИ ===
@@ -934,6 +1036,10 @@ return cache.sessions[`sessions_${dateStr}`] || [];
 
 function connectWebSocket() {
 try {
+if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    ws.onclose = null;
+    ws.close();
+}
 ws = new WebSocket(WS_URL);
 
 ws.onopen = () => {
@@ -1367,14 +1473,28 @@ function applyRemoteData(data) {
 if (!data) return;
 
 if (data.tasks && Array.isArray(data.tasks)) {
-cache.tasks = data.tasks;
-renderTasks();
+    const local = cache.tasks || [];
+    const remoteById = new Map(data.tasks.map(t => [t.id, t]));
+    const localUnique = local.filter(t => !remoteById.has(t.id));
+    cache.tasks = [...data.tasks, ...localUnique];
+    renderTasks();
 }
 
 if (data.sessions) {
-cache.sessions = data.sessions;
-updateSelectedDateStats();
-renderCalendar();
+    const local = cache.sessions || {};
+    const remote = data.sessions;
+    const merged = { ...local };
+    for (const key of Object.keys(remote)) {
+        const localArr = local[key] || [];
+        const remoteArr = remote[key] || [];
+        const byStart = new Map(localArr.map(s => [s.startTime, s]));
+        for (const s of remoteArr) byStart.set(s.startTime, s);
+        merged[key] = Array.from(byStart.values())
+            .sort((a, b) => a.startTime - b.startTime);
+    }
+    cache.sessions = merged;
+    updateSelectedDateStats();
+    renderCalendar();
 }
 }
 
@@ -2247,3 +2367,6 @@ function deleteCard(taskId) {
 
 window.editCard   = editCard;
 window.deleteCard = deleteCard;
+window.exportCSV  = exportCSV;
+window.exportJSON = exportJSON;
+window.importJSON = importJSON;
