@@ -934,6 +934,11 @@ return cache.sessions[`sessions_${dateStr}`] || [];
 
 function connectWebSocket() {
 try {
+// Закрываем старое соединение если оно ещё открыто/подключается
+if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+ws.onclose = null; // Не триггерим reconnect от старого сокета
+ws.close();
+}
 ws = new WebSocket(WS_URL);
 
 ws.onopen = () => {
