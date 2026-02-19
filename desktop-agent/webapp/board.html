@@ -28,8 +28,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 #vp.panning{cursor:grabbing!important}
 #canvas{position:absolute;transform-origin:0 0}
 
-/* ─── SVG inside #canvas — transforms with cards, canvas-space coords ─── */
-#csvg{position:absolute;top:0;left:0;width:0;height:0;overflow:visible;z-index:1;pointer-events:none}
+/* ─── SVG overlay: full viewport, coords via getBCR ─── */
+#csvg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;overflow:visible}
 #csvg .cg{pointer-events:visiblePainted}
 #csvg .conn-hit{pointer-events:stroke;cursor:pointer}
 
@@ -168,25 +168,24 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
   </aside>
 
   <div id="vp">
-    <div id="canvas">
-      <svg id="csvg">
-        <defs>
-          <filter id="fg" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          <filter id="fr" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          <marker id="ab" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0 0L9 3.5L0 7Z" fill="#818cf8" opacity=".9"/></marker>
-          <marker id="ar" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0 0L9 3.5L0 7Z" fill="#ef4444" opacity=".9"/></marker>
-          <marker id="ag" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0 0L9 3.5L0 7Z" fill="#34d399" opacity=".9"/></marker>
-        </defs>
-        <g id="conn-layer"></g>
-        <g id="temp-conn" style="display:none;pointer-events:none">
-          <path id="tp-glow" fill="none" stroke="#6366f1" stroke-width="12" stroke-opacity=".12" filter="url(#fg)"/>
-          <path id="tp-base" fill="none" stroke="#818cf8" stroke-width="2" stroke-opacity=".85"/>
-          <path id="tp-dash" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.5" stroke-dasharray="6 16">
-            <animate attributeName="stroke-dashoffset" from="22" to="0" dur="0.8s" repeatCount="indefinite"/>
-          </path>
-        </g>
-      </svg>
-    </div>
+    <svg id="csvg">
+      <defs>
+        <filter id="fg" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="fr" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <marker id="ab" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><path d="M0 0L10 3.5L0 7Z" fill="#818cf8" opacity=".95"/></marker>
+        <marker id="ar" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><path d="M0 0L10 3.5L0 7Z" fill="#ef4444" opacity=".95"/></marker>
+        <marker id="ag" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><path d="M0 0L10 3.5L0 7Z" fill="#34d399" opacity=".95"/></marker>
+      </defs>
+      <g id="conn-layer"></g>
+      <g id="temp-conn" style="display:none;pointer-events:none">
+        <path id="tp-glow" fill="none" stroke="#6366f1" stroke-width="14" stroke-opacity=".15" filter="url(#fg)"/>
+        <path id="tp-base" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-opacity=".9"/>
+        <path id="tp-dash" fill="none" stroke="rgba(255,255,255,.65)" stroke-width="1.5" stroke-dasharray="6 16">
+          <animate attributeName="stroke-dashoffset" from="22" to="0" dur="0.8s" repeatCount="indefinite"/>
+        </path>
+      </g>
+    </svg>
+    <div id="canvas"></div>
     <div id="chint">🔗 Кликните на карточку-цель · Esc — отмена</div>
     <div id="sb">
       <b id="sb-zoom">100%</b>
@@ -389,20 +388,30 @@ function renderConns(){connL.innerHTML='';S.connections.forEach(drawConn)}
 
 function drawConn(conn){
   const f=getCard(conn.from),t=getCard(conn.to);if(!f||!t)return;
-  // Canvas-space coords
-  const x1=f.x+f.w,y1=f.y+f.h/2,x2=t.x,y2=t.y+t.h/2;
-  const dx=x2-x1,cp=Math.max(80,Math.abs(dx)*0.45);
-  const d=`M${x1} ${y1} C${x1+cp} ${y1} ${x2-cp} ${y2} ${x2} ${y2}`;
+  const fe=document.getElementById('c-'+f.id),te=document.getElementById('c-'+t.id);
+  const vr=vp.getBoundingClientRect();if(!fe||!te)return;
+  const fr=fe.getBoundingClientRect(),tr=te.getBoundingClientRect();
+  const x1=fr.right-vr.left,y1=fr.top-vr.top+fr.height/2;
+  const x2=tr.left-vr.left,y2=tr.top-vr.top+tr.height/2;
+  const d=connPath(x1,y1,x2,y2);
   const blocked=isDepsBlocked(conn.to),done=t.status==='done';
   const clr=blocked?'#ef4444':done?'#34d399':'#818cf8';
   const g=svgEl('g');g.classList.add('cg');g.dataset.cid=conn.id;
-  const pg=svgPath(d,clr,12,.14);pg.setAttribute('filter','url(#'+(blocked?'fr':'fg')+')');
-  const pb=svgPath(d,clr,2.5,.9);pb.setAttribute('marker-end','url(#'+(blocked?'ar':done?'ag':'ab')+')');
-  const pf=svgPath(d,'rgba(255,255,255,.55)',1.5,1);pf.setAttribute('stroke-dasharray','5 20');
-  const an=svgEl('animate');an.setAttribute('attributeName','stroke-dashoffset');an.setAttribute('from','25');an.setAttribute('to','0');an.setAttribute('dur',blocked?'0.4s':'1.6s');an.setAttribute('repeatCount','indefinite');pf.appendChild(an);
-  const ph=svgPath(d,'transparent',24,1);ph.classList.add('conn-hit');
+  const pg=svgPath(d,clr,14,.12);pg.setAttribute('filter','url(#'+(blocked?'fr':'fg')+')');
+  const pb=svgPath(d,clr,2.5,.95);pb.setAttribute('marker-end','url(#'+(blocked?'ar':done?'ag':'ab')+')');
+  const pf=svgPath(d,'rgba(255,255,255,.5)',1.5,1);pf.setAttribute('stroke-dasharray','4 22');
+  const an=svgEl('animate');an.setAttribute('attributeName','stroke-dashoffset');an.setAttribute('from','26');an.setAttribute('to','0');an.setAttribute('dur',blocked?'0.35s':'1.5s');an.setAttribute('repeatCount','indefinite');pf.appendChild(an);
+  const ph=svgPath(d,'transparent',26,1);ph.classList.add('conn-hit');
   ph.addEventListener('click',e=>{e.stopPropagation();deleteConn(conn.id);toast('Связь удалена')});
   g.append(pg,pb,pf,ph);connL.appendChild(g);
+}
+
+function connPath(x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1,dist=Math.sqrt(dx*dx+dy*dy);
+  const hOff=Math.max(60,Math.abs(dx)*0.45+dist*0.08);
+  const sag=Math.min(40,dist*0.06);
+  const cp1x=x1+hOff,cp1y=y1+sag*0.4,cp2x=x2-hOff,cp2y=y2+sag*0.4;
+  return `M${x1} ${y1} C${cp1x} ${cp1y} ${cp2x} ${cp2y} ${x2} ${y2}`;
 }
 
 function svgEl(tag){return document.createElementNS('http://www.w3.org/2000/svg',tag)}
@@ -412,11 +421,10 @@ function updateConnsOnly(){connL.innerHTML='';S.connections.forEach(drawConn)}
 function updateTempLine(mx,my){
   if(!S.connFrom)return;
   const src=getCard(S.connFrom);if(!src)return;
-  // Convert viewport mouse to canvas-space
-  const r=vp.getBoundingClientRect(),cx=(mx-r.left-S.tx)/S.scale,cy=(my-r.top-S.ty)/S.scale;
-  const x1=src.x+src.w,y1=src.y+src.h/2;
-  const ddx=cx-x1,cp=Math.max(60,Math.abs(ddx)*0.4);
-  const d=`M${x1} ${y1} C${x1+cp} ${y1} ${cx-cp} ${cy} ${cx} ${cy}`;
+  const fe=document.getElementById('c-'+src.id);if(!fe)return;
+  const vr=vp.getBoundingClientRect(),fr=fe.getBoundingClientRect();
+  const x1=fr.right-vr.left,y1=fr.top-vr.top+fr.height/2;
+  const d=connPath(x1,y1,mx-vr.left,my-vr.top);
   tpGlow.setAttribute('d',d);tpBase.setAttribute('d',d);tpDash.setAttribute('d',d);
 }
 
@@ -481,6 +489,7 @@ function startPan(e){S.pan={ox:e.clientX-S.tx,oy:e.clientY-S.ty};vp.classList.ad
 function applyT(){
   canvas.style.transform=`translate(${S.tx}px,${S.ty}px) scale(${S.scale})`;
   document.getElementById('sb-zoom').textContent=Math.round(S.scale*100)+'%';
+  updateConnsOnly();
 }
 function cpt(sx,sy){const r=vp.getBoundingClientRect();return{x:(sx-r.left-S.tx)/S.scale,y:(sy-r.top-S.ty)/S.scale}}
 function zoom(f,cx,cy){
@@ -552,7 +561,7 @@ document.getElementById('btn-back').addEventListener('click',()=>{window.parent&
 vp.addEventListener('mousedown',e=>{
   if(e.button===1){startPan(e);return}
   if(e.button!==0)return;
-  const onBg=e.target===vp||e.target===canvas;
+  const onBg=e.target===vp||e.target===canvas||e.target===document.getElementById('csvg');
   if(onBg){
     if(S.tool==='card'){const cp=cpt(e.clientX,e.clientY);addCard(cp.x,cp.y);setTool('select');return}
     if(S.connFrom){setConnFrom(null);setTool('select');return}
