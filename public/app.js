@@ -89,28 +89,9 @@ document.getElementById('taskText').addEventListener('keypress', (e) => {
 if (e.key === 'Enter') saveTask();
 });
 
-// Доска задач
-document.getElementById('boardBtn').addEventListener('click', openBoard);
-document.getElementById('boardCloseBtn').addEventListener('click', closeBoard);
-document.getElementById('boardAddBtn').addEventListener('click', () => openCardModal(null, 'todo'));
-document.getElementById('cardModalClose').addEventListener('click', closeCardModal);
-document.getElementById('cardModalCancel').addEventListener('click', closeCardModal);
-document.getElementById('cardModalSave').addEventListener('click', saveCard);
-document.querySelectorAll('.col-add-btn').forEach(btn => {
-  btn.addEventListener('click', () => openCardModal(null, btn.dataset.status));
-});
-document.querySelectorAll('.priority-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-  });
-});
-document.querySelectorAll('.color-dot').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.color-dot').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-  });
-});
+// Доска задач (новая полноценная)
+document.getElementById('boardBtn').addEventListener('click', openBoardOverlay);
+window.addEventListener('message', (e) => { if (e.data === 'close-board') closeBoardOverlay(); });
 
 // Настройки
 document.getElementById('settingsBtn') && document.getElementById('settingsBtn').addEventListener('click', openSettings);
@@ -2069,10 +2050,28 @@ switchTab('timer');
 }
 })();
 
-// ===== TASKBOARD =====
+function openBoardOverlay() {
+  const overlay = document.getElementById('board-overlay');
+  const iframe  = document.getElementById('board-iframe');
+  const url = `board.html?sessionKey=${encodeURIComponent(state.sessionKey)}&date=${state.selectedDate}`;
+  iframe.src = url;
+  overlay.style.display = 'block';
+}
 
-let boardEditingCardId = null;
-let dragSrcCardId = null;
+function closeBoardOverlay() {
+  const overlay = document.getElementById('board-overlay');
+  overlay.style.animation = 'none';
+  overlay.style.opacity = '0';
+  overlay.style.transform = 'scale(0.98)';
+  overlay.style.transition = 'opacity .25s,transform .25s';
+  setTimeout(() => {
+    overlay.style.display = 'none';
+    overlay.style.opacity = '';
+    overlay.style.transform = '';
+    overlay.style.transition = '';
+    document.getElementById('board-iframe').src = 'about:blank';
+  }, 260);
+}
 
 function getBoardTasks() {
   return cache.tasks.filter(t => t.date === state.selectedDate);
