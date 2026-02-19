@@ -28,11 +28,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 #vp.panning{cursor:grabbing!important}
 #canvas{position:absolute;transform-origin:0 0}
 
-/* ─── SVG layer — sits ABOVE canvas but passes non-conn clicks through ─── */
-#svg-overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5}
-#csvg{position:absolute;top:0;left:0;width:0;height:0;overflow:visible}
+/* ─── SVG inside #canvas — transforms with cards, canvas-space coords ─── */
+#csvg{position:absolute;top:0;left:0;width:0;height:0;overflow:visible;z-index:1;pointer-events:none}
 #csvg .cg{pointer-events:visiblePainted}
-#csvg .cg:hover path:last-child{stroke-opacity:.3}
+#csvg .conn-hit{pointer-events:stroke;cursor:pointer}
 
 /* ─── CARDS ─── */
 .bc{position:absolute;border-radius:14px;border:1.5px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;transition:border-color .2s,box-shadow .2s;cursor:default;min-width:180px;min-height:100px;z-index:2}
@@ -183,11 +182,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 
   <!-- VIEWPORT -->
   <div id="vp">
-    <!-- canvas: cards live here -->
-    <div id="canvas"></div>
-
-    <!-- SVG overlay: connections rendered here, positioned in viewport space but coords translated -->
-    <div id="svg-overlay">
+    <!-- canvas: cards + SVG connections live here, transform applied together -->
+    <div id="canvas">
       <svg id="csvg">
         <defs>
           <filter id="fg" x="-50%" y="-50%" width="200%" height="200%">
@@ -208,9 +204,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
             <path d="M0 0L9 3.5L0 7Z" fill="#34d399" opacity=".9"/>
           </marker>
         </defs>
-        <!-- connections group — pointer-events enabled via CSS .cg -->
         <g id="conn-layer"></g>
-        <!-- temp connection while drawing -->
         <g id="temp-conn" style="display:none;pointer-events:none">
           <path id="tp-glow" fill="none" stroke="#6366f1" stroke-width="12" stroke-opacity=".12" filter="url(#fg)"/>
           <path id="tp-base" fill="none" stroke="#818cf8" stroke-width="2" stroke-opacity=".85"/>
@@ -552,30 +546,19 @@ function startBlockResize(e,cardId,blockId){
 }
 
 // ═══════════════════════════════════════════
-// CONNECTIONS
-// Rendered in SVG overlay, coords translated with canvas transform
+// CONNECTIONS — SVG lives inside #canvas, pure canvas-space coords
 // ═══════════════════════════════════════════
 function renderConns(){connL.innerHTML='';S.connections.forEach(drawConn)}
-
-function connCoords(card){
-  // Returns viewport pixel coords of left/right ports, accounting for canvas transform
-  return{
-    lx: card.x*S.scale+S.tx,
-    ly:(card.y+card.h/2)*S.scale+S.ty,
-    rx:(card.x+card.w)*S.scale+S.tx,
-    ry:(card.y+card.h/2)*S.scale+S.ty
-  }
-}
 
 function drawConn(conn){
   const f=getCard(conn.from),t=getCard(conn.to);
   if(!f||!t)return;
 
-  const fc=connCoords(f), tc=connCoords(t);
-  const x1=fc.rx, y1=fc.ry;
-  const x2=tc.lx, y2=tc.ly;
+  // Canvas-space coords: right-mid of source → left-mid of target
+  const x1=f.x+f.w, y1=f.y+f.h/2;
+  const x2=t.x,     y2=t.y+t.h/2;
   const dx=x2-x1;
-  const cp=Math.max(60,Math.abs(dx)*0.44);
+  const cp=Math.max(80,Math.abs(dx)*0.45);
   const d=`M${x1} ${y1} C${x1+cp} ${y1} ${x2-cp} ${y2} ${x2} ${y2}`;
 
   const blocked=isDepsBlocked(conn.to);
@@ -588,22 +571,22 @@ function drawConn(conn){
   g.classList.add('cg');
   g.dataset.cid=conn.id;
 
-  const pg=svgPath(d,clr,12,.13);pg.setAttribute('filter','url(#'+fid+')');
-  const pb=svgPath(d,clr,2,.8);pb.setAttribute('marker-end','url(#'+aid+')');
-  const pf=svgPath(d,'rgba(255,255,255,.65)',1.5,1);
-  pf.setAttribute('stroke-dasharray','5 18');
+  // glow
+  const pg=svgPath(d,clr,12,.14);pg.setAttribute('filter','url(#'+fid+')');
+  // main line
+  const pb=svgPath(d,clr,2.5,.9);pb.setAttribute('marker-end','url(#'+aid+')');
+  // animated flow dots
+  const pf=svgPath(d,'rgba(255,255,255,.55)',1.5,1);
+  pf.setAttribute('stroke-dasharray','5 20');
   const an=svgEl('animate');
   an.setAttribute('attributeName','stroke-dashoffset');
-  an.setAttribute('from','23');an.setAttribute('to','0');
-  an.setAttribute('dur',blocked?'0.45s':'1.8s');
+  an.setAttribute('from','25');an.setAttribute('to','0');
+  an.setAttribute('dur',blocked?'0.4s':'1.6s');
   an.setAttribute('repeatCount','indefinite');
   pf.appendChild(an);
-
-  // wide invisible hit area for easy clicking
-  const ph=svgPath(d,'transparent',22,1);
-  ph.style.pointerEvents='stroke';
-  ph.style.cursor='pointer';
-  ph.title='Клик — удалить связь';
+  // wide invisible hit strip
+  const ph=svgPath(d,'transparent',24,1);
+  ph.classList.add('conn-hit');
   ph.addEventListener('click',e=>{e.stopPropagation();deleteConn(conn.id);toast('Связь удалена')});
 
   g.append(pg,pb,pf,ph);
@@ -620,14 +603,15 @@ function svgPath(d,stroke,w,op){
 
 function updateConnsOnly(){connL.innerHTML='';S.connections.forEach(drawConn)}
 
-// Temp line while drawing connection (viewport coords)
+// Temp line in canvas-space while drawing
 function updateTempLine(mx,my){
   if(!S.connFrom)return;
   const src=getCard(S.connFrom);if(!src)return;
-  const x1=(src.x+src.w)*S.scale+S.tx;
-  const y1=(src.y+src.h/2)*S.scale+S.ty;
+  // Convert viewport mouse to canvas space
   const r=vp.getBoundingClientRect();
-  const cx=mx-r.left, cy=my-r.top;
+  const cx=(mx-r.left-S.tx)/S.scale;
+  const cy=(my-r.top-S.ty)/S.scale;
+  const x1=src.x+src.w, y1=src.y+src.h/2;
   const ddx=cx-x1, cp=Math.max(60,Math.abs(ddx)*0.4);
   const d=`M${x1} ${y1} C${x1+cp} ${y1} ${cx-cp} ${cy} ${cx} ${cy}`;
   tpGlow.setAttribute('d',d);
@@ -735,8 +719,6 @@ function startPan(e){
 function applyT(){
   canvas.style.transform=`translate(${S.tx}px,${S.ty}px) scale(${S.scale})`;
   document.getElementById('sb-zoom').textContent=Math.round(S.scale*100)+'%';
-  // Redraw connections whenever transform changes (they use viewport coords)
-  updateConnsOnly();
 }
 function cpt(sx,sy){
   const r=vp.getBoundingClientRect();
@@ -894,7 +876,7 @@ document.getElementById('btn-back').addEventListener('click',()=>{window.parent&
 vp.addEventListener('mousedown',e=>{
   if(e.button===1){startPan(e);return}
   if(e.button!==0)return;
-  const onBg=e.target===vp||e.target===canvas||e.target.id==='svg-overlay';
+  const onBg=e.target===vp||e.target===canvas;
   if(onBg){
     if(S.tool==='card'){const cp=cpt(e.clientX,e.clientY);addCard(cp.x,cp.y);setTool('select');return}
     // Cancel connection mode on bg click

@@ -28,10 +28,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 #vp.panning{cursor:grabbing!important}
 #canvas{position:absolute;transform-origin:0 0}
 
-/* ─── SVG overlay ─── */
-#svg-overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5}
-#csvg{position:absolute;top:0;left:0;width:0;height:0;overflow:visible}
+/* ─── SVG inside #canvas — transforms with cards, canvas-space coords ─── */
+#csvg{position:absolute;top:0;left:0;width:0;height:0;overflow:visible;z-index:1;pointer-events:none}
 #csvg .cg{pointer-events:visiblePainted}
+#csvg .conn-hit{pointer-events:stroke;cursor:pointer}
 
 /* ─── CARDS ─── */
 .bc{position:absolute;border-radius:14px;border:1.5px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;transition:border-color .2s,box-shadow .2s;cursor:default;min-width:180px;min-height:100px;z-index:2}
@@ -168,8 +168,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
   </aside>
 
   <div id="vp">
-    <div id="canvas"></div>
-    <div id="svg-overlay">
+    <div id="canvas">
       <svg id="csvg">
         <defs>
           <filter id="fg" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -388,24 +387,20 @@ function startBlockResize(e,cardId,blockId){
 
 function renderConns(){connL.innerHTML='';S.connections.forEach(drawConn)}
 
-function connCoords(card){
-  return{lx:card.x*S.scale+S.tx,ly:(card.y+card.h/2)*S.scale+S.ty,rx:(card.x+card.w)*S.scale+S.tx,ry:(card.y+card.h/2)*S.scale+S.ty}
-}
-
 function drawConn(conn){
   const f=getCard(conn.from),t=getCard(conn.to);if(!f||!t)return;
-  const fc=connCoords(f),tc=connCoords(t);
-  const x1=fc.rx,y1=fc.ry,x2=tc.lx,y2=tc.ly;
-  const dx=x2-x1,cp=Math.max(60,Math.abs(dx)*0.44);
+  // Canvas-space coords
+  const x1=f.x+f.w,y1=f.y+f.h/2,x2=t.x,y2=t.y+t.h/2;
+  const dx=x2-x1,cp=Math.max(80,Math.abs(dx)*0.45);
   const d=`M${x1} ${y1} C${x1+cp} ${y1} ${x2-cp} ${y2} ${x2} ${y2}`;
   const blocked=isDepsBlocked(conn.to),done=t.status==='done';
   const clr=blocked?'#ef4444':done?'#34d399':'#818cf8';
   const g=svgEl('g');g.classList.add('cg');g.dataset.cid=conn.id;
-  const pg=svgPath(d,clr,12,.13);pg.setAttribute('filter','url(#'+(blocked?'fr':'fg')+')');
-  const pb=svgPath(d,clr,2,.8);pb.setAttribute('marker-end','url(#'+(blocked?'ar':done?'ag':'ab')+')');
-  const pf=svgPath(d,'rgba(255,255,255,.65)',1.5,1);pf.setAttribute('stroke-dasharray','5 18');
-  const an=svgEl('animate');an.setAttribute('attributeName','stroke-dashoffset');an.setAttribute('from','23');an.setAttribute('to','0');an.setAttribute('dur',blocked?'0.45s':'1.8s');an.setAttribute('repeatCount','indefinite');pf.appendChild(an);
-  const ph=svgPath(d,'transparent',22,1);ph.style.pointerEvents='stroke';ph.style.cursor='pointer';
+  const pg=svgPath(d,clr,12,.14);pg.setAttribute('filter','url(#'+(blocked?'fr':'fg')+')');
+  const pb=svgPath(d,clr,2.5,.9);pb.setAttribute('marker-end','url(#'+(blocked?'ar':done?'ag':'ab')+')');
+  const pf=svgPath(d,'rgba(255,255,255,.55)',1.5,1);pf.setAttribute('stroke-dasharray','5 20');
+  const an=svgEl('animate');an.setAttribute('attributeName','stroke-dashoffset');an.setAttribute('from','25');an.setAttribute('to','0');an.setAttribute('dur',blocked?'0.4s':'1.6s');an.setAttribute('repeatCount','indefinite');pf.appendChild(an);
+  const ph=svgPath(d,'transparent',24,1);ph.classList.add('conn-hit');
   ph.addEventListener('click',e=>{e.stopPropagation();deleteConn(conn.id);toast('Связь удалена')});
   g.append(pg,pb,pf,ph);connL.appendChild(g);
 }
@@ -417,8 +412,9 @@ function updateConnsOnly(){connL.innerHTML='';S.connections.forEach(drawConn)}
 function updateTempLine(mx,my){
   if(!S.connFrom)return;
   const src=getCard(S.connFrom);if(!src)return;
-  const x1=(src.x+src.w)*S.scale+S.tx,y1=(src.y+src.h/2)*S.scale+S.ty;
-  const r=vp.getBoundingClientRect(),cx=mx-r.left,cy=my-r.top;
+  // Convert viewport mouse to canvas-space
+  const r=vp.getBoundingClientRect(),cx=(mx-r.left-S.tx)/S.scale,cy=(my-r.top-S.ty)/S.scale;
+  const x1=src.x+src.w,y1=src.y+src.h/2;
   const ddx=cx-x1,cp=Math.max(60,Math.abs(ddx)*0.4);
   const d=`M${x1} ${y1} C${x1+cp} ${y1} ${cx-cp} ${cy} ${cx} ${cy}`;
   tpGlow.setAttribute('d',d);tpBase.setAttribute('d',d);tpDash.setAttribute('d',d);
@@ -485,7 +481,6 @@ function startPan(e){S.pan={ox:e.clientX-S.tx,oy:e.clientY-S.ty};vp.classList.ad
 function applyT(){
   canvas.style.transform=`translate(${S.tx}px,${S.ty}px) scale(${S.scale})`;
   document.getElementById('sb-zoom').textContent=Math.round(S.scale*100)+'%';
-  updateConnsOnly();
 }
 function cpt(sx,sy){const r=vp.getBoundingClientRect();return{x:(sx-r.left-S.tx)/S.scale,y:(sy-r.top-S.ty)/S.scale}}
 function zoom(f,cx,cy){
@@ -557,7 +552,7 @@ document.getElementById('btn-back').addEventListener('click',()=>{window.parent&
 vp.addEventListener('mousedown',e=>{
   if(e.button===1){startPan(e);return}
   if(e.button!==0)return;
-  const onBg=e.target===vp||e.target===canvas||e.target.id==='svg-overlay';
+  const onBg=e.target===vp||e.target===canvas;
   if(onBg){
     if(S.tool==='card'){const cp=cpt(e.clientX,e.clientY);addCard(cp.x,cp.y);setTool('select');return}
     if(S.connFrom){setConnFrom(null);setTool('select');return}
