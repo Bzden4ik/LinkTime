@@ -146,7 +146,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 #toast.ok{border-color:rgba(16,185,129,.4);color:#6ee7b7}
 #toast.err{border-color:rgba(239,68,68,.4);color:#fca5a5}
 
-/* ─── DROP OVERLAY ─── */
+/* ─── BOARD TABS ─── */
+#board-tabs{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:4px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:4px;z-index:200;backdrop-filter:blur(12px)}
+.btab{padding:6px 18px;border-radius:8px;border:none;background:transparent;color:rgba(255,255,255,0.4);font-size:.74rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .18s;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.btab:hover{color:rgba(255,255,255,0.75);background:rgba(255,255,255,0.06)}
+.btab.active{background:rgba(99,102,241,0.22);color:#a5b4fc;border:1px solid rgba(99,102,241,0.35)}
+
+
 #dropov{position:fixed;inset:0;background:rgba(99,102,241,.1);border:3px dashed rgba(99,102,241,.5);z-index:8999;display:none;align-items:center;justify-content:center;font-size:1.1rem;color:#818cf8;pointer-events:none}
 </style>
 </head>
@@ -182,6 +188,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 
   <!-- VIEWPORT -->
   <div id="vp">
+    <!-- Board tabs -->
+    <div id="board-tabs">
+      <button class="btab active" data-board="personal">🙋 Личный</button>
+      <button class="btab" data-board="team">👥 Командный</button>
+    </div>
     <!-- SVG overlay: full viewport size, z-index above canvas, coords via getBoundingClientRect -->
     <svg id="csvg">
       <defs>
@@ -297,7 +308,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 // CONSTANTS
 // ═══════════════════════════════════════════
 const params = new URLSearchParams(location.search);
-const SK = 'board2_' + (params.get('sessionKey')||'dev');
+const SESSION_KEY = params.get('sessionKey')||'dev';
+let currentBoard = localStorage.getItem('board_tab_'+SESSION_KEY) || 'personal';
+let SK = 'board2_' + SESSION_KEY + '_' + currentBoard;
 
 const EMOJIS=['😀','😂','🤔','😎','🤩','😍','🥳','😤','💡','🔥','⚡','✅','❌','⚠️','🎯','🚀','💎','🌟','🎉','🎨','🛠️','📋','📌','📎','🔗','💬','📊','📈','📉','🗂️','📁','🔒','🔓','🔑','👍','👎','👀','💪','🙌','🤝','✍️','🧠','⭐','🌈','🕐','📅','🗓️','🔔','💰','🏆','🥇','🎖️','📝','✏️','🖊️','📐','📏','🔍','💻','📱','🖥️','⌨️','💾','📡','🎵','🎤','📷','🎬','🌍','🧩','🎲','🏁'];
 const BGS=['rgba(20,23,38,.97)','rgba(26,18,44,.97)','rgba(16,32,26,.97)','rgba(36,18,18,.97)','rgba(34,26,12,.97)','rgba(14,26,42,.97)','rgba(40,18,34,.97)','rgba(18,32,38,.97)'];
@@ -320,6 +333,22 @@ let S={
 function load(){try{const d=localStorage.getItem(SK);if(d){const p=JSON.parse(d);S.cards=p.cards||[];S.connections=p.connections||[]}}catch(e){}}
 function save(){try{localStorage.setItem(SK,JSON.stringify({cards:S.cards,connections:S.connections}))}catch(e){}}
 load();
+
+// Инициализация вкладок
+function switchBoard(boardType) {
+  save();
+  currentBoard = boardType;
+  SK = 'board2_' + SESSION_KEY + '_' + boardType;
+  localStorage.setItem('board_tab_'+SESSION_KEY, boardType);
+  S.cards=[]; S.connections=[]; S.sel=null; S.tx=0; S.ty=0; S.scale=1;
+  load();
+  document.querySelectorAll('.btab').forEach(b => b.classList.toggle('active', b.dataset.board === boardType));
+  render(); applyTransform();
+}
+document.querySelectorAll('.btab').forEach(b => {
+  b.classList.toggle('active', b.dataset.board === currentBoard);
+  b.addEventListener('click', () => switchBoard(b.dataset.board));
+});
 
 // ═══════════════════════════════════════════
 // DOM REFS
@@ -583,7 +612,7 @@ function drawConn(conn){
   // glow halo
   const pg=svgPath(d,clr,14,.12);pg.setAttribute('filter','url(#'+fid+')');
   // core line
-  const pb=svgPath(d,clr,2.5,.95);pb.setAttribute('marker-end','url(#'+aid+')');
+  const pb=svgPath(d,clr,2.5,.95);
   // flow particle dashes
   const pf=svgPath(d,'rgba(255,255,255,.5)',1.5,1);
   pf.setAttribute('stroke-dasharray','4 22');
