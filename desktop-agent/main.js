@@ -446,75 +446,56 @@ console.log(`[DETERMINE] No match — distracted by default`);
 return 'distracted';
 }
 
+// Инициализируем active-win один раз
+let activeWin = null;
+(async () => {
+    try {
+        activeWin = await import('active-win');
+    } catch (e) {
+        console.error('[MONITOR] Failed to load active-win:', e.message);
+    }
+})();
+
 // Проверка активного окна
 async function checkActiveWindow() {
-try {
-const { execFile } = require('child_process');
+    try {
+        if (!activeWin) {
+            console.log('[MONITOR] active-win not loaded yet');
+            return;
+        }
 
-const windowInfo = await new Promise((resolve, reject) => {
-const script = `
-$code = @"
-using System;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
-public class WinHelper {
-   [DllImport("user32.dll")]
-   public static extern IntPtr GetForegroundWindow();
-   [DllImport("user32.dll")]
-   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-   public static string GetActiveWindow() {
-       IntPtr hwnd = GetForegroundWindow();
-       uint pid;
-       GetWindowThreadProcessId(hwnd, out pid);
-       try {
-           Process p = Process.GetProcessById((int)pid);
-           return p.ProcessName + "|||" + p.MainWindowTitle;
-       } catch { return ""; }
-   }
-}
-"@
-Add-Type -TypeDefinition $code
-[WinHelper]::GetActiveWindow()
-`;
-execFile('powershell.exe', ['-NoProfile', '-Command', '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ' + script], { timeout: 4000, encoding: 'utf8' }, (error, stdout) => {
-if (error) return reject(error);
-const output = stdout.trim();
-if (!output) return resolve(null);
-const parts = output.split('|||');
-resolve({ processName: parts[0] || '', title: parts[1] || '' });
-});
-});
+        const result = await activeWin.default();
 
-if (!windowInfo) {
-console.log('[MONITOR] No active window');
-updateStatus('idle', 'Нет активного окна');
-return;
-}
+        if (!result) {
+            console.log('[MONITOR] No active window');
+            updateStatus('idle', 'Нет активного окна');
+            return;
+        }
 
-lastActivity = Date.now();
+        lastActivity = Date.now();
 
-let displayTitle = windowInfo.title;
-const pName = windowInfo.processName.toLowerCase();
+        let displayTitle = result.title || '';
+        const pName = (result.owner && result.owner.name) ? result.owner.name.toLowerCase() : '';
 
-if (['msedge', 'chrome', 'firefox', 'opera', 'brave'].includes(pName)) {
-displayTitle = windowInfo.title
-.replace(/\s*и еще \d+ страниц?/gi, '')
-.replace(/\s*—\s*(Личный|Personal|InPrivate):?\s*Microsoft Edge/gi, '')
-.replace(/\s*-\s*(Google Chrome|Mozilla Firefox|Opera|Brave)/gi, '')
-.trim();
-}
+        if (['msedge', 'chrome', 'firefox', 'opera', 'brave'].includes(pName)) {
+            displayTitle = displayTitle
+                .replace(/\s*и еще \d+ страниц?/gi, '')
+                .replace(/\s*—\s*(Личный|Personal|InPrivate):?\s*Microsoft Edge/gi, '')
+                .replace(/\s*-\s*(Google Chrome|Mozilla Firefox|Opera|Brave)/gi, '')
+                .trim();
+        }
 
-const fullTitle = `${windowInfo.processName} - ${windowInfo.title}`;
-console.log(`[MONITOR] Active: "${fullTitle}"`);
+        const fullTitle = `${pName} - ${result.title}`;
+        console.log(`[MONITOR] Active: "${fullTitle}"`);
 
-const status = determineStatus(fullTitle);
-console.log(`[MONITOR] Status: ${status}`);
-updateStatus(status, displayTitle);
+        const status = determineStatus(fullTitle);
+        console.log(`[MONITOR] Status: ${status}`);
+        updateStatus(status, displayTitle);
 
-} catch (error) {
-console.error('[MONITOR] ERROR:', error.message);
-updateStatus('idle', 'Ошибка мониторинга');
-}
+    } catch (error) {
+        console.error('[MONITOR] ERROR:', error.message);
+        updateStatus('idle', 'Ошибка мониторинга');
+    }
 }
 
 // Обновление и отправка статуса

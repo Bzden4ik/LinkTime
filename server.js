@@ -641,6 +641,8 @@ wss.on('connection', (ws) => {
         // Если distracted/idle — ставим force_pause через 5 секунд
         if (status === 'distracted' || status === 'idle') {
             setTimeout(() => {
+                // Проверяем что сессия всё ещё имеет активные подключения
+                if (!connections.has(sessionKey)) return;
                 const currentData = getSessionData(sessionKey);
                 if (currentData && currentData.activityStatus !== 'working') {
                     broadcast(sessionKey, { type: 'force_pause', reason: status });
@@ -697,6 +699,8 @@ wss.on('connection', (ws) => {
             const sessionData = getSessionData(sessionKey);
             if (!sessionData || !sessionData.activityStatus || sessionData.activityStatus === 'idle') {
                 setTimeout(() => {
+                    // Проверяем что сессия всё ещё имеет активные подключения
+                    if (!connections.has(sessionKey)) return;
                     const latestData = getSessionData(sessionKey);
                     // Если агент не подтверждает работу
                     if (!latestData || !latestData.agentConnected || latestData.activityStatus !== 'working') {
