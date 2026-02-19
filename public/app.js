@@ -1373,14 +1373,31 @@ function applyRemoteData(data) {
 if (!data) return;
 
 if (data.tasks && Array.isArray(data.tasks)) {
-cache.tasks = data.tasks;
-renderTasks();
+    const local = cache.tasks || [];
+    // Merge по id: remote побеждает для существующих, локальные уникальные сохраняются
+    const remoteById = new Map(data.tasks.map(t => [t.id, t]));
+    const localUnique = local.filter(t => !remoteById.has(t.id));
+    cache.tasks = [...data.tasks, ...localUnique];
+    renderTasks();
 }
 
 if (data.sessions) {
-cache.sessions = data.sessions;
-updateSelectedDateStats();
-renderCalendar();
+    // Merge сессий по датам: для каждой даты объединяем по startTime
+    const local = cache.sessions || {};
+    const remote = data.sessions;
+    const merged = { ...local };
+    for (const key of Object.keys(remote)) {
+        const localArr = local[key] || [];
+        const remoteArr = remote[key] || [];
+        // Объединяем по startTime, remote побеждает при конфликте
+        const byStart = new Map(localArr.map(s => [s.startTime, s]));
+        for (const s of remoteArr) byStart.set(s.startTime, s);
+        merged[key] = Array.from(byStart.values())
+            .sort((a, b) => a.startTime - b.startTime);
+    }
+    cache.sessions = merged;
+    updateSelectedDateStats();
+    renderCalendar();
 }
 }
 
