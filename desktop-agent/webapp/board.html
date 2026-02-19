@@ -6,898 +6,988 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#0b0d14;font-family:'Inter',sans-serif;color:#fff;user-select:none}
-#app{display:flex;width:100%;height:100%}
+html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:'Inter',sans-serif;color:#fff;user-select:none}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px}
+#app{display:flex;width:100%;height:100%;position:relative}
 
-/* TOOLBAR */
-#toolbar{width:56px;height:100%;background:rgba(255,255,255,0.04);border-right:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;flex-shrink:0;z-index:100}
-.t-sep{width:32px;height:1px;background:rgba(255,255,255,0.08);margin:6px 0}
+/* ─── TOOLBAR ─── */
+#toolbar{width:52px;height:100%;background:rgba(255,255,255,0.03);border-right:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:3px;flex-shrink:0;z-index:100}
+.t-sep{width:30px;height:1px;background:rgba(255,255,255,0.08);margin:5px 0;flex-shrink:0}
 .t-spacer{flex:1}
-.tool-btn{width:40px;height:40px;border-radius:10px;border:none;background:transparent;color:rgba(255,255,255,0.45);font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;position:relative}
-.tool-btn:hover{background:rgba(255,255,255,0.1);color:#fff}
-.tool-btn.active{background:rgba(99,102,241,0.25);color:#818cf8;box-shadow:0 0 0 1px rgba(99,102,241,0.4)}
-.tool-btn .tip{position:absolute;left:52px;top:50%;transform:translateY(-50%);background:#1e2030;border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:0.72rem;padding:5px 10px;border-radius:7px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;z-index:999}
-.tool-btn:hover .tip{opacity:1}
+.tb{width:38px;height:38px;border-radius:9px;border:none;background:transparent;color:rgba(255,255,255,0.4);font-size:1.05rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;position:relative;flex-shrink:0}
+.tb:hover{background:rgba(255,255,255,0.09);color:#fff}
+.tb.on{background:rgba(99,102,241,0.22);color:#818cf8;box-shadow:0 0 0 1px rgba(99,102,241,0.4)}
+.tb .tip{position:absolute;left:48px;top:50%;transform:translateY(-50%);background:#1a1d2e;border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,.85);font-size:.7rem;padding:5px 10px;border-radius:7px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;z-index:9999;font-family:'Inter',sans-serif}
+.tb:hover .tip{opacity:1}
 
-/* VIEWPORT */
-#viewport{flex:1;position:relative;overflow:hidden;cursor:default}
-#viewport.tool-card{cursor:crosshair}
-#viewport.tool-connect{cursor:crosshair}
-#viewport.panning{cursor:grabbing!important}
-
-/* CANVAS */
+/* ─── VIEWPORT ─── */
+#vp{flex:1;position:relative;overflow:hidden;cursor:default}
+#vp.tool-card{cursor:crosshair}
+#vp.tool-connect{cursor:crosshair}
+#vp.panning{cursor:grabbing!important}
 #canvas{position:absolute;transform-origin:0 0}
 
-/* SVG CONNECTIONS */
-#conn-svg{position:absolute;top:-10000px;left:-10000px;width:40000px;height:40000px;pointer-events:none;overflow:visible}
+/* ─── CARDS ─── */
+.bc{position:absolute;border-radius:14px;border:1.5px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;overflow:hidden;transition:border-color .2s,box-shadow .2s;cursor:default;min-width:180px;min-height:100px}
+.bc:hover{border-color:rgba(255,255,255,0.22)}
+.bc.sel{border-color:rgba(99,102,241,.7)!important;box-shadow:0 0 0 3px rgba(99,102,241,.18),0 16px 48px rgba(0,0,0,.5)}
+.bc.dep-blocked{border-color:rgba(239,68,68,.5)!important}
 
-/* CARDS */
-.board-card{position:absolute;min-width:160px;min-height:90px;border-radius:14px;background:rgba(22,26,42,0.95);border:1.5px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;overflow:hidden;transition:box-shadow .2s,border-color .2s;cursor:default}
-.board-card:hover{border-color:rgba(255,255,255,0.2)}
-.board-card.selected{border-color:rgba(99,102,241,0.7)!important;box-shadow:0 0 0 3px rgba(99,102,241,0.2),0 12px 40px rgba(0,0,0,0.5)}
-.board-card.dep-blocked{border-color:rgba(239,68,68,0.5)!important}
-.board-card.done-card{opacity:.65}
+.bc-head{display:flex;align-items:flex-start;gap:6px;padding:9px 10px 6px;flex-shrink:0;position:relative}
+.bc-sdot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:4px;cursor:pointer;transition:transform .15s}
+.bc-sdot:hover{transform:scale(1.5)}
+.bc-title{flex:1;background:transparent;border:none;outline:none;color:#fff;font-size:.84rem;font-weight:600;font-family:'Inter',sans-serif;resize:none;line-height:1.4;min-height:20px;overflow:hidden;cursor:text}
+.bc-icon{font-size:1.05rem;line-height:1;cursor:pointer;padding:2px 4px;border-radius:5px;transition:background .15s;flex-shrink:0;user-select:none}
+.bc-icon:hover{background:rgba(255,255,255,0.1)}
+.bc-icon.empty{font-size:.72rem;color:rgba(255,255,255,0.25);border:1px dashed rgba(255,255,255,0.18);padding:2px 5px;border-radius:5px}
+.bc-icon.empty:hover{color:rgba(255,255,255,.5);border-color:rgba(255,255,255,.35)}
+.bc-drag{color:rgba(255,255,255,.2);font-size:.72rem;cursor:grab;padding:2px 3px;border-radius:4px;margin-top:1px;flex-shrink:0}
+.bc-drag:hover{color:rgba(255,255,255,.5);background:rgba(255,255,255,.06)}
+.bc-drag:active{cursor:grabbing}
 
-.card-topbar{display:flex;align-items:center;gap:6px;padding:8px 10px 6px;flex-shrink:0}
-.card-status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;cursor:pointer;transition:transform .15s}
-.card-status-dot:hover{transform:scale(1.4)}
-.card-status-dot.todo{background:#64748b}
-.card-status-dot.in_progress{background:#6366f1;box-shadow:0 0 6px rgba(99,102,241,0.8)}
-.card-status-dot.done{background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.8)}
-.card-title-wrap{flex:1;min-width:0}
-.card-title{width:100%;background:transparent;border:none;outline:none;color:#fff;font-size:0.82rem;font-weight:600;font-family:'Inter',sans-serif;resize:none;padding:0;line-height:1.3;cursor:text;overflow:hidden}
-.card-drag-handle{color:rgba(255,255,255,0.2);font-size:0.75rem;cursor:grab;padding:2px 4px;border-radius:4px;flex-shrink:0}
-.card-drag-handle:hover{color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.05)}
-.card-drag-handle:active{cursor:grabbing}
+.bc-desc{padding:0 10px 6px;flex-shrink:0}
+.bc-desc-ta{width:100%;background:transparent;border:none;outline:none;color:rgba(255,255,255,.5);font-size:.76rem;font-family:'Inter',sans-serif;resize:none;line-height:1.5;min-height:28px;overflow:hidden;cursor:text}
+.bc-desc-ta::placeholder{color:rgba(255,255,255,.18)}
 
-.card-body-wrap{flex:1;padding:2px 10px 8px;overflow:hidden}
-.card-body{width:100%;height:100%;background:transparent;border:none;outline:none;color:rgba(255,255,255,0.7);font-size:0.78rem;font-family:'Inter',sans-serif;resize:none;line-height:1.5;cursor:text;min-height:40px}
+.bc-blocks{flex:1;position:relative;min-height:40px;overflow:hidden}
 
-.card-color-strip{height:3px;flex-shrink:0;border-radius:0 0 4px 4px}
+/* ─── CONTENT BLOCKS ─── */
+.cb{position:absolute;cursor:default;z-index:2}
+.cb.cb-sel .cb-inner{outline:1.5px solid rgba(99,102,241,.6);border-radius:5px}
+.cb.cb-sel .cb-img-inner{outline:1.5px solid rgba(99,102,241,.6);border-radius:7px}
+.cb-inner{border-radius:5px;padding:4px 7px;font-size:.78rem;color:rgba(255,255,255,.78);line-height:1.5;outline:none;word-break:break-word;min-width:30px;min-height:18px}
+.cb-inner[contenteditable="true"]{cursor:text;background:rgba(255,255,255,.05);min-width:60px}
+.cb-img-inner img{display:block;max-width:100%;border-radius:6px;pointer-events:none}
+.cb-move-handle{position:absolute;top:-16px;left:50%;transform:translateX(-50%);background:rgba(80,84,210,.85);border-radius:4px;font-size:.6rem;color:#fff;padding:2px 8px;cursor:grab;display:none;white-space:nowrap;z-index:10}
+.cb.cb-sel .cb-move-handle{display:block}
+.cb-move-handle:active{cursor:grabbing}
+.cb-resize-dot{position:absolute;bottom:-5px;right:-5px;width:10px;height:10px;border-radius:50%;background:#6366f1;border:2px solid #080c14;cursor:se-resize;display:none;z-index:10}
+.cb.cb-sel .cb-resize-dot{display:block}
 
-.card-resize{position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:se-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px;opacity:0;transition:opacity .15s}
-.board-card:hover .card-resize{opacity:.6}
-.card-resize svg{width:8px;height:8px}
+.bc-strip{height:3px;flex-shrink:0;border-radius:0 0 12px 12px}
+.bc-resize{position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:se-resize;opacity:0;transition:opacity .15s;z-index:5;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px}
+.bc:hover .bc-resize{opacity:.7}
 
-/* Connection port dots */
-.card-port{position:absolute;width:12px;height:12px;border-radius:50%;background:#6366f1;border:2px solid rgba(255,255,255,0.2);top:50%;transform:translateY(-50%) scale(0);transition:transform .15s;cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(99,102,241,0.6)}
-.board-card:hover .card-port,.connecting .card-port{transform:translateY(-50%) scale(1)}
-.card-port.left{left:-7px}
-.card-port.right{right:-7px}
-.card-port:hover{transform:translateY(-50%) scale(1.3)!important;background:#818cf8}
+.bc-port{position:absolute;width:13px;height:13px;border-radius:50%;background:#6366f1;border:2.5px solid #080c14;top:50%;transform:translateY(-50%) scale(0);transition:transform .15s;cursor:crosshair;z-index:20;box-shadow:0 0 10px rgba(99,102,241,.7)}
+.bc:hover .bc-port,.cmode .bc-port{transform:translateY(-50%) scale(1)}
+.bc-port.lp{left:-7px}
+.bc-port.rp{right:-7px}
+.bc-port:hover{transform:translateY(-50%) scale(1.4)!important;background:#a5b4fc}
 
-/* INSPECTOR */
-#inspector{width:280px;height:100%;background:rgba(13,15,26,0.98);border-left:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;flex-shrink:0;transform:translateX(100%);transition:transform .3s cubic-bezier(.22,1,.36,1);position:absolute;right:0;top:0;z-index:200;overflow-y:auto}
-#inspector.open{transform:translateX(0)}
-#inspector::-webkit-scrollbar{width:4px}
-#inspector::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+/* ─── INSPECTOR ─── */
+#insp{width:272px;height:100%;background:rgba(9,11,20,.98);border-left:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .28s cubic-bezier(.22,1,.36,1);position:absolute;right:0;top:0;z-index:300;overflow-y:auto}
+#insp.open{transform:translateX(0)}
+.ih{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 12px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
+.ih h3{font-size:.73rem;font-weight:600;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.08em}
+.ix{width:26px;height:26px;border-radius:6px;border:none;background:rgba(255,255,255,.06);color:rgba(255,255,255,.4);font-size:.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.ix:hover{background:rgba(255,255,255,.12);color:#fff}
+.is{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.05)}
+.il{font-size:.64rem;font-weight:600;color:rgba(255,255,255,.28);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}
+.isb{display:flex;gap:5px}
+.isb-btn{flex:1;padding:7px 3px;border-radius:7px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);color:rgba(255,255,255,.4);font-size:.67rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s;text-align:center}
+.isb-btn:hover{border-color:rgba(255,255,255,.2)}
+.isb-btn.a-todo{background:rgba(100,116,139,.2);border-color:#64748b;color:#94a3b8}
+.isb-btn.a-in_progress{background:rgba(99,102,241,.2);border-color:#6366f1;color:#818cf8}
+.isb-btn.a-done{background:rgba(16,185,129,.2);border-color:#10b981;color:#34d399}
+.icolors{display:flex;flex-wrap:wrap;gap:6px}
+.icol{width:24px;height:24px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:all .15s;flex-shrink:0}
+.icol:hover{transform:scale(1.2)}
+.icol.sel{border-color:#fff;transform:scale(1.15)}
+.irow{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.inum{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 9px;color:#fff;font-size:.76rem;font-family:'Inter',sans-serif;outline:none}
+.inum:focus{border-color:rgba(99,102,241,.5)}
+.islider-row{display:flex;align-items:center;gap:8px}
+.islider{flex:1;accent-color:#6366f1;cursor:pointer}
+.islider-v{font-size:.72rem;color:rgba(255,255,255,.4);min-width:22px;text-align:right}
+.ideps{display:flex;flex-direction:column;gap:5px;max-height:110px;overflow-y:auto}
+.idep{display:flex;align-items:center;gap:7px;padding:5px 7px;background:rgba(255,255,255,.04);border-radius:7px;border:1px solid rgba(255,255,255,.06)}
+.idep-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.idep-name{flex:1;font-size:.71rem;color:rgba(255,255,255,.6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idep-rm{width:18px;height:18px;border-radius:4px;border:none;background:transparent;color:rgba(255,255,255,.2);font-size:.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.idep-rm:hover{background:rgba(239,68,68,.15);color:#ef4444}
+.inodeps{font-size:.72rem;color:rgba(255,255,255,.22);font-style:italic}
+.idelbtn{width:100%;padding:9px;border-radius:8px;border:1px solid rgba(239,68,68,.22);background:rgba(239,68,68,.07);color:#ef4444;font-size:.77rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s}
+.idelbtn:hover{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.4)}
+.iupload-btn{width:100%;padding:9px;border-radius:8px;border:1px dashed rgba(255,255,255,.18);background:rgba(255,255,255,.04);color:rgba(255,255,255,.45);font-size:.74rem;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s;text-align:center}
+.iupload-btn:hover{border-color:rgba(99,102,241,.5);color:#818cf8;background:rgba(99,102,241,.06)}
 
-.insp-header{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0}
-.insp-header h3{font-size:0.82rem;font-weight:600;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:.06em}
-.insp-close{width:28px;height:28px;border-radius:7px;border:none;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.5);font-size:0.9rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
-.insp-close:hover{background:rgba(255,255,255,0.12);color:#fff}
+/* ─── EMOJI PICKER ─── */
+#epick{position:fixed;background:rgba(14,16,28,.98);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:10px;width:256px;z-index:9999;display:none;box-shadow:0 20px 60px rgba(0,0,0,.7);backdrop-filter:blur(20px)}
+#epick .eps{width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px 10px;color:#fff;font-size:.76rem;font-family:'Inter',sans-serif;outline:none;margin-bottom:7px}
+#epick .epg{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-height:190px;overflow-y:auto}
+#epick .epg button{width:28px;height:28px;border:none;background:transparent;font-size:1rem;cursor:pointer;border-radius:5px;transition:background .1s}
+#epick .epg button:hover{background:rgba(255,255,255,.12)}
+#epick .epc{width:100%;margin-top:6px;padding:6px;border-radius:7px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:rgba(255,255,255,.4);font-size:.7rem;font-family:'Inter',sans-serif;cursor:pointer}
+#epick .epc:hover{background:rgba(255,255,255,.09);color:#fff}
 
-.insp-section{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)}
-.insp-label{font-size:0.68rem;font-weight:600;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+/* ─── STATUS BAR ─── */
+#sb{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(9,11,20,.92);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:5px 14px;display:flex;align-items:center;gap:10px;font-size:.68rem;color:rgba(255,255,255,.32);backdrop-filter:blur(12px);white-space:nowrap;z-index:10}
+#sb b{color:rgba(255,255,255,.6)}
+.sbsep{width:1px;height:10px;background:rgba(255,255,255,.09)}
 
-.insp-status-btns{display:flex;gap:6px}
-.insp-status-btn{flex:1;padding:7px 4px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.45);font-size:0.7rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s;text-align:center}
-.insp-status-btn:hover{border-color:rgba(255,255,255,0.25)}
-.insp-status-btn.active-todo{background:rgba(100,116,139,.2);border-color:#64748b;color:#94a3b8}
-.insp-status-btn.active-in_progress{background:rgba(99,102,241,.2);border-color:#6366f1;color:#818cf8}
-.insp-status-btn.active-done{background:rgba(16,185,129,.2);border-color:#10b981;color:#34d399}
+/* ─── CONNECT HINT ─── */
+#chint{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.35);border-radius:10px;padding:7px 16px;font-size:.73rem;color:#818cf8;display:none;pointer-events:none;z-index:10}
 
-.insp-colors{display:flex;flex-wrap:wrap;gap:7px}
-.insp-color{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:all .15s;flex-shrink:0}
-.insp-color:hover{transform:scale(1.2)}
-.insp-color.selected{border-color:#fff;transform:scale(1.15)}
+/* ─── CONTEXT MENU ─── */
+#ctx{position:fixed;background:rgba(12,14,26,.98);border:1px solid rgba(255,255,255,.1);border-radius:11px;padding:5px;min-width:160px;z-index:9000;display:none;backdrop-filter:blur(16px);box-shadow:0 16px 48px rgba(0,0,0,.6)}
+.ci{padding:7px 11px;border-radius:6px;font-size:.75rem;color:rgba(255,255,255,.72);cursor:pointer;display:flex;align-items:center;gap:7px;transition:background .1s}
+.ci:hover{background:rgba(255,255,255,.07);color:#fff}
+.ci.danger{color:rgba(239,68,68,.8)}
+.ci.danger:hover{background:rgba(239,68,68,.1);color:#ef4444}
+.csep{height:1px;background:rgba(255,255,255,.06);margin:3px 0}
 
-.insp-size-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.insp-num{width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:7px 10px;color:#fff;font-size:0.78rem;font-family:'Inter',sans-serif;outline:none;transition:border-color .15s}
-.insp-num:focus{border-color:rgba(99,102,241,0.5)}
-
-.insp-slider-row{display:flex;align-items:center;gap:10px}
-.insp-slider{flex:1;accent-color:#6366f1;cursor:pointer}
-.insp-slider-val{font-size:0.75rem;color:rgba(255,255,255,0.5);min-width:24px;text-align:right}
-
-.insp-deps{display:flex;flex-direction:column;gap:6px;max-height:120px;overflow-y:auto}
-.insp-dep-item{display:flex;align-items:center;gap:8px;padding:6px 8px;background:rgba(255,255,255,0.04);border-radius:8px;border:1px solid rgba(255,255,255,0.07)}
-.insp-dep-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.insp-dep-name{flex:1;font-size:0.74rem;color:rgba(255,255,255,0.65);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.insp-dep-remove{width:20px;height:20px;border-radius:5px;border:none;background:transparent;color:rgba(255,255,255,0.25);font-size:0.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.insp-dep-remove:hover{background:rgba(239,68,68,.15);color:#ef4444}
-.insp-no-deps{font-size:0.74rem;color:rgba(255,255,255,0.25);font-style:italic}
-
-.insp-delete-btn{width:100%;padding:10px;border-radius:9px;border:1px solid rgba(239,68,68,.25);background:rgba(239,68,68,.08);color:#ef4444;font-size:0.8rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s}
-.insp-delete-btn:hover{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.5)}
-
-/* STATUS BAR */
-#statusbar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(13,15,26,0.9);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:6px 16px;display:flex;align-items:center;gap:12px;font-size:0.73rem;color:rgba(255,255,255,0.4);backdrop-filter:blur(10px)}
-#statusbar b{color:rgba(255,255,255,0.7)}
-.sb-sep{width:1px;height:12px;background:rgba(255,255,255,0.1)}
-
-/* CONNECT MODE OVERLAY */
-#connect-hint{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);border-radius:12px;padding:8px 18px;font-size:0.78rem;color:#818cf8;display:none;pointer-events:none;backdrop-filter:blur(8px)}
-
-/* TOAST */
-#toast{position:fixed;bottom:60px;left:50%;transform:translateX(-50%) translateY(20px);background:rgba(22,26,42,0.97);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:10px 20px;font-size:0.8rem;color:#fff;opacity:0;transition:all .3s;z-index:9999;pointer-events:none;backdrop-filter:blur(12px)}
+/* ─── TOAST ─── */
+#toast{position:fixed;bottom:56px;left:50%;transform:translateX(-50%) translateY(8px);background:rgba(14,16,28,.97);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 18px;font-size:.75rem;color:#fff;opacity:0;transition:all .25s;z-index:9999;pointer-events:none}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-#toast.err{border-color:rgba(239,68,68,.4);color:#fca5a5}
 #toast.ok{border-color:rgba(16,185,129,.4);color:#6ee7b7}
+#toast.err{border-color:rgba(239,68,68,.4);color:#fca5a5}
 
-/* CONTEXT MENU */
-#ctx-menu{position:fixed;background:rgba(18,22,38,0.98);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:6px;min-width:160px;z-index:9000;display:none;backdrop-filter:blur(16px);box-shadow:0 16px 48px rgba(0,0,0,0.6)}
-.ctx-item{padding:8px 12px;border-radius:7px;font-size:0.78rem;color:rgba(255,255,255,0.75);cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .1s}
-.ctx-item:hover{background:rgba(255,255,255,0.08);color:#fff}
-.ctx-item.danger{color:rgba(239,68,68,.8)}
-.ctx-item.danger:hover{background:rgba(239,68,68,.12);color:#ef4444}
-.ctx-sep{height:1px;background:rgba(255,255,255,0.07);margin:4px 0}
-
-/* TEMP CONNECTION LINE */
-#temp-line{position:fixed;pointer-events:none;z-index:50;top:0;left:0;width:100%;height:100%}
+/* ─── DROP OVERLAY ─── */
+#dropov{position:fixed;inset:0;background:rgba(99,102,241,.1);border:3px dashed rgba(99,102,241,.5);z-index:8999;display:none;align-items:center;justify-content:center;font-size:1.1rem;color:#818cf8;pointer-events:none}
 </style>
 </head>
 <body>
 <div id="app">
+  <!-- TOOLBAR -->
   <aside id="toolbar">
-    <button class="tool-btn active" id="tool-select" data-tool="select" title=""><span class="tip">Выбор (V)</span>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 4l7 18 3-7 7-3L4 4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg>
+    <button class="tb on" data-tool="select"><span class="tip">Выбор (V)</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 4l7 18 3-7 7-3L4 4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
     </button>
-    <button class="tool-btn" id="tool-card" data-tool="card" title=""><span class="tip">Карточка (C)</span>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" stroke-width="1.8"/><line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <button class="tb" data-tool="card"><span class="tip">Карточка (C)</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" stroke-width="1.8"/><line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
     </button>
-    <button class="tool-btn" id="tool-connect" data-tool="connect" title=""><span class="tip">Связь (L)</span>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="5" cy="12" r="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="19" cy="12" r="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M7.5 12 Q12 6 16.5 12" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
+    <button class="tb" data-tool="connect"><span class="tip">Связь (L)</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="5" cy="12" r="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="19" cy="12" r="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M7.5 12 Q12 6 16.5 12" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
     </button>
     <div class="t-sep"></div>
-    <button class="tool-btn" id="btn-zoom-in" title=""><span class="tip">Приближение (+)</span>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="11" y1="8" x2="11" y2="14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <button class="tb" id="btn-zi"><span class="tip">Приблизить (+)</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="11" y1="8" x2="11" y2="14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
     </button>
-    <button class="tool-btn" id="btn-zoom-out" title=""><span class="tip">Отдаление (-)</span>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <button class="tb" id="btn-zo"><span class="tip">Отдалить (-)</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
     </button>
-    <button class="tool-btn" id="btn-zoom-reset" title=""><span class="tip">100% (0)</span>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <button class="tb" id="btn-zr"><span class="tip">100% (0)</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <div class="t-spacer"></div>
     <div class="t-sep"></div>
-    <button class="tool-btn" id="btn-back" title=""><span class="tip">Закрыть доску</span>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M5 12l7 7M5 12l7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <button class="tb" id="btn-back"><span class="tip">Закрыть</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M5 12l7 7M5 12l7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </aside>
 
-  <div id="viewport">
+  <!-- VIEWPORT -->
+  <div id="vp">
     <div id="canvas">
-      <svg id="conn-svg" xmlns="http://www.w3.org/2000/svg">
+      <!-- SVG lives INSIDE canvas → canvas-space coords = no offset bug -->
+      <svg id="csvg" style="position:absolute;top:0;left:0;width:0;height:0;overflow:visible;pointer-events:none">
         <defs>
-          <filter id="conn-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <filter id="fg" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="5" result="b"/>
             <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
           </filter>
-          <filter id="conn-glow-red" x="-50%" y="-50%" width="200%" height="200%">
+          <filter id="fr" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="4" result="b"/>
             <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
           </filter>
-          <marker id="arrow-blue" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-            <path d="M0 0 L10 4 L0 8 Z" fill="#818cf8" opacity=".9"/>
+          <marker id="ab" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <path d="M0 0L9 3.5L0 7Z" fill="#818cf8" opacity=".9"/>
           </marker>
-          <marker id="arrow-red" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-            <path d="M0 0 L10 4 L0 8 Z" fill="#ef4444" opacity=".9"/>
+          <marker id="ar" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <path d="M0 0L9 3.5L0 7Z" fill="#ef4444" opacity=".9"/>
           </marker>
-          <marker id="arrow-green" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-            <path d="M0 0 L10 4 L0 8 Z" fill="#34d399" opacity=".9"/>
+          <marker id="ag" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <path d="M0 0L9 3.5L0 7Z" fill="#34d399" opacity=".9"/>
           </marker>
         </defs>
+        <g id="conn-layer" style="pointer-events:visiblePainted"></g>
+        <g id="temp-conn" style="display:none;pointer-events:none">
+          <path id="tp-glow" fill="none" stroke="#6366f1" stroke-width="12" stroke-opacity=".12" filter="url(#fg)"/>
+          <path id="tp-base" fill="none" stroke="#818cf8" stroke-width="2" stroke-opacity=".85"/>
+          <path id="tp-dash" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.5" stroke-dasharray="6 16">
+            <animate attributeName="stroke-dashoffset" from="22" to="0" dur="0.8s" repeatCount="indefinite"/>
+          </path>
+        </g>
       </svg>
     </div>
-    <div id="connect-hint">🔗 Кликните на карточку-цель чтобы создать связь &nbsp;·&nbsp; Esc — отмена</div>
-    <div id="statusbar">
+    <div id="chint">🔗 Кликните на карточку-цель · Esc — отмена</div>
+    <div id="sb">
       <b id="sb-zoom">100%</b>
-      <div class="sb-sep"></div>
-      <span id="sb-cards">0 карточек</span>
-      <div class="sb-sep"></div>
-      <span>Ctrl+перетаск — сетка &nbsp;·&nbsp; Scroll — зум &nbsp;·&nbsp; ПКМ — меню</span>
+      <div class="sbsep"></div>
+      <span id="sb-info">0 карточек</span>
+      <div class="sbsep"></div>
+      <span>Dbl-click → текст · Ctrl+drag → сетка · Клик по связи → удалить</span>
     </div>
   </div>
 
-  <aside id="inspector">
-    <div class="insp-header">
-      <h3>Карточка</h3>
-      <button class="insp-close" id="insp-close">✕</button>
-    </div>
-    <div class="insp-section" id="insp-status-section">
-      <div class="insp-label">Статус</div>
-      <div class="insp-status-btns">
-        <button class="insp-status-btn" data-s="todo">· Todo</button>
-        <button class="insp-status-btn" data-s="in_progress">▶ В работе</button>
-        <button class="insp-status-btn" data-s="done">✓ Готово</button>
+  <!-- INSPECTOR -->
+  <aside id="insp">
+    <div class="ih"><h3>Карточка</h3><button class="ix" id="insp-x">✕</button></div>
+    <div class="is">
+      <div class="il">Статус</div>
+      <div class="isb">
+        <button class="isb-btn" data-s="todo">· Todo</button>
+        <button class="isb-btn" data-s="in_progress">▶ В работе</button>
+        <button class="isb-btn" data-s="done">✓ Готово</button>
       </div>
     </div>
-    <div class="insp-section">
-      <div class="insp-label">Цвет карточки</div>
-      <div class="insp-colors" id="insp-colors"></div>
-    </div>
-    <div class="insp-section">
-      <div class="insp-label">Размер</div>
-      <div class="insp-size-row">
-        <input type="number" class="insp-num" id="insp-w" placeholder="Ш">
-        <input type="number" class="insp-num" id="insp-h" placeholder="В">
+    <div class="is">
+      <div class="il">Иконка</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div id="insp-icon-prev" style="font-size:1.6rem;min-width:34px;text-align:center;line-height:1">—</div>
+        <button class="iupload-btn" style="flex:1" id="insp-icon-btn">🎨 Выбрать эмодзи</button>
       </div>
     </div>
-    <div class="insp-section">
-      <div class="insp-label">Размер текста</div>
-      <div class="insp-slider-row">
-        <input type="range" class="insp-slider" id="insp-fontsize" min="10" max="24" value="13">
-        <span class="insp-slider-val" id="insp-fontsize-val">13</span>
+    <div class="is">
+      <div class="il">Цвет фона</div>
+      <div class="icolors" id="insp-bgs"></div>
+    </div>
+    <div class="is">
+      <div class="il">Полоска</div>
+      <div class="icolors" id="insp-strips"></div>
+    </div>
+    <div class="is">
+      <div class="il">Размер</div>
+      <div class="irow">
+        <input type="number" class="inum" id="iw" placeholder="Ш">
+        <input type="number" class="inum" id="ih" placeholder="В">
       </div>
     </div>
-    <div class="insp-section">
-      <div class="insp-label">Зависимости (нужно завершить сначала)</div>
-      <div class="insp-deps" id="insp-deps"></div>
+    <div class="is">
+      <div class="il">Шрифт</div>
+      <div class="islider-row">
+        <input type="range" class="islider" id="ifs" min="10" max="26" value="13">
+        <span class="islider-v" id="ifs-v">13</span>
+      </div>
     </div>
-    <div class="insp-section">
-      <button class="insp-delete-btn" id="insp-delete">🗑 Удалить карточку</button>
+    <div class="is">
+      <div class="il">Изображение в карточку</div>
+      <button class="iupload-btn" id="insp-img-btn">📎 Загрузить файл</button>
+      <input type="file" id="img-input" accept="image/*" style="display:none">
+      <div style="font-size:.62rem;color:rgba(255,255,255,.18);margin-top:5px">Или перетащите / Ctrl+V при выбранной карточке</div>
     </div>
+    <div class="is">
+      <div class="il">Зависимости (нужно завершить сначала)</div>
+      <div class="ideps" id="insp-deps"></div>
+    </div>
+    <div class="is"><button class="idelbtn" id="insp-del">🗑 Удалить карточку</button></div>
   </aside>
 </div>
 
-<svg id="temp-line" style="display:none">
-  <defs>
-    <filter id="tl-glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  </defs>
-  <path id="temp-path" fill="none" stroke="#6366f1" stroke-width="2" stroke-dasharray="8 16" stroke-opacity=".8" filter="url(#tl-glow)"/>
-</svg>
+<!-- EMOJI PICKER -->
+<div id="epick">
+  <input class="eps" id="ep-s" placeholder="Поиск...">
+  <div class="epg" id="ep-g"></div>
+  <button class="epc" id="ep-c">✕ Убрать иконку</button>
+</div>
 
-<div id="ctx-menu"></div>
+<div id="ctx"></div>
 <div id="toast"></div>
+<div id="dropov">📎 Отпустите для вставки изображения</div>
 
 <script>
-// ========== STATE ==========
+// ═══════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════
 const params = new URLSearchParams(location.search);
-const sessionKey = params.get('sessionKey') || 'default';
-const boardDate  = params.get('date') || new Date().toISOString().split('T')[0];
-const STORE_KEY  = `board_${sessionKey}`;
+const SK = 'board2_' + (params.get('sessionKey')||'dev');
 
-const CARD_COLORS = [
-  {bg:'rgba(22,26,42,0.97)',label:'Тёмный'},
-  {bg:'rgba(30,22,50,0.97)',label:'Фиолет'},
-  {bg:'rgba(20,36,30,0.97)',label:'Зелёный'},
-  {bg:'rgba(40,22,22,0.97)',label:'Красный'},
-  {bg:'rgba(30,30,20,0.97)',label:'Жёлтый'},
-  {bg:'rgba(18,32,46,0.97)',label:'Синий'},
-  {bg:'rgba(46,26,26,0.97)',label:'Розовый'},
-];
-const COLOR_STRIPS = ['','#6366f1','#10b981','#ef4444','#f59e0b','#06b6d4','#ec4899','#8b5cf6'];
+const EMOJIS=['😀','😂','🤔','😎','🤩','😍','🥳','😤','💡','🔥','⚡','✅','❌','⚠️','🎯','🚀','💎','🌟','🎉','🎨','🛠️','📋','📌','📎','🔗','💬','📊','📈','📉','🗂️','📁','🔒','🔓','🔑','👍','👎','👀','💪','🙌','🤝','✍️','🧠','⭐','🌈','🕐','📅','🗓️','🔔','💰','🏆','🥇','🎖️','📝','✏️','🖊️','📐','📏','🔍','💻','📱','🖥️','⌨️','💾','📡','🎵','🎤','📷','🎬','🌍','🧩','🎲','🏁'];
 
-let state = {
-  cards:[],
-  connections:[],
+const BGS=['rgba(20,23,38,.97)','rgba(26,18,44,.97)','rgba(16,32,26,.97)','rgba(36,18,18,.97)','rgba(34,26,12,.97)','rgba(14,26,42,.97)','rgba(40,18,34,.97)','rgba(18,32,38,.97)'];
+const STRIPS=['','#6366f1','#10b981','#ef4444','#f59e0b','#06b6d4','#ec4899','#8b5cf6','#f97316'];
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let S={
+  cards:[], connections:[],
   tx:0, ty:0, scale:1,
-  selected:null,
+  sel:null, selBlock:null,
   tool:'select',
-  dragging:null,
-  resizing:null,
-  panning:false,
-  panStart:null,
-  connectFrom:null,
-  ctrlHeld:false,
+  drag:null, pan:null, resize:null,
+  blockDrag:null, blockResize:null,
+  connFrom:null,
+  ctrl:false
 };
 
-// ========== STORAGE ==========
-function save(){localStorage.setItem(STORE_KEY,JSON.stringify({cards:state.cards,connections:state.connections}))}
 function load(){
-  const d=localStorage.getItem(STORE_KEY);
-  if(d){const p=JSON.parse(d);state.cards=p.cards||[];state.connections=p.connections||[];}
+  try{const d=localStorage.getItem(SK);if(d){const p=JSON.parse(d);S.cards=p.cards||[];S.connections=p.connections||[]}}catch(e){}
 }
-
-// ========== INIT ==========
+function save(){
+  try{localStorage.setItem(SK,JSON.stringify({cards:S.cards,connections:S.connections}))}catch(e){}
+}
 load();
-const viewport=document.getElementById('viewport');
+
+// ═══════════════════════════════════════════
+// DOM
+// ═══════════════════════════════════════════
+const vp=document.getElementById('vp');
 const canvas=document.getElementById('canvas');
-const connSvg=document.getElementById('conn-svg');
-const inspector=document.getElementById('inspector');
+const connL=document.getElementById('conn-layer');
+const tpGlow=document.getElementById('tp-glow');
+const tpBase=document.getElementById('tp-base');
+const tpDash=document.getElementById('tp-dash');
+const tempConn=document.getElementById('temp-conn');
+const insp=document.getElementById('insp');
+const epick=document.getElementById('epick');
 
-// Init transform to center
-state.tx = viewport.clientWidth/2 - 300;
-state.ty = viewport.clientHeight/2 - 200;
-applyTransform();
+// center on load
+S.tx=Math.max(0,(vp.clientWidth||900)/2-300);
+S.ty=Math.max(0,(vp.clientHeight||700)/2-200);
+applyT();
 
-renderAll();
-buildInspectorColors();
-setupEvents();
-
-// ========== RENDER ==========
+// ═══════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════
 function renderAll(){
-  renderCards();
-  renderConnections();
-  updateStatusBar();
-}
-
-function renderCards(){
-  // Remove old card els
-  canvas.querySelectorAll('.board-card').forEach(e=>e.remove());
-  state.cards.forEach(drawCard);
+  canvas.querySelectorAll('.bc').forEach(e=>e.remove());
+  S.cards.forEach(drawCard);
+  renderConns();
+  updateSB();
 }
 
 function drawCard(card){
   const el=document.createElement('div');
-  el.className='board-card'+(card.id===state.selected?' selected':'')+(card.status==='done'?' done-card':'');
-  el.id='card-'+card.id;
-  el.style.cssText=`left:${card.x}px;top:${card.y}px;width:${card.w}px;height:${card.h}px;background:${card.bg||'rgba(22,26,42,0.97)'}`;
-  if(state.connectFrom&&state.connectFrom!==card.id) el.classList.add('connecting');
+  el.className='bc'+(card.id===S.sel?' sel':'');
+  el.id='c-'+card.id;
+  el.style.cssText=`left:${card.x}px;top:${card.y}px;width:${card.w}px;height:${card.h}px;background:${card.bg||BGS[0]}`;
 
-  const statusColors={todo:'#64748b',in_progress:'#6366f1',done:'#10b981'};
-  const strip=COLOR_STRIPS[card.strip||0];
+  const sc={todo:'#64748b',in_progress:'#6366f1',done:'#10b981'};
+  const strip=STRIPS[card.strip||0];
+  const iconHtml=card.icon
+    ?`<div class="bc-icon" id="bicon-${card.id}">${card.icon}</div>`
+    :`<div class="bc-icon empty" id="bicon-${card.id}">＋</div>`;
 
   el.innerHTML=`
-    <div class="card-topbar">
-      <div class="card-status-dot ${card.status||'todo'}" style="background:${statusColors[card.status||'todo']}"></div>
-      <div class="card-title-wrap">
-        <textarea class="card-title" rows="1" style="font-size:${card.fontSize||13}px">${escH(card.title||'')}</textarea>
-      </div>
-      <div class="card-drag-handle">⠿</div>
+    <div class="bc-head">
+      <div class="bc-sdot" style="background:${sc[card.status||'todo']}"></div>
+      <textarea class="bc-title" rows="1" style="font-size:${card.fontSize||13}px" placeholder="Заголовок...">${esc(card.title||'')}</textarea>
+      ${iconHtml}
+      <div class="bc-drag">⠿</div>
     </div>
-    <div class="card-body-wrap">
-      <textarea class="card-body" style="font-size:${(card.fontSize||13)-1}px" placeholder="Описание...">${escH(card.body||'')}</textarea>
+    <div class="bc-desc">
+      <textarea class="bc-desc-ta" style="font-size:${Math.max(11,(card.fontSize||13)-2)}px" placeholder="Описание...">${esc(card.desc||'')}</textarea>
     </div>
-    ${strip?`<div class="card-color-strip" style="background:${strip}"></div>`:''}
-    <div class="card-port left" data-card="${card.id}" data-side="left"></div>
-    <div class="card-port right" data-card="${card.id}" data-side="right"></div>
-    <div class="card-resize"><svg viewBox="0 0 8 8"><path d="M1 7L7 1M4 7L7 4" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" stroke-linecap="round"/></svg></div>
-  `;
+    <div class="bc-blocks" id="bb-${card.id}"></div>
+    ${strip?`<div class="bc-strip" style="background:${strip}"></div>`:''}
+    <div class="bc-port lp" data-cid="${card.id}"></div>
+    <div class="bc-port rp" data-cid="${card.id}"></div>
+    <div class="bc-resize">
+      <svg width="9" height="9" viewBox="0 0 9 9"><path d="M1 8L8 1M4.5 8L8 4.5" stroke="rgba(255,255,255,.4)" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </div>`;
 
-  // Title auto-resize
-  const titleTA=el.querySelector('.card-title');
-  autoResize(titleTA);
-  titleTA.addEventListener('input',()=>{autoResize(titleTA);card.title=titleTA.value;save()});
+  const titleTA=el.querySelector('.bc-title');
+  arTA(titleTA);
+  titleTA.addEventListener('input',()=>{arTA(titleTA);card.title=titleTA.value;save()});
   titleTA.addEventListener('mousedown',e=>e.stopPropagation());
+  titleTA.addEventListener('focus',()=>selectCard(card.id));
 
-  const bodyTA=el.querySelector('.card-body');
-  bodyTA.addEventListener('input',()=>{card.body=bodyTA.value;save()});
-  bodyTA.addEventListener('mousedown',e=>e.stopPropagation());
+  const descTA=el.querySelector('.bc-desc-ta');
+  arTA(descTA);
+  descTA.addEventListener('input',()=>{arTA(descTA);card.desc=descTA.value;save()});
+  descTA.addEventListener('mousedown',e=>e.stopPropagation());
+  descTA.addEventListener('focus',()=>selectCard(card.id));
 
-  // Status dot click
-  el.querySelector('.card-status-dot').addEventListener('click',e=>{e.stopPropagation();cycleStatus(card.id)});
+  el.querySelector('.bc-icon').addEventListener('mousedown',e=>e.stopPropagation());
+  el.querySelector('.bc-icon').addEventListener('click',e=>{e.stopPropagation();openEP(e,card.id)});
 
-  // Drag handle
-  el.querySelector('.card-drag-handle').addEventListener('mousedown',e=>{e.stopPropagation();startDrag(e,card.id)});
+  el.querySelector('.bc-sdot').addEventListener('click',e=>{e.stopPropagation();cycleStatus(card.id)});
+  el.querySelector('.bc-drag').addEventListener('mousedown',e=>{e.stopPropagation();selectCard(card.id);startDrag(e,card.id)});
 
-  // Card mousedown (select + drag if select tool)
   el.addEventListener('mousedown',e=>{
     if(e.button!==0)return;
-    if(e.target.classList.contains('card-port'))return;
-    if(e.target.classList.contains('card-resize')||e.target.closest('.card-resize'))return;
+    if(e.target.closest('.bc-port,.bc-resize,.bc-icon,.bc-drag,.bc-sdot,textarea,.cb'))return;
     e.stopPropagation();
     selectCard(card.id);
-    if(state.tool==='select'&&!e.target.matches('textarea')){
-      startDrag(e,card.id);
-    }
-    if(state.tool==='connect'){
-      if(state.connectFrom&&state.connectFrom!==card.id){
-        addConnection(state.connectFrom,card.id);
-        setConnectFrom(null);
-      } else {
-        setConnectFrom(card.id);
-      }
-    }
-    if(state.tool==='delete'){deleteCard(card.id)}
+    if(S.tool==='select')startDrag(e,card.id);
+    if(S.tool==='connect')handleConnClick(card.id);
   });
 
-  // Resize handle
-  el.querySelector('.card-resize').addEventListener('mousedown',e=>{e.stopPropagation();startResize(e,card.id)});
-
-  // Port click (connect mode)
-  el.querySelectorAll('.card-port').forEach(port=>{
-    port.addEventListener('mousedown',e=>{
-      e.stopPropagation();
-      if(state.tool==='connect'||state.connectFrom){
-        if(state.connectFrom&&state.connectFrom!==card.id){
-          addConnection(state.connectFrom,card.id);
-          setConnectFrom(null);
-        } else {
-          setConnectFrom(card.id);
-        }
-      }
-    });
+  const bbArea=el.querySelector('.bc-blocks');
+  bbArea.addEventListener('dblclick',e=>{
+    e.stopPropagation();
+    if(e.target.closest('.cb'))return;
+    const r=bbArea.getBoundingClientRect();
+    addBlock(card.id,'text',(e.clientX-r.left)/S.scale,(e.clientY-r.top)/S.scale);
   });
 
-  // Right-click context menu
-  el.addEventListener('contextmenu',e=>{e.preventDefault();showCtxMenu(e,card.id)});
+  el.querySelector('.bc-resize').addEventListener('mousedown',e=>{e.stopPropagation();startCardResize(e,card.id)});
+
+  el.querySelectorAll('.bc-port').forEach(p=>p.addEventListener('mousedown',e=>{e.stopPropagation();handleConnClick(card.id)}));
+
+  el.addEventListener('contextmenu',e=>{e.preventDefault();showCtx(e,card.id)});
+  el.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation()});
+  el.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();handleImgDrop(e,card.id)});
 
   canvas.appendChild(el);
+  (card.blocks||[]).forEach(b=>drawBlock(card,b));
 }
 
-function autoResize(ta){ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'}
+// ═══════════════════════════════════════════
+// BLOCKS
+// ═══════════════════════════════════════════
+function drawBlock(card,block){
+  const area=document.getElementById('bb-'+card.id);
+  if(!area)return;
+  const old=document.getElementById('bl-'+block.id);
+  if(old)old.remove();
 
-function renderConnections(){
-  // Remove old connection groups (keep defs)
-  connSvg.querySelectorAll('.conn-group').forEach(e=>e.remove());
-  state.connections.forEach(drawConnection);
+  const sel=S.selBlock&&S.selBlock.blockId===block.id;
+  const el=document.createElement('div');
+  el.className='cb'+(sel?' cb-sel':'');
+  el.id='bl-'+block.id;
+  el.style.cssText=`left:${block.x}px;top:${block.y}px;${block.w?'width:'+block.w+'px':''}`;
+
+  if(block.type==='text'){
+    el.innerHTML=`
+      <div class="cb-move-handle">⠿ переместить</div>
+      <div class="cb-inner" style="font-size:${block.fs||12}px">${block.content||''}</div>
+      <div class="cb-resize-dot"></div>`;
+    const inner=el.querySelector('.cb-inner');
+    inner.addEventListener('dblclick',e=>{
+      e.stopPropagation();
+      inner.contentEditable='true';inner.focus();
+      const s=window.getSelection(),r=document.createRange();
+      r.selectNodeContents(inner);s.removeAllRanges();s.addRange(r);
+    });
+    inner.addEventListener('blur',()=>{inner.contentEditable='false';block.content=inner.innerHTML;save()});
+    inner.addEventListener('mousedown',e=>e.stopPropagation());
+    inner.addEventListener('keydown',e=>e.stopPropagation());
+  } else if(block.type==='image'){
+    el.innerHTML=`
+      <div class="cb-move-handle">⠿ переместить</div>
+      <div class="cb-img-inner"><img src="${block.src}" style="width:${block.w||200}px"></div>
+      <div class="cb-resize-dot"></div>`;
+  }
+
+  const mh=el.querySelector('.cb-move-handle');
+  if(mh) mh.addEventListener('mousedown',e=>{e.stopPropagation();selectBlock(card.id,block.id);startBlockDrag(e,card.id,block.id)});
+
+  el.addEventListener('mousedown',e=>{
+    if(e.target.closest('.cb-inner[contenteditable="true"],.cb-move-handle'))return;
+    e.stopPropagation();
+    selectBlock(card.id,block.id);
+  });
+
+  const rd=el.querySelector('.cb-resize-dot');
+  if(rd) rd.addEventListener('mousedown',e=>{e.stopPropagation();startBlockResize(e,card.id,block.id)});
+
+  area.appendChild(el);
 }
 
-function drawConnection(conn){
-  const from=state.cards.find(c=>c.id===conn.from);
-  const to=state.cards.find(c=>c.id===conn.to);
-  if(!from||!to)return;
+function addBlock(cardId,type,x,y,extra={}){
+  const card=getCard(cardId);if(!card)return;
+  if(!card.blocks)card.blocks=[];
+  const id='bl'+Date.now()+Math.random().toString(36).slice(2,5);
+  const block={id,type,x,y,...(type==='text'?{content:'',fs:12,w:0}:{w:200}),...extra};
+  card.blocks.push(block);
+  save();drawBlock(card,block);
+  if(type==='text'){
+    selectBlock(cardId,id);
+    setTimeout(()=>{const inn=document.querySelector('#bl-'+id+' .cb-inner');if(inn){inn.contentEditable='true';inn.focus()}},30);
+  }
+}
 
-  // Exit: right-center of from | Enter: left-center of to
-  const x1=from.x+from.w, y1=from.y+from.h/2;
-  const x2=to.x,           y2=to.y+to.h/2;
+function selectBlock(cardId,blockId){
+  document.querySelectorAll('.cb').forEach(e=>e.classList.remove('cb-sel'));
+  S.selBlock={cardId,blockId};
+  const el=document.getElementById('bl-'+blockId);
+  if(el)el.classList.add('cb-sel');
+}
+
+function startBlockDrag(e,cardId,blockId){
+  const card=getCard(cardId);
+  const block=(card&&card.blocks||[]).find(b=>b.id===blockId);
+  if(!block)return;
+  S.blockDrag={cardId,blockId,mx:e.clientX,my:e.clientY,bx:block.x,by:block.y};
+}
+
+function startBlockResize(e,cardId,blockId){
+  const card=getCard(cardId);
+  const block=(card&&card.blocks||[]).find(b=>b.id===blockId);
+  if(!block)return;
+  S.blockResize={cardId,blockId,mx:e.clientX,sw:block.w||200};
+}
+
+// ═══════════════════════════════════════════
+// CONNECTIONS — SVG inside canvas (key fix!)
+// ═══════════════════════════════════════════
+function renderConns(){
+  connL.innerHTML='';
+  S.connections.forEach(drawConn);
+}
+
+function drawConn(conn){
+  const f=getCard(conn.from),t=getCard(conn.to);
+  if(!f||!t)return;
+
+  const x1=f.x+f.w, y1=f.y+f.h/2;
+  const x2=t.x,     y2=t.y+t.h/2;
   const dx=x2-x1;
-  const cp=Math.max(80,Math.abs(dx)*0.45);
+  const cp=Math.max(80,Math.abs(dx)*0.44);
   const d=`M${x1} ${y1} C${x1+cp} ${y1} ${x2-cp} ${y2} ${x2} ${y2}`;
 
   const blocked=isDepsBlocked(conn.to);
-  const done=to.status==='done';
+  const done=t.status==='done';
   const clr=blocked?'#ef4444':done?'#34d399':'#818cf8';
-  const filterId=blocked?'conn-glow-red':'conn-glow';
-  const arrowId=blocked?'arrow-red':done?'arrow-green':'arrow-blue';
-  const flowDur=blocked?'0.6s':'2.2s';
+  const fid=blocked?'fr':'fg';
+  const aid=blocked?'ar':done?'ag':'ab';
 
-  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
-  g.classList.add('conn-group');
-  g.dataset.connId=conn.id;
+  const g=svgEl('g');
+  g.classList.add('cg');
+  g.dataset.cid=conn.id;
 
-  // Glow
-  const pg=makePath(d,clr,10,.18);
-  pg.setAttribute('filter',`url(#${filterId})`);
-  // Base
-  const pb=makePath(d,clr,2,.7);
-  pb.setAttribute('marker-end',`url(#${arrowId})`);
-  // Flow
-  const pf=makePath(d,'rgba(255,255,255,0.55)',1.5,1);
-  pf.setAttribute('stroke-dasharray','7 22');
-  const anim=document.createElementNS('http://www.w3.org/2000/svg','animate');
-  anim.setAttribute('attributeName','stroke-dashoffset');
-  anim.setAttribute('from','29');anim.setAttribute('to','0');
-  anim.setAttribute('dur',flowDur);anim.setAttribute('repeatCount','indefinite');
-  pf.appendChild(anim);
-  // Hit area
-  const ph=makePath(d,'transparent',24,1);
-  ph.style.pointerEvents='stroke';
-  ph.style.cursor='pointer';
-  ph.addEventListener('click',e=>{e.stopPropagation();deleteConnection(conn.id)});
-  ph.setAttribute('title','Нажмите чтобы удалить связь');
+  // glow layer
+  const pg=svgPath(d,clr,12,.13);pg.setAttribute('filter','url(#'+fid+')');
+  // base line
+  const pb=svgPath(d,clr,2,.8);pb.setAttribute('marker-end','url(#'+aid+')');
+  // flow dots
+  const pf=svgPath(d,'rgba(255,255,255,.65)',1.5,1);
+  pf.setAttribute('stroke-dasharray','5 18');
+  const an=svgEl('animate');
+  an.setAttribute('attributeName','stroke-dashoffset');
+  an.setAttribute('from','23');an.setAttribute('to','0');
+  an.setAttribute('dur',blocked?'0.45s':'1.8s');
+  an.setAttribute('repeatCount','indefinite');
+  pf.appendChild(an);
+  // invisible hit area
+  const ph=svgPath(d,'transparent',22,1);
+  ph.style.pointerEvents='stroke';ph.style.cursor='pointer';
+  ph.addEventListener('click',e=>{e.stopPropagation();deleteConn(conn.id)});
+  ph.setAttribute('title','Клик — удалить связь');
 
   g.append(pg,pb,pf,ph);
-  connSvg.appendChild(g);
+  connL.appendChild(g);
 }
 
-function makePath(d,stroke,width,opacity){
-  const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+function svgEl(tag){return document.createElementNS('http://www.w3.org/2000/svg',tag)}
+function svgPath(d,stroke,w,op){
+  const p=svgEl('path');
   p.setAttribute('d',d);p.setAttribute('fill','none');
-  p.setAttribute('stroke',stroke);p.setAttribute('stroke-width',width);p.setAttribute('stroke-opacity',opacity);
+  p.setAttribute('stroke',stroke);p.setAttribute('stroke-width',w);p.setAttribute('stroke-opacity',op);
   return p;
 }
 
-function updateConnectionsOnly(){
-  connSvg.querySelectorAll('.conn-group').forEach(e=>e.remove());
-  state.connections.forEach(drawConnection);
+function updateConnsOnly(){connL.innerHTML='';S.connections.forEach(drawConn)}
+
+// temp line (also in canvas-space)
+function updateTempLine(mx,my){
+  if(!S.connFrom)return;
+  const src=getCard(S.connFrom);if(!src)return;
+  const r=vp.getBoundingClientRect();
+  const cx=(mx-r.left-S.tx)/S.scale;
+  const cy=(my-r.top-S.ty)/S.scale;
+  const x1=src.x+src.w, y1=src.y+src.h/2;
+  const ddx=cx-x1, cp=Math.max(60,Math.abs(ddx)*0.4);
+  const d=`M${x1} ${y1} C${x1+cp} ${y1} ${cx-cp} ${cy} ${cx} ${cy}`;
+  tpGlow.setAttribute('d',d);
+  tpBase.setAttribute('d',d);
+  tpDash.setAttribute('d',d);
 }
 
-// ========== CARD OPERATIONS ==========
-function addCard(canvasX,canvasY){
-  const id='c'+Date.now()+Math.random().toString(36).slice(2,6);
-  const card={id,x:canvasX-100,y:canvasY-60,w:220,h:130,title:'',body:'',status:'todo',bg:'rgba(22,26,42,0.97)',strip:0,fontSize:13};
-  state.cards.push(card);
-  save();renderAll();
-  // Focus title
-  setTimeout(()=>{
-    const el=document.querySelector(`#card-${id} .card-title`);
-    if(el){el.focus();el.select()}
-  },50);
-  selectCard(id);
-  return id;
+// ═══════════════════════════════════════════
+// CARD OPS
+// ═══════════════════════════════════════════
+function getCard(id){return S.cards.find(c=>c.id===id)}
+
+function addCard(cx,cy){
+  const id='c'+Date.now()+Math.random().toString(36).slice(2,5);
+  S.cards.push({id,x:cx-110,y:cy-65,w:240,h:155,title:'',desc:'',status:'todo',bg:BGS[0],strip:0,fontSize:13,icon:'',blocks:[]});
+  save();renderAll();selectCard(id);
+  setTimeout(()=>{const t=document.querySelector('#c-'+id+' .bc-title');if(t){t.focus();t.select()}},40);
 }
 
 function deleteCard(id){
-  state.cards=state.cards.filter(c=>c.id!==id);
-  state.connections=state.connections.filter(c=>c.from!==id&&c.to!==id);
-  if(state.selected===id){state.selected=null;closeInspector()}
+  S.cards=S.cards.filter(c=>c.id!==id);
+  S.connections=S.connections.filter(c=>c.from!==id&&c.to!==id);
+  if(S.sel===id){S.sel=null;closeInsp()}
   save();renderAll();
 }
 
 function selectCard(id){
-  state.selected=id;
-  canvas.querySelectorAll('.board-card').forEach(el=>{
-    el.classList.toggle('selected',el.id==='card-'+id);
-  });
-  openInspector(id);
+  if(S.sel===id)return;
+  S.sel=id;S.selBlock=null;
+  document.querySelectorAll('.bc').forEach(e=>e.classList.toggle('sel',e.id==='c-'+id));
+  openInsp(id);
 }
-
-function getCard(id){return state.cards.find(c=>c.id===id)}
 
 function updateCard(id,props){
   const c=getCard(id);if(!c)return;
-  Object.assign(c,props);
-  save();
-  // Re-draw just this card
-  const old=document.getElementById('card-'+id);
-  if(old){old.remove()}
-  drawCard(c);
-  updateConnectionsOnly();
-  if(state.selected===id) updateInspectorValues(c);
+  Object.assign(c,props);save();
+  const old=document.getElementById('c-'+id);if(old)old.remove();
+  drawCard(c);updateConnsOnly();
+  if(S.sel===id)refreshInsp(c);
 }
 
 function cycleStatus(id){
   const c=getCard(id);if(!c)return;
   const order=['todo','in_progress','done'];
   const next=order[(order.indexOf(c.status||'todo')+1)%3];
-  if(next==='done'||next==='in_progress'){
-    if(isDepsBlocked(id)){
-      toast('⚠️ Сначала завершите зависимые карточки','err');return;
-    }
-  }
+  if(next!=='todo'&&isDepsBlocked(id)){toast('⚠️ Сначала завершите зависимые','err');return}
   updateCard(id,{status:next});
 }
 
-function isDepsBlocked(cardId){
-  const incoming=state.connections.filter(c=>c.to===cardId);
-  return incoming.some(c=>{
-    const src=getCard(c.from);
-    return src&&src.status!=='done';
-  });
+function isDepsBlocked(id){
+  return S.connections.filter(c=>c.to===id).some(c=>{const s=getCard(c.from);return s&&s.status!=='done'})
 }
 
-// ========== CONNECTIONS ==========
-function addConnection(fromId,toId){
+// ═══════════════════════════════════════════
+// CONNECTIONS OPS
+// ═══════════════════════════════════════════
+function addConn(fromId,toId){
   if(fromId===toId)return;
-  if(state.connections.find(c=>c.from===fromId&&c.to===toId)){toast('Связь уже существует');return}
-  const id='cn'+Date.now();
-  state.connections.push({id,from:fromId,to:toId});
-  save();renderAll();
-  toast('✓ Связь создана','ok');
+  if(S.connections.find(c=>c.from===fromId&&c.to===toId)){toast('Связь уже существует');return}
+  S.connections.push({id:'cn'+Date.now(),from:fromId,to:toId});
+  save();renderAll();toast('✓ Связь создана','ok');
 }
 
-function deleteConnection(id){
-  state.connections=state.connections.filter(c=>c.id!==id);
-  save();updateConnectionsOnly();updateInspectorDeps();
+function deleteConn(id){
+  S.connections=S.connections.filter(c=>c.id!==id);
+  save();updateConnsOnly();refreshDeps();
 }
+window.deleteConn=deleteConn;
 
-function setConnectFrom(id){
-  state.connectFrom=id;
-  const hint=document.getElementById('connect-hint');
-  hint.style.display=id?'block':'none';
-  if(id){
-    canvas.querySelectorAll('.board-card').forEach(el=>{
-      el.classList.toggle('connecting',el.id!=='card-'+id);
-    });
+function handleConnClick(cardId){
+  if(S.connFrom){
+    if(S.connFrom!==cardId)addConn(S.connFrom,cardId);
+    setConnFrom(null);
   } else {
-    canvas.querySelectorAll('.board-card').forEach(el=>el.classList.remove('connecting'));
+    setConnFrom(cardId);
   }
-  // temp line
-  document.getElementById('temp-line').style.display=id?'block':'none';
 }
 
-// ========== DRAG ==========
+function setConnFrom(id){
+  S.connFrom=id;
+  document.getElementById('chint').style.display=id?'block':'none';
+  tempConn.style.display=id?'':'none';
+  if(!id){tpGlow.setAttribute('d','');tpBase.setAttribute('d','');tpDash.setAttribute('d','')}
+  // show ports on all cards in connect mode
+  document.querySelectorAll('.bc').forEach(e=>e.classList.toggle('cmode',!!id));
+}
+
+// ═══════════════════════════════════════════
+// DRAG / PAN / RESIZE
+// ═══════════════════════════════════════════
 function startDrag(e,cardId){
   const c=getCard(cardId);if(!c)return;
-  const mp=canvasPoint(e.clientX,e.clientY);
-  state.dragging={cardId,startMX:e.clientX,startMY:e.clientY,startCX:c.x,startCY:c.y,mpX:mp.x-c.x,mpY:mp.y-c.y};
+  const cp=cpt(e.clientX,e.clientY);
+  S.drag={cardId,ox:cp.x-c.x,oy:cp.y-c.y};
 }
-
-function startResize(e,cardId){
+function startCardResize(e,cardId){
   const c=getCard(cardId);if(!c)return;
-  state.resizing={cardId,startMX:e.clientX,startMY:e.clientY,startW:c.w,startH:c.h};
+  S.resize={cardId,mx:e.clientX,my:e.clientY,sw:c.w,sh:c.h};
 }
-
-// ========== PAN ==========
 function startPan(e){
-  state.panning=true;
-  state.panStart={x:e.clientX-state.tx,y:e.clientY-state.ty};
-  viewport.classList.add('panning');
+  S.pan={ox:e.clientX-S.tx,oy:e.clientY-S.ty};
+  vp.classList.add('panning');
 }
 
-// ========== TRANSFORM ==========
-function applyTransform(){
-  canvas.style.transform=`translate(${state.tx}px,${state.ty}px) scale(${state.scale})`;
-  document.getElementById('sb-zoom').textContent=Math.round(state.scale*100)+'%';
+function applyT(){
+  canvas.style.transform=`translate(${S.tx}px,${S.ty}px) scale(${S.scale})`;
+  document.getElementById('sb-zoom').textContent=Math.round(S.scale*100)+'%';
 }
-
-function canvasPoint(sx,sy){
-  const r=viewport.getBoundingClientRect();
-  return{x:(sx-r.left-state.tx)/state.scale,y:(sy-r.top-state.ty)/state.scale};
+function cpt(sx,sy){
+  const r=vp.getBoundingClientRect();
+  return{x:(sx-r.left-S.tx)/S.scale,y:(sy-r.top-S.ty)/S.scale};
 }
-
-function zoom(factor,cx,cy){
-  const r=viewport.getBoundingClientRect();
+function zoom(f,cx,cy){
+  const r=vp.getBoundingClientRect();
   const mx=(cx??r.width/2+r.left)-r.left;
   const my=(cy??r.height/2+r.top)-r.top;
-  const bx=(mx-state.tx)/state.scale;
-  const by=(my-state.ty)/state.scale;
-  state.scale=Math.min(3,Math.max(0.1,state.scale*factor));
-  state.tx=mx-bx*state.scale;
-  state.ty=my-by*state.scale;
-  applyTransform();
+  const bx=(mx-S.tx)/S.scale,by=(my-S.ty)/S.scale;
+  S.scale=Math.min(3,Math.max(0.08,S.scale*f));
+  S.tx=mx-bx*S.scale;S.ty=my-by*S.scale;
+  applyT();
 }
 
-// ========== EVENTS ==========
-function setupEvents(){
-  // Tool buttons
-  document.querySelectorAll('[data-tool]').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      setTool(btn.dataset.tool);
-    });
+// ═══════════════════════════════════════════
+// IMAGES
+// ═══════════════════════════════════════════
+function addImgBlock(cardId,src){
+  addBlock(cardId,'image',8,8,{src,w:220});
+  toast('🖼 Изображение добавлено','ok');
+}
+function handleImgDrop(e,cardId){
+  [...(e.dataTransfer.files||[])].filter(f=>f.type.startsWith('image/')).forEach(f=>{
+    const r=new FileReader();r.onload=ev=>addImgBlock(cardId,ev.target.result);r.readAsDataURL(f);
   });
-  document.getElementById('btn-zoom-in').addEventListener('click',()=>zoom(1.2));
-  document.getElementById('btn-zoom-out').addEventListener('click',()=>zoom(0.8));
-  document.getElementById('btn-zoom-reset').addEventListener('click',()=>{
-    state.scale=1;state.tx=viewport.clientWidth/2-300;state.ty=viewport.clientHeight/2-200;applyTransform();
+}
+
+// ═══════════════════════════════════════════
+// EMOJI PICKER
+// ═══════════════════════════════════════════
+let epTarget=null;
+function openEP(e,cardId){
+  epTarget=cardId;
+  const r=e.target.getBoundingClientRect();
+  epick.style.display='block';
+  epick.style.left=Math.min(r.left,innerWidth-264)+'px';
+  epick.style.top=r.bottom+6+'px';
+  document.getElementById('ep-s').value='';
+  renderEPGrid(EMOJIS);
+  setTimeout(()=>document.getElementById('ep-s').focus(),20);
+}
+function renderEPGrid(list){
+  document.getElementById('ep-g').innerHTML=list.map(e=>`<button onclick="pickEmoji('${e}')">${e}</button>`).join('');
+}
+function pickEmoji(em){
+  if(epTarget)updateCard(epTarget,{icon:em});
+  epick.style.display='none';
+}
+window.pickEmoji=pickEmoji;
+document.getElementById('ep-s').addEventListener('input',function(){renderEPGrid(EMOJIS)});
+document.getElementById('ep-c').addEventListener('click',()=>{if(epTarget)updateCard(epTarget,{icon:''});epick.style.display='none'});
+
+// ═══════════════════════════════════════════
+// INSPECTOR
+// ═══════════════════════════════════════════
+(function buildInsp(){
+  const bgC=document.getElementById('insp-bgs');
+  BGS.forEach(bg=>{
+    const el=document.createElement('div');
+    el.className='icol';el.dataset.bg=bg;
+    el.style.cssText=`background:${bg};border:1.5px solid rgba(255,255,255,0.15)`;
+    el.addEventListener('click',()=>{if(S.sel)updateCard(S.sel,{bg})});
+    bgC.appendChild(el);
   });
-  document.getElementById('btn-back').addEventListener('click',()=>{
-    window.parent.postMessage('close-board','*');
-    window.close();
+  const stC=document.getElementById('insp-strips');
+  STRIPS.forEach((s,i)=>{
+    const el=document.createElement('div');
+    el.className='icol';el.dataset.si=i;
+    el.style.cssText=`background:${s||'rgba(255,255,255,0.06)'};${!s?'border:1.5px dashed rgba(255,255,255,0.2)':''}`;
+    el.addEventListener('click',()=>{if(S.sel)updateCard(S.sel,{strip:i})});
+    stC.appendChild(el);
   });
+})();
 
-  // Viewport mouse
-  viewport.addEventListener('mousedown',onViewportMouseDown);
-  window.addEventListener('mousemove',onMouseMove);
-  window.addEventListener('mouseup',onMouseUp);
-  viewport.addEventListener('wheel',onWheel,{passive:false});
-  viewport.addEventListener('contextmenu',e=>{e.preventDefault();showCtxMenu(e,null)});
-
-  // Keys
-  window.addEventListener('keydown',onKeyDown);
-  window.addEventListener('keyup',e=>{if(e.key==='Control')state.ctrlHeld=false});
-
-  // Inspector
-  document.getElementById('insp-close').addEventListener('click',()=>{state.selected=null;closeInspector();canvas.querySelectorAll('.board-card').forEach(el=>el.classList.remove('selected'))});
-  document.getElementById('insp-delete').addEventListener('click',()=>{if(state.selected)deleteCard(state.selected)});
-  document.querySelectorAll('.insp-status-btn').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      if(!state.selected)return;
-      const s=btn.dataset.s;
-      if((s==='done'||s==='in_progress')&&isDepsBlocked(state.selected)){
-        toast('⚠️ Сначала завершите зависимые карточки','err');return;
-      }
-      updateCard(state.selected,{status:s});
-    });
-  });
-  document.getElementById('insp-w').addEventListener('change',e=>{if(state.selected)updateCard(state.selected,{w:Math.max(120,+e.target.value)})});
-  document.getElementById('insp-h').addEventListener('change',e=>{if(state.selected)updateCard(state.selected,{h:Math.max(80,+e.target.value)})});
-  const fsSlider=document.getElementById('insp-fontsize');
-  fsSlider.addEventListener('input',()=>{
-    document.getElementById('insp-fontsize-val').textContent=fsSlider.value;
-    if(state.selected)updateCard(state.selected,{fontSize:+fsSlider.value});
-  });
-
-  // Close ctx menu on click
-  document.addEventListener('click',()=>document.getElementById('ctx-menu').style.display='none');
+function openInsp(id){
+  const c=getCard(id);if(!c)return;
+  insp.classList.add('open');
+  refreshInsp(c);
 }
-
-function setTool(tool){
-  state.tool=tool;
-  document.querySelectorAll('[data-tool]').forEach(btn=>btn.classList.toggle('active',btn.dataset.tool===tool));
-  viewport.className='';
-  if(tool==='card')viewport.classList.add('tool-card');
-  if(tool==='connect')viewport.classList.add('tool-connect');
-  if(state.connectFrom&&tool!=='connect')setConnectFrom(null);
-}
-
-function onViewportMouseDown(e){
-  if(e.button===1||(e.button===0&&e.target===viewport||e.target===canvas||e.target===connSvg)){
-    if(e.button===0&&state.tool==='card'&&(e.target===viewport||e.target===canvas||e.target===connSvg)){
-      const cp=canvasPoint(e.clientX,e.clientY);
-      addCard(cp.x,cp.y);
-      setTool('select');
-      return;
-    }
-    if(e.button===0&&(e.target===viewport||e.target===canvas||e.target===connSvg)){
-      state.selected=null;closeInspector();
-      canvas.querySelectorAll('.board-card').forEach(el=>el.classList.remove('selected'));
-      if(state.connectFrom)setConnectFrom(null);
-    }
-    startPan(e);
-  }
-}
-
-function onMouseMove(e){
-  if(state.panning&&state.panStart){
-    state.tx=e.clientX-state.panStart.x;
-    state.ty=e.clientY-state.panStart.y;
-    applyTransform();
-  }
-  if(state.dragging){
-    const d=state.dragging;
-    const dx=(e.clientX-d.startMX)/state.scale;
-    const dy=(e.clientY-d.startMY)/state.scale;
-    let nx=d.startCX+dx, ny=d.startCY+dy;
-    if(state.ctrlHeld){nx=Math.round(nx/20)*20;ny=Math.round(ny/20)*20}
-    const c=getCard(d.cardId);if(!c)return;
-    c.x=nx;c.y=ny;
-    const el=document.getElementById('card-'+d.cardId);
-    if(el){el.style.left=nx+'px';el.style.top=ny+'px'}
-    updateConnectionsOnly();
-  }
-  if(state.resizing){
-    const r=state.resizing;
-    const dx=(e.clientX-r.startMX)/state.scale;
-    const dy=(e.clientY-r.startMY)/state.scale;
-    let nw=Math.max(120,r.startW+dx), nh=Math.max(80,r.startH+dy);
-    if(state.ctrlHeld){nw=Math.round(nw/20)*20;nh=Math.round(nh/20)*20}
-    const c=getCard(r.cardId);if(!c)return;
-    c.w=nw;c.h=nh;
-    const el=document.getElementById('card-'+r.cardId);
-    if(el){el.style.width=nw+'px';el.style.height=nh+'px'}
-    updateConnectionsOnly();
-    if(state.selected===r.cardId){
-      document.getElementById('insp-w').value=Math.round(nw);
-      document.getElementById('insp-h').value=Math.round(nh);
-    }
-  }
-  // Temp connection line
-  if(state.connectFrom){
-    const r=viewport.getBoundingClientRect();
-    const src=getCard(state.connectFrom);if(!src)return;
-    const x1=(src.x+src.w)*state.scale+state.tx+r.left;
-    const y1=(src.y+src.h/2)*state.scale+state.ty+r.top;
-    const x2=e.clientX, y2=e.clientY;
-    const dx=x2-x1, cp=Math.max(60,Math.abs(dx)*0.4);
-    const d=`M${x1} ${y1} C${x1+cp} ${y1} ${x2-cp} ${y2} ${x2} ${y2}`;
-    document.getElementById('temp-path').setAttribute('d',d);
-  }
-}
-
-function onMouseUp(e){
-  if(state.dragging){save();state.dragging=null}
-  if(state.resizing){save();state.resizing=null}
-  if(state.panning){state.panning=false;viewport.classList.remove('panning');state.panStart=null}
-}
-
-function onWheel(e){
-  e.preventDefault();
-  const factor=e.deltaY<0?1.1:0.9;
-  zoom(factor,e.clientX,e.clientY);
-}
-
-function onKeyDown(e){
-  if(e.key==='Control')state.ctrlHeld=true;
-  if(e.key==='Escape'){setConnectFrom(null);if(state.selected){state.selected=null;closeInspector();canvas.querySelectorAll('.board-card').forEach(el=>el.classList.remove('selected'))}}
-  if(e.key==='Delete'&&state.selected&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){deleteCard(state.selected)}
-  if(e.key==='v'||e.key==='V')if(!isEditing())setTool('select');
-  if(e.key==='c'||e.key==='C')if(!isEditing())setTool('card');
-  if(e.key==='l'||e.key==='L')if(!isEditing())setTool('connect');
-  if((e.key==='+'||e.key==='=')&&!isEditing())zoom(1.2);
-  if(e.key==='-'&&!isEditing())zoom(0.8);
-  if(e.key==='0'&&!isEditing()){state.scale=1;state.tx=viewport.clientWidth/2-300;state.ty=viewport.clientHeight/2-200;applyTransform()}
-}
-
-function isEditing(){return['INPUT','TEXTAREA'].includes(document.activeElement.tagName)}
-
-// ========== INSPECTOR ==========
-function openInspector(cardId){
-  const c=getCard(cardId);if(!c)return;
-  inspector.classList.add('open');
-  updateInspectorValues(c);
-}
-function closeInspector(){inspector.classList.remove('open')}
-
-function updateInspectorValues(c){
-  // Status
-  document.querySelectorAll('.insp-status-btn').forEach(btn=>{
-    btn.className='insp-status-btn'+(c.status===btn.dataset.s?' active-'+btn.dataset.s:'');
-  });
-  // Colors
-  document.querySelectorAll('.insp-color').forEach(el=>{
-    el.classList.toggle('selected',el.dataset.bg===c.bg);
-  });
-  // Strip
-  document.querySelectorAll('.insp-strip').forEach(el=>{
-    el.classList.toggle('selected',+el.dataset.idx===(c.strip||0));
-  });
-  document.getElementById('insp-w').value=Math.round(c.w);
-  document.getElementById('insp-h').value=Math.round(c.h);
+function closeInsp(){insp.classList.remove('open')}
+function refreshInsp(c){
+  document.querySelectorAll('.isb-btn').forEach(b=>b.className='isb-btn'+(c.status===b.dataset.s?' a-'+b.dataset.s:''));
+  document.querySelectorAll('#insp-bgs .icol').forEach(el=>el.classList.toggle('sel',el.dataset.bg===c.bg));
+  document.querySelectorAll('#insp-strips .icol').forEach(el=>el.classList.toggle('sel',+el.dataset.si===(c.strip||0)));
+  document.getElementById('iw').value=Math.round(c.w);
+  document.getElementById('ih').value=Math.round(c.h);
   const fs=c.fontSize||13;
-  document.getElementById('insp-fontsize').value=fs;
-  document.getElementById('insp-fontsize-val').textContent=fs;
-  updateInspectorDeps();
+  document.getElementById('ifs').value=fs;
+  document.getElementById('ifs-v').textContent=fs;
+  document.getElementById('insp-icon-prev').textContent=c.icon||'—';
+  refreshDeps();
 }
-
-function updateInspectorDeps(){
-  if(!state.selected)return;
+function refreshDeps(){
+  if(!S.sel)return;
   const el=document.getElementById('insp-deps');
-  const incoming=state.connections.filter(c=>c.to===state.selected);
-  if(!incoming.length){el.innerHTML='<div class="insp-no-deps">Нет зависимостей</div>';return}
-  el.innerHTML=incoming.map(conn=>{
-    const src=getCard(conn.from);if(!src)return'';
-    const statusColors={todo:'#64748b',in_progress:'#6366f1',done:'#10b981'};
-    return`<div class="insp-dep-item">
-      <div class="insp-dep-dot" style="background:${statusColors[src.status||'todo']}"></div>
-      <div class="insp-dep-name">${escH(src.title||'Без названия')}</div>
-      <button class="insp-dep-remove" onclick="deleteConnection('${conn.id}')">✕</button>
-    </div>`;
+  const inc=S.connections.filter(c=>c.to===S.sel);
+  if(!inc.length){el.innerHTML='<div class="inodeps">Нет зависимостей</div>';return}
+  const sc={todo:'#64748b',in_progress:'#6366f1',done:'#10b981'};
+  el.innerHTML=inc.map(cn=>{
+    const s=getCard(cn.from);if(!s)return'';
+    return`<div class="idep"><div class="idep-dot" style="background:${sc[s.status||'todo']}"></div><div class="idep-name">${esc(s.title||'Без названия')}</div><button class="idep-rm" onclick="deleteConn('${cn.id}')">✕</button></div>`;
   }).join('');
 }
 
-function buildInspectorColors(){
-  const cont=document.getElementById('insp-colors');
-  // Card backgrounds
-  CARD_COLORS.forEach(clr=>{
-    const el=document.createElement('div');
-    el.className='insp-color';
-    el.dataset.bg=clr.bg;
-    el.title=clr.label;
-    el.style.background=clr.bg;
-    el.style.border='1.5px solid rgba(255,255,255,0.2)';
-    el.addEventListener('click',()=>{if(state.selected)updateCard(state.selected,{bg:clr.bg})});
-    cont.appendChild(el);
+document.getElementById('insp-x').addEventListener('click',()=>{S.sel=null;closeInsp();document.querySelectorAll('.bc').forEach(e=>e.classList.remove('sel'))});
+document.getElementById('insp-del').addEventListener('click',()=>{if(S.sel)deleteCard(S.sel)});
+document.querySelectorAll('.isb-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    if(!S.sel)return;
+    const s=btn.dataset.s;
+    if(s!=='todo'&&isDepsBlocked(S.sel)){toast('⚠️ Сначала завершите зависимые','err');return}
+    updateCard(S.sel,{status:s});
   });
-  // Color strips
-  const stripLabel=document.createElement('div');
-  stripLabel.className='insp-label';stripLabel.style.marginTop='10px';stripLabel.textContent='Полоска';
-  cont.parentElement.insertBefore(stripLabel,cont.nextSibling);
-  const stripCont=document.createElement('div');
-  stripCont.className='insp-colors';stripCont.id='insp-strips';
-  COLOR_STRIPS.forEach((clr,i)=>{
-    const el=document.createElement('div');
-    el.className='insp-color insp-strip';
-    el.dataset.idx=i;
-    el.title=clr||'Нет';
-    el.style.background=clr||'rgba(255,255,255,0.08)';
-    if(!clr)el.style.border='1.5px dashed rgba(255,255,255,0.2)';
-    el.addEventListener('click',()=>{if(state.selected)updateCard(state.selected,{strip:i})});
-    stripCont.appendChild(el);
-  });
-  cont.parentElement.insertBefore(stripCont,cont.nextSibling.nextSibling);
-}
+});
+document.getElementById('iw').addEventListener('change',e=>{if(S.sel)updateCard(S.sel,{w:Math.max(140,+e.target.value)})});
+document.getElementById('ih').addEventListener('change',e=>{if(S.sel)updateCard(S.sel,{h:Math.max(90,+e.target.value)})});
+document.getElementById('ifs').addEventListener('input',function(){
+  document.getElementById('ifs-v').textContent=this.value;
+  if(S.sel)updateCard(S.sel,{fontSize:+this.value});
+});
+document.getElementById('insp-icon-btn').addEventListener('click',()=>{
+  if(!S.sel){toast('Выберите карточку','err');return}
+  const ic=document.getElementById('bicon-'+S.sel);
+  if(ic)openEP({target:ic},S.sel);
+});
+document.getElementById('insp-img-btn').addEventListener('click',()=>{
+  if(!S.sel){toast('Выберите карточку','err');return}
+  document.getElementById('img-input').click();
+});
+document.getElementById('img-input').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f||!S.sel)return;
+  const r=new FileReader();r.onload=ev=>addImgBlock(S.sel,ev.target.result);
+  r.readAsDataURL(f);e.target.value='';
+});
 
-// ========== CONTEXT MENU ==========
-function showCtxMenu(e,cardId){
-  const menu=document.getElementById('ctx-menu');
-  menu.innerHTML='';
-  if(cardId){
-    const c=getCard(cardId);
-    menuItem(menu,'✏️ Переименовать',()=>{
-      const el=document.querySelector(`#card-${cardId} .card-title`);
-      if(el){el.focus();el.select()}
-    });
-    menuItem(menu,'🔗 Создать связь',()=>{setTool('connect');setConnectFrom(cardId)});
-    menuSep(menu);
-    menuItem(menu,'🟡 В работе',()=>updateCard(cardId,{status:'in_progress'}));
-    menuItem(menu,'✅ Готово',()=>updateCard(cardId,{status:'done'}));
-    menuItem(menu,'⬜ К выполнению',()=>updateCard(cardId,{status:'todo'}));
-    menuSep(menu);
-    menuItem(menu,'🗑 Удалить',()=>deleteCard(cardId),'danger');
-  } else {
-    const cp=canvasPoint(e.clientX,e.clientY);
-    menuItem(menu,'➕ Добавить карточку',()=>addCard(cp.x,cp.y));
-    if(state.selected){
-      menuSep(menu);
-      menuItem(menu,'🗑 Удалить выбранную',()=>deleteCard(state.selected),'danger');
-    }
+// ═══════════════════════════════════════════
+// GLOBAL EVENTS
+// ═══════════════════════════════════════════
+function setTool(t){
+  S.tool=t;
+  document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
+  vp.className='';
+  if(t==='card')vp.classList.add('tool-card');
+  if(t==='connect')vp.classList.add('tool-connect');
+  if(S.connFrom&&t!=='connect')setConnFrom(null);
+}
+document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
+document.getElementById('btn-zi').addEventListener('click',()=>zoom(1.2));
+document.getElementById('btn-zo').addEventListener('click',()=>zoom(0.8));
+document.getElementById('btn-zr').addEventListener('click',()=>{S.scale=1;S.tx=Math.max(0,(vp.clientWidth||900)/2-300);S.ty=Math.max(0,(vp.clientHeight||700)/2-200);applyT()});
+document.getElementById('btn-back').addEventListener('click',()=>{window.parent&&window.parent.postMessage('close-board','*');window.close()});
+
+vp.addEventListener('mousedown',e=>{
+  if(e.button===1){startPan(e);return}
+  if(e.button!==0)return;
+  const onBg=e.target===vp||e.target===canvas||e.target.closest('#csvg');
+  if(onBg){
+    if(S.tool==='card'){const cp=cpt(e.clientX,e.clientY);addCard(cp.x,cp.y);setTool('select');return}
+    S.sel=null;S.selBlock=null;closeInsp();
+    document.querySelectorAll('.bc').forEach(e=>e.classList.remove('sel'));
+    document.querySelectorAll('.cb').forEach(e=>e.classList.remove('cb-sel'));
+    if(S.connFrom)setConnFrom(null);
+    startPan(e);
   }
-  menu.style.display='block';
-  menu.style.left=Math.min(e.clientX,innerWidth-180)+'px';
-  menu.style.top=Math.min(e.clientY,innerHeight-menu.offsetHeight-8)+'px';
+});
+
+window.addEventListener('mousemove',e=>{
+  if(S.pan){S.tx=e.clientX-S.pan.ox;S.ty=e.clientY-S.pan.oy;applyT()}
+  if(S.drag){
+    const cp=cpt(e.clientX,e.clientY);
+    let nx=cp.x-S.drag.ox,ny=cp.y-S.drag.oy;
+    if(S.ctrl){nx=Math.round(nx/20)*20;ny=Math.round(ny/20)*20}
+    const c=getCard(S.drag.cardId);if(!c)return;
+    c.x=nx;c.y=ny;
+    const el=document.getElementById('c-'+c.id);
+    if(el){el.style.left=nx+'px';el.style.top=ny+'px'}
+    updateConnsOnly();
+  }
+  if(S.resize){
+    const r=S.resize;
+    const dx=(e.clientX-r.mx)/S.scale,dy=(e.clientY-r.my)/S.scale;
+    let nw=Math.max(140,r.sw+dx),nh=Math.max(90,r.sh+dy);
+    if(S.ctrl){nw=Math.round(nw/20)*20;nh=Math.round(nh/20)*20}
+    const c=getCard(r.cardId);if(!c)return;
+    c.w=nw;c.h=nh;
+    const el=document.getElementById('c-'+c.id);
+    if(el){el.style.width=nw+'px';el.style.height=nh+'px'}
+    updateConnsOnly();
+    if(S.sel===r.cardId){document.getElementById('iw').value=Math.round(nw);document.getElementById('ih').value=Math.round(nh)}
+  }
+  if(S.blockDrag){
+    const bd=S.blockDrag;
+    const dx=(e.clientX-bd.mx)/S.scale,dy=(e.clientY-bd.my)/S.scale;
+    const c=getCard(bd.cardId);
+    const b=(c&&c.blocks||[]).find(b=>b.id===bd.blockId);
+    if(!b)return;
+    b.x=Math.max(0,bd.bx+dx);b.y=Math.max(0,bd.by+dy);
+    const el=document.getElementById('bl-'+bd.blockId);
+    if(el){el.style.left=b.x+'px';el.style.top=b.y+'px'}
+  }
+  if(S.blockResize){
+    const br=S.blockResize;
+    const dx=(e.clientX-br.mx)/S.scale;
+    const c=getCard(br.cardId);
+    const b=(c&&c.blocks||[]).find(b=>b.id===br.blockId);
+    if(!b)return;
+    b.w=Math.max(50,br.sw+dx);
+    const el=document.getElementById('bl-'+br.blockId);
+    if(el){el.style.width=b.w+'px';const img=el.querySelector('img');if(img)img.style.width=b.w+'px'}
+  }
+  if(S.connFrom)updateTempLine(e.clientX,e.clientY);
+});
+
+window.addEventListener('mouseup',()=>{
+  if(S.drag||S.resize||S.blockDrag||S.blockResize)save();
+  S.drag=null;S.resize=null;S.pan=null;S.blockDrag=null;S.blockResize=null;
+  vp.classList.remove('panning');
+});
+
+vp.addEventListener('wheel',e=>{e.preventDefault();zoom(e.deltaY<0?1.1:0.9,e.clientX,e.clientY)},{passive:false});
+vp.addEventListener('contextmenu',e=>{e.preventDefault();showCtx(e,null)});
+
+window.addEventListener('keydown',e=>{
+  if(e.key==='Control')S.ctrl=true;
+  if(e.key==='Escape'){setConnFrom(null);S.sel=null;closeInsp();document.querySelectorAll('.bc,.cb').forEach(el=>el.classList.remove('sel','cb-sel'))}
+  if(e.key==='Delete'&&S.sel&&!isEd())deleteCard(S.sel);
+  if(!isEd()){
+    if(e.key==='v')setTool('select');
+    if(e.key==='c')setTool('card');
+    if(e.key==='l')setTool('connect');
+    if(e.key==='+'||e.key==='=')zoom(1.2);
+    if(e.key==='-')zoom(0.8);
+    if(e.key==='0'){S.scale=1;S.tx=Math.max(0,(vp.clientWidth||900)/2-300);S.ty=Math.max(0,(vp.clientHeight||700)/2-200);applyT()}
+  }
+});
+window.addEventListener('keyup',e=>{if(e.key==='Control')S.ctrl=false});
+
+window.addEventListener('paste',e=>{
+  if(!S.sel)return;
+  [...(e.clipboardData?.items||[])].forEach(item=>{
+    if(item.type.startsWith('image/')){
+      const f=item.getAsFile();
+      const r=new FileReader();r.onload=ev=>addImgBlock(S.sel,ev.target.result);r.readAsDataURL(f);
+    }
+  });
+});
+
+let dropD=0;
+document.addEventListener('dragenter',e=>{if([...(e.dataTransfer?.types||[])].includes('Files')){dropD++;document.getElementById('dropov').style.display='flex'}});
+document.addEventListener('dragleave',()=>{dropD--;if(dropD<=0){dropD=0;document.getElementById('dropov').style.display='none'}});
+document.addEventListener('drop',e=>{dropD=0;document.getElementById('dropov').style.display='none';e.preventDefault();if(!S.sel)return;[...(e.dataTransfer?.files||[])].filter(f=>f.type.startsWith('image/')).forEach(f=>{const r=new FileReader();r.onload=ev=>addImgBlock(S.sel,ev.target.result);r.readAsDataURL(f)})});
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('click',()=>{document.getElementById('ctx').style.display='none';if(!event.target.closest('#epick,.bc-icon'))epick.style.display='none'});
+
+// ═══════════════════════════════════════════
+// CONTEXT MENU
+// ═══════════════════════════════════════════
+function showCtx(e,cardId){
+  const m=document.getElementById('ctx');m.innerHTML='';
+  if(cardId){
+    ci(m,'✏️ Редактировать',()=>{const t=document.querySelector('#c-'+cardId+' .bc-title');if(t){t.focus();t.select()}});
+    ci(m,'🔗 Связать...',()=>{setTool('connect');setConnFrom(cardId)});
+    ci(m,'🖼 Добавить фото',()=>{S.sel=cardId;document.getElementById('img-input').click()});
+    csep(m);
+    ci(m,'· Todo',()=>updateCard(cardId,{status:'todo'}));
+    ci(m,'▶ В работе',()=>updateCard(cardId,{status:'in_progress'}));
+    ci(m,'✓ Готово',()=>{if(isDepsBlocked(cardId))toast('⚠️ Завершите зависимые','err');else updateCard(cardId,{status:'done'})});
+    csep(m);
+    ci(m,'🗑 Удалить',()=>deleteCard(cardId),'danger');
+  } else {
+    const cp=cpt(e.clientX,e.clientY);
+    ci(m,'➕ Новая карточка',()=>addCard(cp.x,cp.y));
+  }
+  m.style.display='block';
+  m.style.left=Math.min(e.clientX,innerWidth-175)+'px';
+  m.style.top=Math.min(e.clientY,innerHeight-200)+'px';
   e.stopPropagation();
 }
-function menuItem(menu,label,fn,cls=''){
+function ci(m,label,fn,cls=''){
   const el=document.createElement('div');
-  el.className='ctx-item'+(cls?' '+cls:'');
-  el.textContent=label;
-  el.addEventListener('click',()=>{fn();menu.style.display='none'});
-  menu.appendChild(el);
+  el.className='ci'+(cls?' '+cls:'');el.textContent=label;
+  el.addEventListener('click',()=>{fn();m.style.display='none'});m.appendChild(el);
 }
-function menuSep(menu){const el=document.createElement('div');el.className='ctx-sep';menu.appendChild(el)}
+function csep(m){const el=document.createElement('div');el.className='csep';m.appendChild(el)}
 
-// ========== STATUS BAR ==========
-function updateStatusBar(){
-  document.getElementById('sb-cards').textContent=state.cards.length+' карточ'+(state.cards.length===1?'ка':state.cards.length<5?'ки':'ек');
-}
-
-// ========== TOAST ==========
+// ═══════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════
+function updateSB(){const n=S.cards.length;document.getElementById('sb-info').textContent=n+' карточ'+(n===1?'ка':n<5?'ки':'ек')}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function arTA(ta){ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'}
+function isEd(){return['INPUT','TEXTAREA'].includes(document.activeElement.tagName)||document.activeElement.contentEditable==='true'}
+let toastT;
 function toast(msg,type=''){
-  const el=document.getElementById('toast');
-  el.textContent=msg;el.className='show'+(type?' '+type:'');
-  clearTimeout(toast._t);
-  toast._t=setTimeout(()=>el.className='',2500);
+  const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(type?' '+type:'');
+  clearTimeout(toastT);toastT=setTimeout(()=>el.className='',2400);
 }
 
-// ========== UTIL ==========
-function escH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-
-// Make deleteConnection global for onclick
-window.deleteConnection=deleteConnection;
+// START
+renderAll();
 </script>
 </body>
 </html>
