@@ -446,27 +446,110 @@ console.log(`[DETERMINE] No match — distracted by default`);
 return 'distracted';
 }
 
-// Инициализируем active-win один раз
-let activeWin = null;
-(async () => {
-    try {
-        activeWin = await import('active-win');
-    } catch (e) {
-        console.error('[MONITOR] Failed to load active-win:', e.message);
+// Постоянный PowerShell процесс для мониторинга окон
+const { spawn } = require('child_process');
+let psProcess = null;
+let psReady = false;
+let psResolve = null;
+let psRequestId = 0;
+
+const PS_INIT_SCRIPT = `
+$code = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+public class WinHelper {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    public static string GetActiveWindow() {
+        IntPtr hwnd = GetForegroundWindow();
+        uint pid;
+        GetWindowThreadProcessId(hwnd, out pid);
+        try {
+            Process p = Process.GetProcessById((int)pid);
+            return p.ProcessName + "|||" + p.MainWindowTitle;
+        } catch { return ""; }
     }
-})();
+}
+"@
+Add-Type -TypeDefinition $code
+Write-Output "READY"
+while ($true) {
+    $line = [Console]::ReadLine()
+    if ($line -eq "GET") {
+        Write-Output ([WinHelper]::GetActiveWindow())
+    }
+}
+`;
+
+function initPsProcess() {
+    if (psProcess) return;
+    psProcess = spawn('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; ' + PS_INIT_SCRIPT
+    ]);
+
+    let buffer = '';
+    psProcess.stdout.on('data', (data) => {
+        buffer += data.toString('utf8');
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            if (trimmed === 'READY') {
+                psReady = true;
+                console.log('[MONITOR] PowerShell process ready');
+                // Первая проверка сразу после готовности PS
+                checkActiveWindow();
+            } else if (psResolve) {
+                const resolve = psResolve;
+                psResolve = null;
+                resolve(trimmed);
+            }
+        }
+    });
+
+    psProcess.stderr.on('data', (data) => {
+        console.error('[MONITOR] PS stderr:', data.toString().trim());
+    });
+
+    psProcess.on('close', (code) => {
+        console.warn(`[MONITOR] PowerShell process exited (${code}), restarting...`);
+        psProcess = null;
+        psReady = false;
+        if (psResolve) { psResolve(null); psResolve = null; }
+        setTimeout(initPsProcess, 2000);
+    });
+}
+
+function getActiveWindowFromPs() {
+    return new Promise((resolve) => {
+        if (!psProcess || !psReady) {
+            resolve(null);
+            return;
+        }
+        const myId = ++psRequestId;
+        const timeout = setTimeout(() => {
+            if (psResolve && psResolve._id === myId) {
+                psResolve = null;
+            }
+            resolve(null);
+        }, 3000);
+        psResolve = (val) => { clearTimeout(timeout); resolve(val); };
+        psResolve._id = myId;
+        psProcess.stdin.write('GET\n');
+    });
+}
 
 // Проверка активного окна
 async function checkActiveWindow() {
     try {
-        if (!activeWin) {
-            console.log('[MONITOR] active-win not loaded yet');
-            return;
-        }
+        const output = await getActiveWindowFromPs();
 
-        const result = await activeWin.default();
-
-        if (!result) {
+        if (!output) {
             console.log('[MONITOR] No active window');
             updateStatus('idle', 'Нет активного окна');
             return;
@@ -474,8 +557,10 @@ async function checkActiveWindow() {
 
         lastActivity = Date.now();
 
-        let displayTitle = result.title || '';
-        const pName = (result.owner && result.owner.name) ? result.owner.name.toLowerCase() : '';
+        const parts = output.split('|||');
+        const processName = parts[0] || '';
+        let displayTitle = parts[1] || '';
+        const pName = processName.toLowerCase();
 
         if (['msedge', 'chrome', 'firefox', 'opera', 'brave'].includes(pName)) {
             displayTitle = displayTitle
@@ -485,7 +570,7 @@ async function checkActiveWindow() {
                 .trim();
         }
 
-        const fullTitle = `${pName} - ${result.title}`;
+        const fullTitle = `${processName} - ${displayTitle}`;
         console.log(`[MONITOR] Active: "${fullTitle}"`);
 
         const status = determineStatus(fullTitle);
@@ -521,7 +606,8 @@ function startActivityMonitoring() {
 if (checkIntervalId) clearInterval(checkIntervalId);
 
 console.log('Activity monitoring started');
-checkActiveWindow();
+initPsProcess(); // Запускаем постоянный PowerShell процесс
+// Первый checkActiveWindow вызовется когда PS будет готов (в обработчике READY)
 
 checkIntervalId = setInterval(() => {
 checkActiveWindow();
@@ -597,7 +683,7 @@ saveConfig();
 // Если изменился sessionKey — инжектим его в веб-страницу
 if (newConfig.sessionKey && mainWindow && !mainWindow.isDestroyed()) {
 mainWindow.webContents.executeJavaScript(
-`localStorage.setItem('sessionKey', '${newConfig.sessionKey}'); location.reload();`
+`localStorage.setItem('sessionKey', ${JSON.stringify(newConfig.sessionKey)}); location.reload();`
 ).catch(() => {});
 }
 
@@ -626,7 +712,7 @@ createWindow();
 if (config.sessionKey) {
 mainWindow.webContents.on('did-finish-load', () => {
 mainWindow.webContents.executeJavaScript(
-`if (!localStorage.getItem('sessionKey')) { localStorage.setItem('sessionKey', '${config.sessionKey}'); location.reload(); }`
+`if (!localStorage.getItem('sessionKey')) { localStorage.setItem('sessionKey', ${JSON.stringify(config.sessionKey)}); location.reload(); }`
 ).catch(() => {});
 });
 connectWebSocket();
@@ -646,5 +732,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
 stopActivityMonitoring();
 stopSessionKeySync();
+if (psProcess) { psProcess.kill(); psProcess = null; }
 if (ws) ws.close();
 });
