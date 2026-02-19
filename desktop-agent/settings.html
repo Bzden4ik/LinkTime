@@ -180,6 +180,10 @@ setTimeout(() => ipcRenderer.send('test-connection'), 1000);
 });
 
 setInterval(() => ipcRenderer.send('test-connection'), 5000);
+
+document.getElementById('closeSettings').addEventListener('click', () => {
+    window.close();
+});
 </script>
 </body>
 </html>

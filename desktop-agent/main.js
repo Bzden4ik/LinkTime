@@ -452,6 +452,7 @@ let psProcess = null;
 let psReady = false;
 let psResolve = null;
 let psRequestId = 0;
+let psWaiting = false;
 
 const PS_INIT_SCRIPT = `
 $code = @"
@@ -520,6 +521,7 @@ function initPsProcess() {
         console.warn(`[MONITOR] PowerShell process exited (${code}), restarting...`);
         psProcess = null;
         psReady = false;
+        psWaiting = false;
         if (psResolve) { psResolve(null); psResolve = null; }
         setTimeout(initPsProcess, 2000);
     });
@@ -527,18 +529,20 @@ function initPsProcess() {
 
 function getActiveWindowFromPs() {
     return new Promise((resolve) => {
-        if (!psProcess || !psReady) {
+        if (!psProcess || !psReady || psWaiting) {
             resolve(null);
             return;
         }
+        psWaiting = true;
         const myId = ++psRequestId;
         const timeout = setTimeout(() => {
             if (psResolve && psResolve._id === myId) {
                 psResolve = null;
             }
+            psWaiting = false;
             resolve(null);
         }, 3000);
-        psResolve = (val) => { clearTimeout(timeout); resolve(val); };
+        psResolve = (val) => { clearTimeout(timeout); psWaiting = false; resolve(val); };
         psResolve._id = myId;
         psProcess.stdin.write('GET\n');
     });

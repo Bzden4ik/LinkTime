@@ -756,8 +756,13 @@ updateSelectedDateStats();
 
 // === НАСТРОЙКИ ===
 
+function closeSettings() {
+document.getElementById('settingsModal').classList.remove('active');
+}
+
 function openSettings() {
 document.getElementById('settingsModal').classList.add('active');
+document.getElementById('closeSettings').onclick = closeSettings;
 renderAppLists();
 
     // Показываем секцию автозапуска только в Electron
