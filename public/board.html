@@ -1061,7 +1061,7 @@ function csep(m){const el=document.createElement('div');el.className='csep';m.ap
 // UTILS
 // ═══════════════════════════════════════════
 function updateSB(){const n=S.cards.length;document.getElementById('sb-info').textContent=n+' карточ'+(n===1?'ка':n<5?'ки':'ек')}
-function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function arTA(ta){ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'}
 function isEd(){return['INPUT','TEXTAREA'].includes(document.activeElement.tagName)||document.activeElement.contentEditable==='true'}
 let toastT;
