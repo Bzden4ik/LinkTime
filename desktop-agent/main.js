@@ -175,8 +175,9 @@ settingsWindow = new BrowserWindow({
 width: 500,
 height: 650,
 webPreferences: {
-nodeIntegration: true,
-contextIsolation: false
+    nodeIntegration: false,
+    contextIsolation: true,
+    preload: path.join(__dirname, 'preload.js')
 },
 icon: path.join(__dirname, 'icon.png'),
 skipTaskbar: false,
@@ -674,10 +675,9 @@ console.log('Activity monitoring stopped');
 }
 
 // IPC обработчики для окна настроек
-ipcMain.on('get-config', (event) => {
+ipcMain.handle('get-config', () => {
     const currentAutostart = getAutostartStatus();
-    const configWithAutostart = { ...config, autostart: currentAutostart };
-    event.reply('config-data', configWithAutostart);
+    return { ...config, autostart: currentAutostart };
 });
 
 ipcMain.on('save-config', (event, newConfig) => {

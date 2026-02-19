@@ -434,6 +434,27 @@ const wss = new WebSocket.Server({ noServer: true });
 // Хранилище активных подключений: { sessionKey: Set<ws> }
 const connections = new Map();
 
+// Rate limiting для WebSocket: не более 60 сообщений в минуту с одного IP
+const wsRateLimit = new Map(); // ip -> { count, resetAt }
+function checkWsRateLimit(ip) {
+    const now = Date.now();
+    const entry = wsRateLimit.get(ip);
+    if (!entry || now > entry.resetAt) {
+        wsRateLimit.set(ip, { count: 1, resetAt: now + 60000 });
+        return true;
+    }
+    if (entry.count >= 60) return false;
+    entry.count++;
+    return true;
+}
+// Чистим старые записи каждые 5 минут
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, entry] of wsRateLimit) {
+        if (now > entry.resetAt) wsRateLimit.delete(ip);
+    }
+}, 300000);
+
 // Отправить сообщение конкретному пользователю по sessionKey
 function notifyUser(sessionKey, message) {
     if (!connections.has(sessionKey)) return;
@@ -450,10 +471,17 @@ server.on('upgrade', (request, socket, head) => {
     });
 });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, request) => {
     let currentSessionKey = null;
+    const clientIp = request.headers['x-forwarded-for']?.split(',')[0].trim() || request.socket.remoteAddress || 'unknown';
 
     ws.on('message', (message) => {
+        if (!checkWsRateLimit(clientIp)) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }));
+            }
+            return;
+        }
         try {
             const data = JSON.parse(message);
 

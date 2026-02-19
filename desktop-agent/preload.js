@@ -15,7 +15,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installUpdate: (downloadUrl) => ipcRenderer.send('install-update', downloadUrl),
     
     // Утилиты
-    removeListener: (channel, callback) => ipcRenderer.removeListener(channel, callback)
+    removeListener: (channel, callback) => ipcRenderer.removeListener(channel, callback),
+
+    // Настройки (settings.html)
+    getConfig: () => ipcRenderer.invoke('get-config'),
+    saveConfig: (config) => ipcRenderer.send('save-config', config),
+    testConnection: () => ipcRenderer.send('test-connection'),
+    onStatusUpdate: (callback) => ipcRenderer.on('status-update', (_e, data) => callback(data)),
+    onConnectionStatus: (callback) => ipcRenderer.on('connection-status', (_e, data) => callback(data)),
+    onConfigSaved: (callback) => ipcRenderer.on('config-saved', () => callback()),
 });
 
 console.log('[Preload] Electron API exposed');
