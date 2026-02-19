@@ -292,6 +292,7 @@ pauses: []
 
 saveTodaySession(session);
 
+if (timerInterval) clearInterval(timerInterval);
 timerInterval = setInterval(updateTimer, 1000);
 updateTimer();
 
@@ -1068,6 +1069,7 @@ state.timerPaused = false;
 state.currentSessionStart = timerData.sessionStart;
 state.totalPausedTime = timerData.totalPausedTime || 0;
 
+if (timerInterval) clearInterval(timerInterval);
 timerInterval = setInterval(updateTimer, 1000);
 updateTimer(); // Мгновенное обновление дисплея
 
