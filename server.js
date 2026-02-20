@@ -67,6 +67,18 @@ db.exec(`
         joined_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
         PRIMARY KEY (team_id, user_id)
     );
+
+    CREATE TABLE IF NOT EXISTS team_boards (
+        team_id INTEGER PRIMARY KEY,
+        data TEXT DEFAULT '{"cards":[],"connections":[]}',
+        updated_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
+
+    CREATE TABLE IF NOT EXISTS personal_boards (
+        session_key TEXT PRIMARY KEY,
+        data TEXT DEFAULT '{"cards":[],"connections":[]}',
+        updated_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
 `);
 
 // Миграция: добавляем avatar если его нет
@@ -84,6 +96,24 @@ try {
 } catch (e) {
     // Колонка уже существует, игнорируем
 }
+
+// Миграция: создаём team_boards если не существует
+try {
+    db.exec(`CREATE TABLE IF NOT EXISTS team_boards (
+        team_id INTEGER PRIMARY KEY,
+        data TEXT DEFAULT '{"cards":[],"connections":[]}',
+        updated_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    )`);
+} catch (e) {}
+
+// Миграция: создаём personal_boards если не существует
+try {
+    db.exec(`CREATE TABLE IF NOT EXISTS personal_boards (
+        session_key TEXT PRIMARY KEY,
+        data TEXT DEFAULT '{"cards":[],"connections":[]}',
+        updated_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    )`);
+} catch (e) {}
 
 console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
 
@@ -140,6 +170,14 @@ const stmts = {
     getTeamMembers: db.prepare('SELECT u.user_id, u.username, u.email, u.avatar, tm.role, tm.sharing_time, tm.joined_at FROM team_members tm JOIN users u ON tm.user_id = u.user_id WHERE tm.team_id = ?'),
     checkTeamMember: db.prepare('SELECT team_id FROM team_members WHERE user_id = ?'),
     updateSharingTime: db.prepare('UPDATE team_members SET sharing_time = ? WHERE team_id = ? AND user_id = ?'),
+    // Team board
+    getTeamBoard: db.prepare('SELECT data FROM team_boards WHERE team_id = ?'),
+    upsertTeamBoard: db.prepare(`INSERT INTO team_boards (team_id, data, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(team_id) DO UPDATE SET data = ?, updated_at = ?`),
+    // Personal board
+    getPersonalBoard: db.prepare('SELECT data FROM personal_boards WHERE session_key = ?'),
+    upsertPersonalBoard: db.prepare(`INSERT INTO personal_boards (session_key, data, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(session_key) DO UPDATE SET data = ?, updated_at = ?`),
 };
 
 // === ХЕЛПЕРЫ ДЛЯ БД ===
@@ -420,6 +458,43 @@ app.post('/api/team/sharing', (req, res) => {
     res.json({ ok: true });
 });
 
+// === API: Получить профиль пользователя по sessionKey ===
+app.get('/api/user/:sessionKey', (req, res) => {
+    const user = stmts.getUserBySession.get(req.params.sessionKey);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    res.json({ username: user.username, user_id: user.user_id });
+});
+
+// === API: Получить личную доску ===
+app.get('/api/board/personal/:sessionKey', (req, res) => {
+    const { sessionKey } = req.params;
+    const row = stmts.getPersonalBoard.get(sessionKey);
+    const data = row ? JSON.parse(row.data) : { cards: [], connections: [] };
+    res.json(data);
+});
+
+// === API: Сохранить личную доску ===
+app.post('/api/board/personal/:sessionKey', (req, res) => {
+    const { sessionKey } = req.params;
+    const data = req.body;
+    if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Invalid data' });
+    const json = JSON.stringify(data);
+    const now = Date.now();
+    stmts.upsertPersonalBoard.run(sessionKey, json, now, json, now);
+    res.json({ ok: true });
+});
+
+// === API: Получить командную доску ===
+app.get('/api/board/team/:sessionKey', (req, res) => {
+    const user = stmts.getUserBySession.get(req.params.sessionKey);
+    if (!user) return res.status(403).json({ error: 'Not found' });
+    const team = stmts.getUserTeam.get(user.user_id);
+    if (!team) return res.status(404).json({ error: 'No team' });
+    const row = stmts.getTeamBoard.get(team.id);
+    const data = row ? JSON.parse(row.data) : { cards: [], connections: [] };
+    res.json(data);
+});
+
 // Fallback — отдаём index.html для SPA
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -463,6 +538,77 @@ function notifyUser(sessionKey, message) {
         if (client.readyState === WebSocket.OPEN) client.send(msg);
     });
 }
+
+// === КОМАНДНАЯ ДОСКА ===
+// boardSessions: teamId -> Map<ws, {username, userId}>
+const boardSessions = new Map();
+
+function boardBroadcast(teamId, message, excludeWs = null) {
+    const members = boardSessions.get(teamId);
+    if (!members) return;
+    const msg = JSON.stringify(message);
+    for (const [ws] of members) {
+        if (ws !== excludeWs && ws.readyState === WebSocket.OPEN) ws.send(msg);
+    }
+}
+
+function handleBoardJoin(ws, data) {
+    const { sessionKey, username } = data;
+    if (!sessionKey || !username) return;
+
+    // Получаем пользователя и его команду
+    const user = stmts.getUserBySession.get(sessionKey);
+    if (!user) return;
+    const team = stmts.getUserTeam.get(user.user_id);
+    if (!team) return;
+
+    const teamId = team.id;
+    ws._boardTeamId = teamId;
+    ws._boardUsername = username;
+    ws._boardUserId = user.user_id;
+
+    if (!boardSessions.has(teamId)) boardSessions.set(teamId, new Map());
+    boardSessions.get(teamId).set(ws, { username, userId: user.user_id });
+
+    // Отправляем текущее состояние доски
+    const row = stmts.getTeamBoard.get(teamId);
+    const boardData = row ? JSON.parse(row.data) : { cards: [], connections: [] };
+    ws.send(JSON.stringify({ type: 'board_init', data: boardData }));
+
+    // Отправляем список онлайн участников
+    const online = [];
+    for (const [, info] of boardSessions.get(teamId)) online.push(info.username);
+    boardBroadcast(teamId, { type: 'board_online', users: online });
+}
+
+function handleBoardUpdate(ws, data) {
+    const teamId = ws._boardTeamId;
+    if (!teamId) return;
+
+    const now = Date.now();
+    const json = JSON.stringify(data.data);
+    stmts.upsertTeamBoard.run(teamId, json, now, json, now);
+
+    boardBroadcast(teamId, {
+        type: 'board_update',
+        data: data.data,
+        from: ws._boardUsername
+    }, ws);
+}
+
+function handleBoardCursor(ws, data) {
+    const teamId = ws._boardTeamId;
+    if (!teamId) return;
+    boardBroadcast(teamId, {
+        type: 'board_cursor',
+        username: ws._boardUsername,
+        userId: ws._boardUserId,
+        x: data.x,
+        y: data.y
+    }, ws);
+}
+
+// Очищаем при отключении — см. ws.on('close') ниже
 
 // Обработка upgrade
 server.on('upgrade', (request, socket, head) => {
@@ -513,6 +659,15 @@ wss.on('connection', (ws, request) => {
                 case 'disconnect':
                     handleDisconnect(ws);
                     break;
+                case 'board_join':
+                    handleBoardJoin(ws, data);
+                    break;
+                case 'board_update':
+                    handleBoardUpdate(ws, data);
+                    break;
+                case 'board_cursor':
+                    handleBoardCursor(ws, data);
+                    break;
             }
         } catch (error) {
             console.error('[WS] Error processing message:', error);
@@ -521,6 +676,15 @@ wss.on('connection', (ws, request) => {
 
     ws.on('close', () => {
         handleDisconnect(ws);
+        // Убираем из командной доски
+        const teamId = ws._boardTeamId;
+        if (teamId && boardSessions.has(teamId)) {
+            boardSessions.get(teamId).delete(ws);
+            const online = [];
+            for (const [, info] of boardSessions.get(teamId)) online.push(info.username);
+            boardBroadcast(teamId, { type: 'board_online', users: online });
+            if (boardSessions.get(teamId).size === 0) boardSessions.delete(teamId);
+        }
     });
 
     ws.on('error', (error) => {

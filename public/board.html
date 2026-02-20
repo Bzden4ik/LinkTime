@@ -146,11 +146,30 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 #toast.ok{border-color:rgba(16,185,129,.4);color:#6ee7b7}
 #toast.err{border-color:rgba(239,68,68,.4);color:#fca5a5}
 
+/* ─── ASSIGNEE ─── */
 /* ─── BOARD TABS ─── */
 #board-tabs{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:4px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:4px;z-index:200;backdrop-filter:blur(12px)}
 .btab{padding:6px 18px;border-radius:8px;border:none;background:transparent;color:rgba(255,255,255,0.4);font-size:.74rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .18s;white-space:nowrap;display:flex;align-items:center;gap:6px}
 .btab:hover{color:rgba(255,255,255,0.75);background:rgba(255,255,255,0.06)}
 .btab.active{background:rgba(99,102,241,0.22);color:#a5b4fc;border:1px solid rgba(99,102,241,0.35)}
+
+/* ─── REMOTE CURSORS ─── */
+.rcursor{position:fixed;pointer-events:none;z-index:9000;transition:left .08s,top .08s;transform:translate(-2px,-2px)}
+.rcursor svg{display:block}
+.rcursor-label{position:absolute;left:14px;top:0;background:rgba(99,102,241,.85);color:#fff;font-size:.62rem;font-weight:600;font-family:'Inter',sans-serif;padding:2px 7px;border-radius:8px;white-space:nowrap;backdrop-filter:blur(6px)}
+
+/* ─── ASSIGNEE ─── */
+.bc-assignee{padding:0 10px 4px;display:flex;align-items:center;gap:5px;font-size:.7rem;color:rgba(99,102,241,.9);font-weight:600}
+.bc-assign-btn{margin:0 10px 8px;padding:5px 10px;border-radius:7px;border:1px solid rgba(99,102,241,.3);background:rgba(99,102,241,.08);color:rgba(99,102,241,.8);font-size:.7rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s;text-align:left}
+.bc-assign-btn:hover{background:rgba(99,102,241,.18);border-color:rgba(99,102,241,.5);color:#a5b4fc}
+.bc-assign-btn.assigned{border-color:rgba(16,185,129,.3);background:rgba(16,185,129,.08);color:rgba(16,185,129,.9)}
+.bc-assign-btn.assigned:hover{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:#fca5a5}
+
+/* ─── ONLINE USERS ─── */
+#board-online{position:absolute;top:10px;right:14px;display:flex;gap:6px;align-items:center;z-index:200}
+.bonline-dot{width:28px;height:28px;border-radius:50%;background:rgba(99,102,241,.25);border:1.5px solid rgba(99,102,241,.5);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#a5b4fc;cursor:default;position:relative}
+.bonline-dot .tip{position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);background:#1a1d2e;border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.85);font-size:.65rem;padding:3px 8px;border-radius:6px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s}
+.bonline-dot:hover .tip{opacity:1}
 
 
 #dropov{position:fixed;inset:0;background:rgba(99,102,241,.1);border:3px dashed rgba(99,102,241,.5);z-index:8999;display:none;align-items:center;justify-content:center;font-size:1.1rem;color:#818cf8;pointer-events:none}
@@ -193,6 +212,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
       <button class="btab active" data-board="personal">🙋 Личный</button>
       <button class="btab" data-board="team">👥 Командный</button>
     </div>
+    <div id="board-online" style="display:none"></div>
     <!-- SVG overlay: full viewport size, z-index above canvas, coords via getBoundingClientRect -->
     <svg id="csvg">
       <defs>
@@ -222,7 +242,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
           <animate attributeName="stroke-dashoffset" from="22" to="0" dur="0.8s" repeatCount="indefinite"/>
         </path>
         </g>
-      </svg>
     </svg>
 
     <!-- canvas: only cards here -->
@@ -319,6 +338,9 @@ const STRIPS=['','#6366f1','#10b981','#ef4444','#f59e0b','#06b6d4','#ec4899','#8
 // ═══════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════
+const WS_URL = (location.protocol==='https:'?'wss://':'ws://')+location.host;
+const API_BASE = location.origin;
+
 let S={
   cards:[], connections:[],
   tx:0, ty:0, scale:1,
@@ -330,25 +352,169 @@ let S={
   ctrl:false
 };
 
-function load(){try{const d=localStorage.getItem(SK);if(d){const p=JSON.parse(d);S.cards=p.cards||[];S.connections=p.connections||[]}}catch(e){}}
-function save(){try{localStorage.setItem(SK,JSON.stringify({cards:S.cards,connections:S.connections}))}catch(e){}}
-load();
+// ── Сохранение/загрузка через API (не localStorage) ──
+let saveTimer = null;
+
+async function loadBoard() {
+  try {
+    let url;
+    if (currentBoard === 'team') {
+      url = `${API_BASE}/api/board/team/${SESSION_KEY}`;
+    } else {
+      url = `${API_BASE}/api/board/personal/${SESSION_KEY}`;
+    }
+    const r = await fetch(url);
+    if (r.ok) {
+      const d = await r.json();
+      S.cards = d.cards || [];
+      S.connections = d.connections || [];
+    }
+  } catch(e) {
+    // fallback: пустая доска
+    S.cards = []; S.connections = [];
+  }
+  renderAll(); applyT();
+}
+
+function save() {
+  // Команда: шлём по WS, сервер сам сохраняет в БД
+  if (currentBoard === 'team') {
+    boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
+    return;
+  }
+  // Личная: дебаунс-сохранение через API
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      await fetch(`${API_BASE}/api/board/personal/${SESSION_KEY}`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({cards:S.cards, connections:S.connections})
+      });
+    } catch(e) {}
+  }, 600);
+}
 
 // Инициализация вкладок
 function switchBoard(boardType) {
-  save();
   currentBoard = boardType;
-  SK = 'board2_' + SESSION_KEY + '_' + boardType;
   localStorage.setItem('board_tab_'+SESSION_KEY, boardType);
   S.cards=[]; S.connections=[]; S.sel=null; S.tx=0; S.ty=0; S.scale=1;
-  load();
   document.querySelectorAll('.btab').forEach(b => b.classList.toggle('active', b.dataset.board === boardType));
-  render(); applyTransform();
+  if (boardType === 'team') {
+    initUsername().then(() => connectBoardWS());
+  } else { disconnectBoardWS(); loadBoard(); }
+  renderAll(); applyT();
 }
 document.querySelectorAll('.btab').forEach(b => {
   b.classList.toggle('active', b.dataset.board === currentBoard);
   b.addEventListener('click', () => switchBoard(b.dataset.board));
 });
+
+// Первичная загрузка
+loadBoard();
+
+// ═══════════════════════════════════════════
+// TEAM BOARD — WebSocket
+// ═══════════════════════════════════════════
+let boardWs = null;
+let boardUsername = 'Гость';
+let cursorThrottle = 0;
+
+// Загружаем ник ДО подключения WS — connectBoardWS вызывается только после resolve
+async function initUsername() {
+  if (!SESSION_KEY || SESSION_KEY === 'dev') return;
+  try {
+    const r = await fetch(`${API_BASE}/api/user/${SESSION_KEY}`);
+    if (r.ok) {
+      const u = await r.json();
+      if (u && u.username) boardUsername = u.username;
+    }
+  } catch(e) {}
+}
+
+// Первичный запуск: ждём ник, потом при необходимости WS
+(async () => {
+  await initUsername();
+  if (currentBoard === 'team') connectBoardWS();
+})();
+
+function connectBoardWS() {
+  if(boardWs && boardWs.readyState <= 1){boardWs.onclose=null;boardWs.close();}
+  boardWs = new WebSocket(WS_URL);
+  boardWs.onopen = () => {
+    boardWs.send(JSON.stringify({type:'board_join', sessionKey:SESSION_KEY, username:boardUsername}));
+    document.getElementById('board-online').style.display='flex';
+  };
+  boardWs.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if(msg.type==='board_init'){
+      S.cards=msg.data.cards||[];S.connections=msg.data.connections||[];
+      renderAll();applyT();
+    } else if(msg.type==='board_update'&&msg.from!==boardUsername){
+      S.cards=msg.data.cards||[];S.connections=msg.data.connections||[];
+      renderAll();
+    } else if(msg.type==='board_cursor'){
+      drawRemoteCursor(msg.userId || msg.username, msg.username, msg.x, msg.y);
+    } else if(msg.type==='board_online'){
+      updateOnlineUsers(msg.users);
+    }
+  };
+  boardWs.onclose = () => {
+    document.getElementById('board-online').style.display='none';
+    clearRemoteCursors();
+    updateOnlineUsers([]);
+    setTimeout(()=>{if(currentBoard==='team')connectBoardWS();},3000);
+  };
+}
+
+function disconnectBoardWS(){
+  if(boardWs){boardWs.onclose=null;boardWs.close();boardWs=null;}
+  document.getElementById('board-online').style.display='none';
+  clearRemoteCursors();
+  updateOnlineUsers([]);
+}
+
+function boardSend(msg){
+  if(currentBoard!=='team')return;
+  if(boardWs&&boardWs.readyState===WebSocket.OPEN)boardWs.send(JSON.stringify(msg));
+}
+
+const remoteCursors={};
+function drawRemoteCursor(uid, username, cx, cy){
+  // Конвертируем canvas-coords в viewport-coords с учётом текущего transform
+  const r=vp.getBoundingClientRect();
+  const sx = cx * S.scale + S.tx + r.left;
+  const sy = cy * S.scale + S.ty + r.top;
+
+  if(!remoteCursors[uid]){
+    const el=document.createElement('div');el.className='rcursor';
+    el.innerHTML=`<svg width="14" height="20" viewBox="0 0 14 20"><path d="M0 0L14 8L7 10L4 18L0 0Z" fill="#6366f1" stroke="#fff" stroke-width="1"/></svg><span class="rcursor-label">${esc(username)}</span>`;
+    document.body.appendChild(el);remoteCursors[uid]=el;
+  }
+  remoteCursors[uid].style.left=sx+'px';
+  remoteCursors[uid].style.top=sy+'px';
+}
+
+function clearRemoteCursors(){for(const k in remoteCursors){remoteCursors[k].remove();delete remoteCursors[k];}}
+
+function updateOnlineUsers(users){
+  const el=document.getElementById('board-online');
+  el.innerHTML=users.filter(u=>u!==boardUsername).map(u=>
+    `<div class="bonline-dot">${esc(u.slice(0,2).toUpperCase())}<span class="tip">${esc(u)}</span></div>`
+  ).join('');
+}
+
+document.addEventListener('mousemove',e=>{
+  if(currentBoard!=='team')return;
+  const now=Date.now();if(now-cursorThrottle<50)return;cursorThrottle=now;
+  // Шлём canvas-координаты, а не viewport — чтобы у всех курсор был в одном месте
+  const r=vp.getBoundingClientRect();
+  const cx=(e.clientX-r.left-S.tx)/S.scale;
+  const cy=(e.clientY-r.top-S.ty)/S.scale;
+  boardSend({type:'board_cursor',x:cx,y:cy});
+});
+
 
 // ═══════════════════════════════════════════
 // DOM REFS
@@ -373,7 +539,7 @@ applyT();
 function renderAll(){
   canvas.querySelectorAll('.bc').forEach(e=>e.remove());
   S.cards.forEach(drawCard);
-  renderConns();
+  requestAnimationFrame(()=>renderConns());
   updateSB();
 }
 
@@ -396,6 +562,8 @@ function drawCard(card){
       ${iconHtml}
       <div class="bc-drag">⠿</div>
     </div>
+    ${card.assignee ? `<div class="bc-assignee">👤 ${esc(card.assignee)}</div>` : ''}
+    ${currentBoard==='team' ? `<button class="bc-assign-btn${card.assignee?' assigned':''}" data-cid="${card.id}">${card.assignee ? (card.assignee===boardUsername?'❌ Снять с себя':'👤 '+esc(card.assignee)) : '＋ Взять'}</button>` : ''}
     <div class="bc-desc">
       <textarea class="bc-desc-ta" style="font-size:${Math.max(11,(card.fontSize||13)-2)}px" placeholder="Описание...">${esc(card.desc||'')}</textarea>
     </div>
@@ -444,6 +612,21 @@ function drawCard(card){
   });
 
   el.querySelector('.bc-resize').addEventListener('mousedown',e=>{e.stopPropagation();startCardResize(e,card.id)});
+
+  // Кнопка "Взять / Снять"
+  const assignBtn=el.querySelector('.bc-assign-btn');
+  if(assignBtn){
+    assignBtn.addEventListener('mousedown',e=>e.stopPropagation());
+    assignBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const c=S.cards.find(x=>x.id===card.id);
+      if(!c)return;
+      if(c.assignee===boardUsername){c.assignee=null;}
+      else{c.assignee=boardUsername;}
+      save();boardSend({type:'board_update',data:{cards:S.cards,connections:S.connections}});
+      renderAll();
+    });
+  }
 
   // Ports: mousedown initiates connection
   el.querySelectorAll('.bc-port').forEach(p=>p.addEventListener('mousedown',e=>{
@@ -820,8 +1003,8 @@ function renderEPGrid(list){
 function pickEmoji(em){if(epTarget)updateCard(epTarget,{icon:em});epick.style.display='none'}
 window.pickEmoji=pickEmoji;
 document.getElementById('ep-s').addEventListener('input',function(){
-  const q=this.value.toLowerCase();
-  renderEPGrid(q?EMOJIS:EMOJIS);
+  const q=this.value.toLowerCase().trim();
+  renderEPGrid(q ? EMOJIS.filter(em=>[...em].some(ch=>ch.codePointAt(0).toString(16).includes(q))||em.includes(q)) : EMOJIS);
 });
 document.getElementById('ep-c').addEventListener('click',()=>{if(epTarget)updateCard(epTarget,{icon:''});epick.style.display='none'});
 
@@ -1068,6 +1251,15 @@ function showCtx(e,cardId){
     ci(m,'· Todo',()=>updateCard(cardId,{status:'todo'}));
     ci(m,'▶ В работе',()=>updateCard(cardId,{status:'in_progress'}));
     ci(m,'✓ Готово',()=>{if(isDepsBlocked(cardId))toast('⚠️ Завершите зависимые','err');else updateCard(cardId,{status:'done'})});
+    if(isBoardTeam){
+      csep(m);
+      const card=S.cards.find(c=>c.id===cardId);
+      if(card&&card.assignee===boardUsername){
+        ci(m,'❌ Освободить карточку',()=>assignCard(cardId,null));
+      } else {
+        ci(m,'🙋 Взять карточку',()=>assignCard(cardId,boardUsername));
+      }
+    }
     csep(m);
     ci(m,'🗑 Удалить',()=>deleteCard(cardId),'danger');
   } else {
@@ -1101,6 +1293,18 @@ function toast(msg,type=''){
 
 // START
 renderAll();
+
+function assignCard(cardId, username) {
+  const card = S.cards.find(c => c.id === cardId);
+  if (!card) return;
+  card.assignee = username || undefined;
+  save();
+  renderAll();
+  toast(username ? `🙋 Взял ${username}` : '❌ Освобождено');
+}
+
+
+
 </script>
 </body>
 </html>
