@@ -1549,7 +1549,7 @@ function showCtx(e,cardId){
     ci(m,'· Todo',()=>updateCard(cardId,{status:'todo'}));
     ci(m,'▶ В работе',()=>updateCard(cardId,{status:'in_progress'}));
     ci(m,'✓ Готово',()=>{if(isDepsBlocked(cardId))toast('⚠️ Завершите зависимые','err');else updateCard(cardId,{status:'done'})});
-    if(isBoardTeam){
+    if(currentBoard==='team'){
       csep(m);
       const card=S.cards.find(c=>c.id===cardId);
       if(card&&card.assignee===boardUsername){
