@@ -602,14 +602,16 @@ function connectBoardWS() {
     } else if(msg.type==='board_conn_preview'){
       const uid = msg.userId || msg.username;
       if(!msg.fromCardId){ removeRemoteConnPreview(uid); return; }
-      const src=getCard(msg.fromCardId);if(!src)return;
-      const fe=document.getElementById('c-'+src.id);if(!fe)return;
+      const src=getCard(msg.fromCardId);
+      if(!src){console.log('[conn_preview] card not found:',msg.fromCardId);return;}
+      const fe=document.getElementById('c-'+src.id);
+      if(!fe){console.log('[conn_preview] element not found: c-'+src.id);return;}
       const vr=vp.getBoundingClientRect();
       const fr=fe.getBoundingClientRect();
       const x1=fr.right-vr.left, y1=fr.top-vr.top+fr.height/2;
-      // canvas-coords → viewport-coords
-      const x2=msg.x*S.scale+S.tx+vr.left-vr.left;
-      const y2=msg.y*S.scale+S.ty+vr.top-vr.top;
+      const x2=msg.x*S.scale+S.tx;
+      const y2=msg.y*S.scale+S.ty;
+      console.log('[conn_preview] draw',x1,y1,'->',x2,y2,'from',msg.fromCardId);
       const d=connPath(x1,y1,x2,y2);
       const lines=getOrCreateRemoteConnSVG(uid, msg.color);
       lines.glow.setAttribute('d',d);
