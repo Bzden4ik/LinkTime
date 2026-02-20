@@ -385,6 +385,15 @@ function save() {
     }, 800);
     return;
   }
+
+// Немедленная отправка для структурных изменений (создание/удаление карточек, связей)
+function saveNow() {
+  if (currentBoard !== 'team') { save(); return; }
+  clearTimeout(saveTimer);
+  boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
+  // Сохраняем в БД через API
+  fetch(`${API_BASE}/api/board/team/${SESSION_KEY}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cards:S.cards,connections:S.connections})}).catch(()=>{});
+}
   // Личная: дебаунс-сохранение через API
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
@@ -799,7 +808,7 @@ function drawBlock(card,block){
     });
     inner.addEventListener('input',()=>{
       block.content=inner.innerHTML;
-      const now=Date.now();if(now-blockSendThrottle<50)return;blockSendThrottle=now;
+      const now=Date.now();if(now-blockDragThrottle<50)return;blockDragThrottle=now;
       boardSend({type:'board_live', cardId:card.id, patch:{block:{id:block.id, content:inner.innerHTML}}});
     });
     inner.addEventListener('keydown',e=>e.stopPropagation());
@@ -973,7 +982,7 @@ function getCard(id){return S.cards.find(c=>c.id===id)}
 function addCard(cx,cy){
   const id='c'+Date.now()+Math.random().toString(36).slice(2,5);
   S.cards.push({id,x:cx-110,y:cy-65,w:240,h:160,title:'',desc:'',status:'todo',bg:BGS[0],strip:0,fontSize:13,icon:'',blocks:[]});
-  save();renderAll();selectCard(id);
+  saveNow();renderAll();selectCard(id);
   setTimeout(()=>{const t=document.querySelector('#c-'+id+' .bc-title');if(t){t.focus();t.select()}},40);
 }
 
@@ -981,7 +990,7 @@ function deleteCard(id){
   S.cards=S.cards.filter(c=>c.id!==id);
   S.connections=S.connections.filter(c=>c.from!==id&&c.to!==id);
   if(S.sel===id){S.sel=null;closeInsp()}
-  save();renderAll();
+  saveNow();renderAll();
 }
 
 function selectCard(id){
@@ -1018,12 +1027,12 @@ function addConn(fromId,toId){
   if(fromId===toId)return;
   if(S.connections.find(c=>c.from===fromId&&c.to===toId)){toast('Связь уже существует');return}
   S.connections.push({id:'cn'+Date.now(),from:fromId,to:toId});
-  save();updateConnsOnly();refreshDeps();toast('✓ Связь создана','ok');
+  saveNow();updateConnsOnly();refreshDeps();toast('✓ Связь создана','ok');
 }
 
 function deleteConn(id){
   S.connections=S.connections.filter(c=>c.id!==id);
-  save();updateConnsOnly();refreshDeps();
+  saveNow();updateConnsOnly();refreshDeps();
 }
 window.deleteConn=deleteConn;
 
