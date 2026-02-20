@@ -610,6 +610,18 @@ function handleBoardLive(ws, data) {
     }, ws);
 }
 
+function handleBoardSel(ws, data) {
+    const teamId = ws._boardTeamId;
+    if (!teamId) return;
+    boardBroadcast(teamId, {
+        type: 'board_sel',
+        userId: ws._boardUserId,
+        username: ws._boardUsername,
+        color: ws._boardColor,
+        cardId: data.cardId
+    }, ws);
+}
+
 function handleBoardColor(ws, data) {
     const teamId = ws._boardTeamId;
     if (!teamId) return;
@@ -713,6 +725,9 @@ wss.on('connection', (ws, request) => {
                     break;
                 case 'board_color':
                     handleBoardColor(ws, data);
+                    break;
+                case 'board_sel':
+                    handleBoardSel(ws, data);
                     break;
             }
         } catch (error) {

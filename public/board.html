@@ -36,7 +36,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 /* ─── CARDS ─── */
 .bc{position:absolute;border-radius:14px;border:1.5px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;transition:border-color .2s,box-shadow .2s;cursor:default;min-width:180px;min-height:100px;z-index:2}
 .bc:hover{border-color:rgba(255,255,255,0.22)}
-.bc.sel{border-color:rgba(99,102,241,.7)!important;box-shadow:0 0 0 3px rgba(99,102,241,.18),0 16px 48px rgba(0,0,0,.5)}
+.bc.sel{border-color:var(--my-sel-color,rgba(99,102,241,.7))!important;box-shadow:0 0 0 3px var(--my-sel-shadow,rgba(99,102,241,.18)),0 16px 48px rgba(0,0,0,.5)}
+.bc.rem-sel{border-width:2px!important;box-shadow:0 0 0 3px var(--rem-sel-shadow),0 8px 32px rgba(0,0,0,.4)}
 .bc.dep-blocked{border-color:rgba(239,68,68,.5)!important}
 
 .bc-head{display:flex;align-items:flex-start;gap:6px;padding:9px 10px 6px;flex-shrink:0;position:relative}
@@ -598,6 +599,10 @@ function connectBoardWS() {
         }
         if (p.x !== undefined || p.y !== undefined || p.w !== undefined || p.h !== undefined) updateConnsOnly();
       }
+    } else if(msg.type==='board_sel'){
+      const uid = msg.userId || msg.username;
+      const clr = msg.color || hashColor(uid);
+      applyRemoteSel(uid, msg.cardId, clr);
     } else if(msg.type==='board_cursor_leave'){
       const uid = msg.userId || msg.username;
       if(remoteCursors[uid]){remoteCursors[uid].remove();delete remoteCursors[uid];}
@@ -667,6 +672,26 @@ document.getElementById('my-color-btn').addEventListener('click',e=>{
 document.addEventListener('click',()=>document.getElementById('color-picker-popup').classList.remove('open'));
 
 const remoteCursors={};
+const remoteSelections={};
+
+function applyRemoteSel(uid, cardId, color){
+  // Снимаем старое
+  document.querySelectorAll(`.rem-sel[data-sel-uid="${uid}"]`).forEach(el=>{
+    el.classList.remove('rem-sel');el.removeAttribute('data-sel-uid');
+    el.style.removeProperty('border-color');el.style.removeProperty('--rem-sel-shadow');
+  });
+  if(cardId){
+    remoteSelections[uid]={cardId,color};
+    const el=document.getElementById('c-'+cardId);
+    if(el){el.classList.add('rem-sel');el.dataset.selUid=uid;el.style.borderColor=color;el.style.setProperty('--rem-sel-shadow',color+'40');}
+  } else {
+    delete remoteSelections[uid];
+  }
+}
+
+function reapplyRemoteSels(){
+  for(const [uid,{cardId,color}] of Object.entries(remoteSelections)) applyRemoteSel(uid,cardId,color);
+} // uid -> {cardId, color}
 function drawRemoteCursor(uid, username, cx, cy, color){
   const clr = color || hashColor(uid);
   const r=vp.getBoundingClientRect();
@@ -751,7 +776,7 @@ applyT();
 function renderAll(){
   canvas.querySelectorAll('.bc').forEach(e=>e.remove());
   S.cards.forEach(drawCard);
-  requestAnimationFrame(()=>renderConns());
+  requestAnimationFrame(()=>{renderConns();reapplyRemoteSels();});
   updateSB();
 }
 
@@ -1094,6 +1119,11 @@ function selectCard(id){
   if(S.sel===id)return;
   S.sel=id;S.selBlock=null;
   document.querySelectorAll('.bc').forEach(e=>e.classList.toggle('sel',e.id==='c-'+id));
+  // Красим своё выделение в свой цвет
+  const clr=myColor||'#6366f1';
+  document.documentElement.style.setProperty('--my-sel-color',clr);
+  document.documentElement.style.setProperty('--my-sel-shadow',clr+'30');
+  boardSend({type:'board_sel', cardId:id});
   openInsp(id);
 }
 
@@ -1251,7 +1281,7 @@ document.getElementById('ep-c').addEventListener('click',()=>{if(epTarget)update
 })();
 
 function openInsp(id){const c=getCard(id);if(!c)return;insp.classList.add('open');refreshInsp(c)}
-function closeInsp(){insp.classList.remove('open')}
+function closeInsp(){insp.classList.remove('open');boardSend({type:'board_sel',cardId:null});S.sel=null;}
 function refreshInsp(c){
   document.querySelectorAll('.isb-btn').forEach(b=>b.className='isb-btn'+(c.status===b.dataset.s?' a-'+b.dataset.s:''));
   document.querySelectorAll('#insp-bgs .icol').forEach(el=>el.classList.toggle('sel',el.dataset.bg===c.bg));
