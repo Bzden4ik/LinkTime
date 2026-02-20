@@ -188,7 +188,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 
 #dropov{display:none} /* не используется */
 .bc.drag-over{border-color:rgba(99,102,241,.8)!important;box-shadow:0 0 0 3px rgba(99,102,241,.25)!important;background:rgba(99,102,241,.07)!important}
-.bc.drag-over::after{content:'🖼 Отпустите для вставки';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#818cf8;font-weight:600;pointer-events:none;background:rgba(10,12,24,.55);border-radius:13px}
+.bc.drag-over::after{content:'🖼 Отпустите для вставки';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#818cf8;font-weight:600;pointer-events:none;background:rgba(10,12,24,.75);border-radius:13px;z-index:100}
 </style>
 </head>
 <body>
@@ -1493,7 +1493,7 @@ window.addEventListener('keydown',e=>{
     // Exit any text editing
     document.querySelectorAll('.cb-inner.editing').forEach(el=>{el.blur()});
   }
-  if(e.key==='Delete'&&S.sel&&!isEd()){
+  if(e.key==='Delete'&&(S.sel||S.selBlock)&&!isEd()){
     // Delete selected block if any, else card
     if(S.selBlock){
       const c=getCard(S.selBlock.cardId);
