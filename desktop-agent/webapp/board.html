@@ -377,9 +377,12 @@ async function loadBoard() {
 }
 
 function save() {
-  // Команда: шлём по WS, сервер сам сохраняет в БД
   if (currentBoard === 'team') {
-    boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
+    // Дебаунс для текста — не спамим WS на каждый символ
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
+    }, 300);
     return;
   }
   // Личная: дебаунс-сохранение через API
@@ -393,6 +396,16 @@ function save() {
       });
     } catch(e) {}
   }, 600);
+}
+
+// Немедленная отправка без дебаунса — для drag/resize в реальном времени
+let dragSendThrottle = 0;
+function saveImmediate() {
+  if (currentBoard !== 'team') return;
+  const now = Date.now();
+  if (now - dragSendThrottle < 40) return; // ~25fps
+  dragSendThrottle = now;
+  boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
 }
 
 // Инициализация вкладок
@@ -453,7 +466,21 @@ function connectBoardWS() {
       renderAll();applyT();
     } else if(msg.type==='board_update'&&msg.from!==boardUsername){
       S.cards=msg.data.cards||[];S.connections=msg.data.connections||[];
-      renderAll();
+      // Если сам не перетаскиваем и не редактируем — полный рендер
+      // Если редактируем текст — только двигаем карточки в DOM без пересоздания
+      if(S.drag||S.resize){
+        // Только обновляем связи, позиции уже актуальны локально
+        updateConnsOnly();
+      } else if(isEd()){
+        // Обновляем позиции/размеры карточек без разрушения DOM (не трогаем textarea)
+        S.cards.forEach(c=>{
+          const el=document.getElementById('c-'+c.id);
+          if(el){el.style.left=c.x+'px';el.style.top=c.y+'px';el.style.width=c.w+'px';el.style.height=c.h+'px';}
+        });
+        requestAnimationFrame(()=>updateConnsOnly());
+      } else {
+        renderAll();
+      }
     } else if(msg.type==='board_cursor'){
       drawRemoteCursor(msg.userId || msg.username, msg.username, msg.x, msg.y);
     } else if(msg.type==='board_online'){
@@ -1135,6 +1162,7 @@ window.addEventListener('mousemove',e=>{
     const el=document.getElementById('c-'+c.id);
     if(el){el.style.left=nx+'px';el.style.top=ny+'px'}
     updateConnsOnly();
+    saveImmediate();
   }
   if(S.resize){
     const r=S.resize;
@@ -1146,6 +1174,7 @@ window.addEventListener('mousemove',e=>{
     const el=document.getElementById('c-'+c.id);
     if(el){el.style.width=nw+'px';el.style.height=nh+'px'}
     updateConnsOnly();
+    saveImmediate();
     if(S.sel===r.cardId){document.getElementById('iw').value=Math.round(nw);document.getElementById('ih').value=Math.round(nh)}
   }
   if(S.blockDrag){
