@@ -846,7 +846,7 @@ function addBlock(cardId,type,x,y,extra={}){
   const id='bl'+Date.now()+Math.random().toString(36).slice(2,5);
   const block={id,type,x:Math.max(0,x-4),y:Math.max(0,y-10),...(type==='text'?{content:'',fs:12,w:0}:{w:200}),...extra};
   card.blocks.push(block);
-  save();
+  saveNow();
   drawBlock(card,block);
   if(type==='text'){
     selectBlock(cardId,id);
