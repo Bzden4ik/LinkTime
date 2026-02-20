@@ -509,27 +509,17 @@ const wss = new WebSocket.Server({ noServer: true });
 // Хранилище активных подключений: { sessionKey: Set<ws> }
 const connections = new Map();
 
-// Rate limiting для WebSocket: раздельные лимиты для cursor и остальных сообщений
+// Rate limiting для WebSocket: только для обычных сообщений, не для real-time событий
 const wsRateLimit = new Map(); // ip -> { count, resetAt }
-const wsCursorRateLimit = new Map(); // ip -> { count, resetAt }
-function checkWsRateLimit(ip, isCursor) {
+function checkWsRateLimit(ip, isRealtime) {
+    if (isRealtime) return true; // cursor/live throttle на клиенте, сервер не ограничивает
     const now = Date.now();
-    if (isCursor) {
-        const entry = wsCursorRateLimit.get(ip);
-        if (!entry || now > entry.resetAt) {
-            wsCursorRateLimit.set(ip, { count: 1, resetAt: now + 1000 });
-            return true;
-        }
-        if (entry.count >= 30) return false; // 30 cursor/сек макс
-        entry.count++;
-        return true;
-    }
     const entry = wsRateLimit.get(ip);
     if (!entry || now > entry.resetAt) {
         wsRateLimit.set(ip, { count: 1, resetAt: now + 60000 });
         return true;
     }
-    if (entry.count >= 300) return false; // 300 обычных сообщений в минуту
+    if (entry.count >= 300) return false;
     entry.count++;
     return true;
 }
@@ -538,9 +528,6 @@ setInterval(() => {
     const now = Date.now();
     for (const [ip, entry] of wsRateLimit) {
         if (now > entry.resetAt) wsRateLimit.delete(ip);
-    }
-    for (const [ip, entry] of wsCursorRateLimit) {
-        if (now > entry.resetAt) wsCursorRateLimit.delete(ip);
     }
 }, 300000);
 
