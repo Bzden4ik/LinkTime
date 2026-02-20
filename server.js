@@ -558,9 +558,10 @@ function handleBoardJoin(ws, data) {
 
     // Получаем пользователя и его команду
     const user = stmts.getUserBySession.get(sessionKey);
-    if (!user) return;
+    if (!user) { console.log(`[Board] board_join: user not found for sessionKey=${sessionKey}`); return; }
     const team = stmts.getUserTeam.get(user.user_id);
-    if (!team) return;
+    if (!team) { console.log(`[Board] board_join: no team for user=${user.user_id} (${username})`); return; }
+    console.log(`[Board] board_join: user=${username} teamId=${team.id}`);
 
     const teamId = team.id;
     ws._boardTeamId = teamId;
@@ -598,7 +599,8 @@ function handleBoardUpdate(ws, data) {
 
 function handleBoardCursor(ws, data) {
     const teamId = ws._boardTeamId;
-    if (!teamId) return;
+    if (!teamId) { console.log(`[Board] board_cursor: no teamId on ws (not joined?)`); return; }
+    console.log(`[Board] cursor from ${ws._boardUsername} teamId=${teamId} members=${boardSessions.get(teamId)?.size}`);
     boardBroadcast(teamId, {
         type: 'board_cursor',
         username: ws._boardUsername,
