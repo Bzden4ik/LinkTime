@@ -509,16 +509,27 @@ const wss = new WebSocket.Server({ noServer: true });
 // Хранилище активных подключений: { sessionKey: Set<ws> }
 const connections = new Map();
 
-// Rate limiting для WebSocket: не более 60 сообщений в минуту с одного IP
+// Rate limiting для WebSocket: раздельные лимиты для cursor и остальных сообщений
 const wsRateLimit = new Map(); // ip -> { count, resetAt }
-function checkWsRateLimit(ip) {
+const wsCursorRateLimit = new Map(); // ip -> { count, resetAt }
+function checkWsRateLimit(ip, isCursor) {
     const now = Date.now();
+    if (isCursor) {
+        const entry = wsCursorRateLimit.get(ip);
+        if (!entry || now > entry.resetAt) {
+            wsCursorRateLimit.set(ip, { count: 1, resetAt: now + 1000 });
+            return true;
+        }
+        if (entry.count >= 30) return false; // 30 cursor/сек макс
+        entry.count++;
+        return true;
+    }
     const entry = wsRateLimit.get(ip);
     if (!entry || now > entry.resetAt) {
         wsRateLimit.set(ip, { count: 1, resetAt: now + 60000 });
         return true;
     }
-    if (entry.count >= 60) return false;
+    if (entry.count >= 300) return false; // 300 обычных сообщений в минуту
     entry.count++;
     return true;
 }
@@ -527,6 +538,9 @@ setInterval(() => {
     const now = Date.now();
     for (const [ip, entry] of wsRateLimit) {
         if (now > entry.resetAt) wsRateLimit.delete(ip);
+    }
+    for (const [ip, entry] of wsCursorRateLimit) {
+        if (now > entry.resetAt) wsCursorRateLimit.delete(ip);
     }
 }, 300000);
 
@@ -624,14 +638,16 @@ wss.on('connection', (ws, request) => {
     const clientIp = request.headers['x-forwarded-for']?.split(',')[0].trim() || request.socket.remoteAddress || 'unknown';
 
     ws.on('message', (message) => {
-        if (!checkWsRateLimit(clientIp)) {
-            if (ws.readyState === WebSocket.OPEN) {
+        let data;
+        try { data = JSON.parse(message); } catch { return; }
+        const isCursor = data.type === 'board_cursor';
+        if (!checkWsRateLimit(clientIp, isCursor)) {
+            if (!isCursor && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }));
             }
             return;
         }
         try {
-            const data = JSON.parse(message);
 
             switch (data.type) {
                 case 'join':
