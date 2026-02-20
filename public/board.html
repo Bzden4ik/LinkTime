@@ -186,7 +186,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 .color-preset:hover{transform:scale(1.2);border-color:#fff}
 
 
-#dropov{position:fixed;inset:0;background:rgba(99,102,241,.1);border:3px dashed rgba(99,102,241,.5);z-index:8999;display:none;align-items:center;justify-content:center;font-size:1.1rem;color:#818cf8;pointer-events:none}
+#dropov{display:none} /* не используется */
+.bc.drag-over{border-color:rgba(99,102,241,.8)!important;box-shadow:0 0 0 3px rgba(99,102,241,.25)!important;background:rgba(99,102,241,.07)!important}
+.bc.drag-over::after{content:'🖼 Отпустите для вставки';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#818cf8;font-weight:600;pointer-events:none;background:rgba(10,12,24,.55);border-radius:13px}
 </style>
 </head>
 <body>
@@ -908,8 +910,9 @@ function drawCard(card){
   }));
 
   el.addEventListener('contextmenu',e=>{e.preventDefault();showCtx(e,card.id)});
-  el.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation()});
-  el.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();handleImgDrop(e,card.id)});
+  el.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();el.classList.add('drag-over')});
+  el.addEventListener('dragleave',e=>{if(!el.contains(e.relatedTarget))el.classList.remove('drag-over')});
+  el.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();el.classList.remove('drag-over');handleImgDrop(e,card.id)});
 
   canvas.appendChild(el);
   (card.blocks||[]).forEach(b=>drawBlock(card,b));
@@ -1520,17 +1523,12 @@ window.addEventListener('paste',e=>{
   });
 });
 
-let dropD=0;
-document.addEventListener('dragenter',e=>{if([...(e.dataTransfer?.types||[])].includes('Files')){dropD++;document.getElementById('dropov').style.display='flex'}});
-document.addEventListener('dragleave',()=>{dropD--;if(dropD<=0){dropD=0;document.getElementById('dropov').style.display='none'}});
-document.addEventListener('drop',e=>{
-  dropD=0;document.getElementById('dropov').style.display='none';e.preventDefault();
-  if(!S.sel)return;
-  [...(e.dataTransfer?.files||[])].filter(f=>f.type.startsWith('image/')).forEach(f=>{
-    const r=new FileReader();r.onload=ev=>addImgBlock(S.sel,ev.target.result);r.readAsDataURL(f);
-  });
-});
+// Глобальный drop — на случай если отпустили не на карточке
 document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{
+  e.preventDefault();
+  document.querySelectorAll('.bc.drag-over').forEach(el=>el.classList.remove('drag-over'));
+});
 document.addEventListener('click',()=>{
   document.getElementById('ctx').style.display='none';
   if(!event.target.closest('#epick,.bc-icon'))epick.style.display='none';
