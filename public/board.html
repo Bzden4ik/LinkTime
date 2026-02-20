@@ -416,6 +416,16 @@ function sendLiveText(cardId, field, value) {
   boardSend({type:'board_live', cardId, patch:{[field]: value}});
 }
 
+// Отправка live-патча для блока внутри карточки
+let blockSendThrottle = 0;
+function sendLiveBlock(cardId, blockId, patch) {
+  if (currentBoard !== 'team') return;
+  const now = Date.now();
+  if (now - blockSendThrottle < 16) return;
+  blockSendThrottle = now;
+  boardSend({type:'board_live', cardId, patch:{block:{id:blockId, ...patch}}});
+}
+
 // Инициализация вкладок
 function switchBoard(boardType) {
   currentBoard = boardType;
@@ -494,6 +504,27 @@ function connectBoardWS() {
       const c = S.cards.find(x => x.id === msg.cardId);
       if (!c) return;
       const p = msg.patch;
+      // Патч блока внутри карточки
+      if (p.block) {
+        const b = (c.blocks||[]).find(x => x.id === p.block.id);
+        if (b) {
+          if (p.block.x !== undefined) b.x = p.block.x;
+          if (p.block.y !== undefined) b.y = p.block.y;
+          if (p.block.w !== undefined) b.w = p.block.w;
+          if (p.block.content !== undefined) b.content = p.block.content;
+          const bel = document.getElementById('bl-' + b.id);
+          if (bel) {
+            if (p.block.x !== undefined) bel.style.left = b.x + 'px';
+            if (p.block.y !== undefined) bel.style.top = b.y + 'px';
+            if (p.block.w !== undefined) { bel.style.width = b.w + 'px'; const img=bel.querySelector('img');if(img)img.style.width=b.w+'px'; }
+            if (p.block.content !== undefined) {
+              const inner = bel.querySelector('.cb-inner');
+              if (inner && inner !== document.activeElement) inner.innerHTML = b.content;
+            }
+          }
+        }
+        return;
+      }
       if (p.x !== undefined) c.x = p.x;
       if (p.y !== undefined) c.y = p.y;
       if (p.w !== undefined) c.w = p.w;
@@ -753,6 +784,10 @@ function drawBlock(card,block){
       el.classList.remove('cb-editing');
       block.content=inner.innerHTML;
       save();
+    });
+    inner.addEventListener('input',()=>{
+      block.content=inner.innerHTML;
+      boardSend({type:'board_live', cardId:card.id, patch:{block:{id:block.id, content:inner.innerHTML}}});
     });
     inner.addEventListener('keydown',e=>e.stopPropagation());
 
@@ -1227,6 +1262,7 @@ window.addEventListener('mousemove',e=>{
     b.x=Math.max(0,bd.bx+dx);b.y=Math.max(0,bd.by+dy);
     const el=document.getElementById('bl-'+bd.blockId);
     if(el){el.style.left=b.x+'px';el.style.top=b.y+'px'}
+    sendLiveBlock(bd.cardId, bd.blockId, {x:b.x, y:b.y});
   }
   if(S.blockResize){
     const br=S.blockResize;
@@ -1237,6 +1273,7 @@ window.addEventListener('mousemove',e=>{
     b.w=Math.max(50,br.sw+dx);
     const el=document.getElementById('bl-'+br.blockId);
     if(el){el.style.width=b.w+'px';const img=el.querySelector('img');if(img)img.style.width=b.w+'px'}
+    sendLiveBlock(br.cardId, br.blockId, {w:b.w});
   }
   if(S.connFrom)updateTempLine(e.clientX,e.clientY);
 });
