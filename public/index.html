@@ -64,6 +64,13 @@
         <span class="nav-label">Доска</span>
       </button>
 
+      <button class="nav-item" id="sidebarProjects">
+        <span class="nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+        </span>
+        <span class="nav-label">Проекты</span>
+      </button>
+
       <div class="nav-group-label">Персональное</div>
       <button class="nav-item" id="sidebarNotifications">
         <span class="nav-icon">
@@ -155,29 +162,100 @@
         </div>
       </section>
 
-      <!-- Задачи -->
-      <section class="tasks-section glass-card" data-tab-content="tasks">
-        <div class="tasks-header">
-          <h2 id="tasksTitle">Задачи на сегодня</h2>
-          <div class="tasks-header-btns">
-            <button class="btn btn-board" id="boardBtn">⬛ Доска</button>
-            <button class="btn btn-add" id="addTaskBtn">+ Добавить</button>
+      <!-- Компактные задачи на дашборде -->
+      <section class="dashboard-tasks glass-card" data-tab-content="timer">
+        <div class="dashboard-tasks-header">
+          <h3 class="dashboard-tasks-title">Задачи на сегодня</h3>
+          <div class="dashboard-tasks-actions">
+            <button class="btn btn-small btn-add" id="dashAddTaskBtn">+ Добавить</button>
+            <button class="btn btn-small" id="dashAllTasksBtn">Все задачи →</button>
           </div>
         </div>
-        <!-- Task progress bar -->
+        <div class="dashboard-tasks-progress">
+          <div class="dashboard-tasks-bar">
+            <div class="dashboard-tasks-fill" id="dashTasksFill" style="width:0%"></div>
+          </div>
+          <span class="dashboard-tasks-label" id="dashTasksLabel">0 из 0</span>
+        </div>
+        <ul class="dashboard-tasks-list" id="dashTasksList"></ul>
+      </section>
+
+      <!-- Задачи (полная страница) -->
+      <section class="tasks-section" data-tab-content="tasks" style="display:none">
+
+        <!-- ВИДЖЕТ ТРЕКЕРА -->
+        <div class="tracker-wrap">
+          <!-- Idle: маленькая кнопка -->
+          <div class="tracker-idle" id="trackerIdle">
+            <button class="tracker-play-btn" id="trackerPlayBtn" title="Начать трекинг">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+            </button>
+            <span class="tracker-idle-hint">Начать трекинг...</span>
+          </div>
+          <!-- Active: развёрнутая панель -->
+          <div class="tracker-active" id="trackerActive" style="display:none">
+            <div class="tracker-left" id="trackerLeft">
+              <button class="tracker-project-btn" id="trackerProjectBtn">
+                <span class="tracker-project-dot" id="trackerProjectDot" style="display:none"></span>
+                <span id="trackerProjectLabel">+ Проект и задача</span>
+              </button>
+              <!-- Дропдаун выбора -->
+              <div class="tracker-dropdown" id="trackerDropdown" style="display:none">
+                <div class="tracker-dd-back" id="trackerDdBack" style="display:none">
+                  <button onclick="trackerBackToProjects()">← Назад</button>
+                </div>
+                <div class="tracker-dd-search">
+                  <input type="text" id="trackerSearch" placeholder="Поиск...">
+                </div>
+                <div class="tracker-dd-list" id="trackerDdList"></div>
+                <div class="tracker-dd-footer">
+                  <button class="tracker-dd-new" id="trackerNewProjectBtn">+ Новый проект</button>
+                </div>
+              </div>
+            </div>
+            <div class="tracker-center">
+              <input class="tracker-comment" id="trackerComment" type="text" placeholder="Добавить комментарий...">
+            </div>
+            <div class="tracker-right">
+              <button class="tracker-pause-btn" id="trackerPauseBtn" title="Пауза / Продолжить">⏸</button>
+              <span class="tracker-time" id="trackerTime">00:00:00</span>
+              <button class="tracker-stop-btn" id="trackerStopBtn" title="Остановить и сохранить">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ФИЛЬТР ПО ПРОЕКТАМ -->
+        <div class="tasks-filter-wrap">
+          <button class="tasks-filter-btn active" data-filter="all" onclick="setTaskFilter('all', this)">Все</button>
+          <span id="tasksProjectFilters"></span>
+          <button class="btn btn-small btn-add" id="addTaskBtn" style="margin-left:auto">+ Задача</button>
+          <button class="btn btn-small btn-board" id="boardBtn">⬛ Доска</button>
+        </div>
+
+        <!-- ФОРМА ДОБАВЛЕНИЯ -->
+        <div class="task-input" id="taskInput" style="display:none">
+          <input type="text" id="taskText" placeholder="Введите задачу...">
+          <select id="taskProjectSelect" class="task-project-select">
+            <option value="">Без проекта</option>
+          </select>
+          <div class="task-input-controls">
+            <button class="btn btn-small" id="saveTaskBtn">Сохранить</button>
+            <button class="btn btn-small btn-cancel" id="cancelTaskBtn">Отмена</button>
+          </div>
+        </div>
+
+        <!-- ПРОГРЕСС -->
         <div class="tasks-progress-wrap" id="tasksProgressWrap">
           <div class="tasks-progress-bar">
             <div class="tasks-progress-fill" id="tasksProgressFill" style="width:0%"></div>
           </div>
           <span class="tasks-progress-label" id="tasksProgressLabel">0 из 0</span>
         </div>
-        <div class="task-input" id="taskInput" style="display: none;">
-          <input type="text" id="taskText" placeholder="Введите задачу...">
-          <div class="task-input-controls">
-            <button class="btn btn-small" id="saveTaskBtn">Сохранить</button>
-            <button class="btn btn-small btn-cancel" id="cancelTaskBtn">Отмена</button>
-          </div>
-        </div>
+
+        <!-- СПИСОК -->
+        <h3 class="tasks-date-title" id="tasksTitle">Задачи на сегодня</h3>
         <ul class="tasks-list" id="tasksList"></ul>
       </section>
 
@@ -485,6 +563,28 @@
 <!-- Board iframe overlay -->
 <div id="board-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:#0b0d14">
   <iframe id="board-iframe" style="width:100%;height:100%;border:none" src="about:blank"></iframe>
+</div>
+
+<!-- Модальное окно: проекты -->
+<div class="modal" id="projectsModal">
+<div class="modal-content">
+  <div class="modal-header">
+    <h2>Проекты</h2>
+    <button class="close-btn" onclick="closeProjectsModal()">×</button>
+  </div>
+  <div class="modal-body">
+    <div id="projectsListEl"></div>
+    <div id="projectEditRow" style="display:none" class="project-edit-row">
+      <input type="text" id="projectNameInput" placeholder="Название проекта..." maxlength="40">
+      <div id="projectColorPicker" class="project-color-picker"></div>
+      <div class="project-edit-btns">
+        <button class="btn btn-add btn-small" onclick="saveProjectEdit()">Сохранить</button>
+        <button class="btn btn-small btn-cancel" onclick="document.getElementById('projectEditRow').style.display='none'">Отмена</button>
+      </div>
+    </div>
+    <button class="btn btn-add" style="width:100%;margin-top:12px" onclick="startAddProject()">+ Новый проект</button>
+  </div>
+</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>

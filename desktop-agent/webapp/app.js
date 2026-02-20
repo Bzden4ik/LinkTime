@@ -42,6 +42,14 @@ setupEventListeners();
 setupVisibilityHandlers();
 loadSelectedDateData();
 renderCalendar();
+// Splash: dot->star animation, then fade out
+const splash = document.getElementById('splashScreen');
+if (splash) {
+  setTimeout(() => {
+    splash.classList.add('hiding');
+    setTimeout(() => splash.remove(), 600);
+  }, 1900);
+}
 });
 
 // Инициализация приложения
@@ -89,6 +97,10 @@ document.getElementById('taskText').addEventListener('keypress', (e) => {
 if (e.key === 'Enter') saveTask();
 });
 
+// Доска задач (новая полноценная)
+document.getElementById('boardBtn').addEventListener('click', openBoardOverlay);
+window.addEventListener('message', (e) => { if (e.data === 'close-board') closeBoardOverlay(); });
+
 // Настройки
 document.getElementById('settingsBtn') && document.getElementById('settingsBtn').addEventListener('click', openSettings);
 document.getElementById('burgerBtn').addEventListener('click', toggleBurger);
@@ -109,9 +121,7 @@ document.getElementById('cancelShareTime').addEventListener('click', closeShareT
 document.addEventListener('click', (e) => {
   if (!document.getElementById('burgerWrap').contains(e.target)) closeBurger();
 });
-// Доска задач (новая полноценная)
-document.getElementById('boardBtn').addEventListener('click', openBoardOverlay);
-window.addEventListener('message', (e) => { if (e.data === 'close-board') closeBoardOverlay(); });
+document.getElementById('closeSettings').addEventListener('click', closeSettings);
 document.getElementById('generateQR').addEventListener('click', generateQRCode);
 document.getElementById('showKey').addEventListener('click', showSessionKey);
 document.getElementById('scanQR').addEventListener('click', startQRScanner);
@@ -127,6 +137,60 @@ document.getElementById('migrateBtn').addEventListener('click', migrateDataToSer
 // Календарь
 document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
 document.getElementById('nextMonth').addEventListener('click', () => changeMonth(1));
+
+// === SIDEBAR NAVIGATION ===
+const sidebarTabs = document.querySelectorAll('[data-sidebar-tab]');
+const pageTitleEl = document.getElementById('pageTitle');
+const tabNames = { timer: 'Дашборд', tasks: 'Задачи', calendar: 'Календарь', board: 'Доска' };
+
+sidebarTabs.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.sidebarTab;
+    // Board — отдельная логика
+    if (tab === 'board') {
+      openBoardOverlay();
+      return;
+    }
+    // Активный пункт
+    sidebarTabs.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (pageTitleEl) pageTitleEl.textContent = tabNames[tab] || '';
+    // Переключение секций с плавным переходом
+    const allSections = document.querySelectorAll('[data-tab-content]');
+    const nextSection = document.querySelector(`[data-tab-content="${tab}"]`);
+    allSections.forEach(s => {
+      if (s.dataset.tabContent !== tab) {
+        s.classList.remove('tab-active');
+        s.style.display = 'none';
+      }
+    });
+    if (nextSection) {
+      nextSection.style.display = '';
+      void nextSection.offsetWidth;
+      nextSection.classList.add('tab-active');
+    }
+    // На десктопе показываем всё на дашборде
+    if (tab === 'timer' && window.innerWidth > 768) {
+      document.querySelectorAll('[data-tab-content]').forEach(s => {
+        s.style.display = '';
+        s.classList.add('tab-active');
+      });
+    }
+  });
+});
+
+// Sidebar settings / notifications
+const sidebarSettingsBtn = document.getElementById('sidebarSettings');
+if (sidebarSettingsBtn) sidebarSettingsBtn.addEventListener('click', openSettings);
+
+const sidebarNotifBtn = document.getElementById('sidebarNotifications');
+if (sidebarNotifBtn) sidebarNotifBtn.addEventListener('click', () => {
+  // Открыть бургер и показать уведомления
+  toggleNotifications();
+});
+
+const sidebarBoardBtn2 = document.getElementById('sidebarBoardBtn');
+if (sidebarBoardBtn2) sidebarBoardBtn2.addEventListener('click', openBoardOverlay);
 }
 
 // Настройка обработчиков видимости и фокуса
@@ -476,6 +540,7 @@ if (state.timerRunning && !state.timerPaused) {
 state.elapsedTime = Date.now() - state.currentSessionStart;
 const displayTime = state.elapsedTime - state.totalPausedTime;
 document.getElementById('timerDisplay').textContent = formatTime(displayTime);
+// Обновляем рабочее время в реальном времени
 if (state.selectedDate === state.currentDate) {
 updateSelectedDateStats();
 }
@@ -574,12 +639,14 @@ const btn = document.querySelector(`[data-task-id="${id}"] .delete-btn`);
 if (!btn) return;
 
 if (btn.dataset.confirming === '1') {
+    // Второй клик — удаляем
     const tasks = getTasks().filter(t => t.id !== id);
     saveTasks(tasks);
     renderTasks();
     updateSelectedDateStats();
     showToast('Задача удалена', 'info');
 } else {
+    // Первый клик — просим подтверждения
     btn.dataset.confirming = '1';
     btn.textContent = 'Точно?';
     btn.style.background = 'rgba(239,68,68,0.3)';
@@ -726,6 +793,7 @@ sessionTime -= pause.duration;
 });
 totalWorkTime += Math.max(0, sessionTime);
 } else if (dateStr === state.currentDate && state.timerRunning && state.currentSessionStart && session.start === state.currentSessionStart) {
+// Текущая активная сессия — считаем в реальном времени
 let currentWork = Date.now() - session.start - state.totalPausedTime;
 if (state.timerPaused && state.currentPauseStart) {
 currentWork -= (Date.now() - state.currentPauseStart);
@@ -751,18 +819,41 @@ const today = new Date().toISOString().split('T')[0];
 // Обновляем метку рабочего времени
 const workTimeLabel = document.getElementById('workTimeLabel');
 if (state.selectedDate === today) {
-workTimeLabel.textContent = 'Рабочее время:';
+workTimeLabel.textContent = 'Рабочее время';
 } else {
 const dateObj = new Date(state.selectedDate + 'T00:00:00');
-workTimeLabel.textContent = 'Рабочее время (' + dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + '):';
+workTimeLabel.textContent = 'Рабочее время (' + dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + ')';
 }
 
-document.getElementById('totalWorkTime').textContent = formatTime(data.totalWorkTime);
-document.getElementById('sessionCount').textContent = data.sessionCount;
+const totalWorkEl = document.getElementById('totalWorkTime');
+const sessionCountEl = document.getElementById('sessionCount');
+const tasksCompletedEl = document.getElementById('tasksCompleted');
 
+const newWork = formatTime(data.totalWorkTime);
+const newSessions = String(data.sessionCount);
 const completedTasks = data.tasks.filter(t => t.completed).length;
 const totalTasks = data.tasks.length;
-document.getElementById('tasksCompleted').textContent = `${completedTasks} из ${totalTasks}`;
+const newTasksStr = `${completedTasks} из ${totalTasks}`;
+
+// Анимируем только если значение изменилось
+if (totalWorkEl && totalWorkEl.textContent !== newWork) {
+  flashValue(totalWorkEl, newWork);
+} else if (totalWorkEl) {
+  totalWorkEl.textContent = newWork;
+}
+if (sessionCountEl && sessionCountEl.textContent !== newSessions) {
+  countUpAnimate(sessionCountEl, parseInt(sessionCountEl.textContent) || 0, data.sessionCount, 600);
+} else if (sessionCountEl) {
+  sessionCountEl.textContent = newSessions;
+}
+if (tasksCompletedEl && tasksCompletedEl.textContent !== newTasksStr) {
+  flashValue(tasksCompletedEl, newTasksStr);
+} else if (tasksCompletedEl) {
+  tasksCompletedEl.textContent = newTasksStr;
+}
+
+// Прогресс-бар задач
+updateTasksProgressBar(completedTasks, totalTasks);
 }
 
 function loadSelectedDateData() {
@@ -792,19 +883,29 @@ function exportJSON() {
 function exportCSV() {
     const sessions = cache.sessions || {};
     const rows = [['Дата', 'Начало', 'Конец', 'Длительность (мин)', 'Задачи']];
+
     for (const key of Object.keys(sessions).sort()) {
         const date = key.replace('sessions_', '');
         const daySessions = sessions[key] || [];
         const tasks = (cache.tasks || [])
             .filter(t => t.date === date && t.completed)
-            .map(t => t.text).join('; ');
+            .map(t => t.text)
+            .join('; ');
+
         for (const s of daySessions) {
             const start = new Date(s.startTime);
             const end = s.endTime ? new Date(s.endTime) : new Date();
             const dur = Math.round((end - start - (s.totalPausedTime || 0)) / 60000);
-            rows.push([date, start.toLocaleTimeString('ru'), s.endTime ? end.toLocaleTimeString('ru') : '', dur, tasks]);
+            rows.push([
+                date,
+                start.toLocaleTimeString('ru'),
+                s.endTime ? end.toLocaleTimeString('ru') : '',
+                dur,
+                tasks
+            ]);
         }
     }
+
     const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -828,6 +929,7 @@ function importJSON() {
             try {
                 const data = JSON.parse(ev.target.result);
                 if (data.tasks) {
+                    // Merge с существующими данными
                     const existing = cache.tasks || [];
                     const existingIds = new Set(existing.map(t => t.id));
                     const newTasks = data.tasks.filter(t => !existingIds.has(t.id));
@@ -858,13 +960,8 @@ function importJSON() {
 
 // === НАСТРОЙКИ ===
 
-function closeSettings() {
-document.getElementById('settingsModal').classList.remove('active');
-}
-
 function openSettings() {
 document.getElementById('settingsModal').classList.add('active');
-document.getElementById('closeSettings').onclick = closeSettings;
 renderAppLists();
 
     // Показываем секцию автозапуска только в Electron
@@ -1036,9 +1133,10 @@ return cache.sessions[`sessions_${dateStr}`] || [];
 
 function connectWebSocket() {
 try {
+// Закрываем старое соединение если оно ещё открыто/подключается
 if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-    ws.onclose = null;
-    ws.close();
+ws.onclose = null; // Не триггерим reconnect от старого сокета
+ws.close();
 }
 ws = new WebSocket(WS_URL);
 
@@ -1175,6 +1273,7 @@ state.timerPaused = false;
 state.currentSessionStart = timerData.sessionStart;
 state.totalPausedTime = timerData.totalPausedTime || 0;
 
+if (timerInterval) clearInterval(timerInterval);
 timerInterval = setInterval(updateTimer, 1000);
 updateTimer(); // Мгновенное обновление дисплея
 
@@ -1474,6 +1573,7 @@ if (!data) return;
 
 if (data.tasks && Array.isArray(data.tasks)) {
     const local = cache.tasks || [];
+    // Merge по id: remote побеждает для существующих, локальные уникальные сохраняются
     const remoteById = new Map(data.tasks.map(t => [t.id, t]));
     const localUnique = local.filter(t => !remoteById.has(t.id));
     cache.tasks = [...data.tasks, ...localUnique];
@@ -1481,12 +1581,14 @@ if (data.tasks && Array.isArray(data.tasks)) {
 }
 
 if (data.sessions) {
+    // Merge сессий по датам: для каждой даты объединяем по startTime
     const local = cache.sessions || {};
     const remote = data.sessions;
     const merged = { ...local };
     for (const key of Object.keys(remote)) {
         const localArr = local[key] || [];
         const remoteArr = remote[key] || [];
+        // Объединяем по startTime, remote побеждает при конфликте
         const byStart = new Map(localArr.map(s => [s.startTime, s]));
         for (const s of remoteArr) byStart.set(s.startTime, s);
         merged[key] = Array.from(byStart.values())
@@ -1513,6 +1615,9 @@ toast.classList.remove('show');
 // Экспорт функций для глобального доступа (для onclick в HTML)
 window.toggleTask = toggleTask;
 window.deleteTask = deleteTask;
+window.exportCSV = exportCSV;
+window.exportJSON = exportJSON;
+window.importJSON = importJSON;
 
 // === УПРАВЛЕНИЕ СПИСКАМИ ПРИЛОЖЕНИЙ (white/black) ===
 
@@ -1703,15 +1808,17 @@ function updateShareTimeBtnLabel() {
 
 function renderTeam() {
   const container = document.getElementById('teamSlots');
+  
   let html = '';
-
+  
   if (userTeam && userTeam.team) {
     const members = userTeam.members || [];
     const me = members.find(m => m.user_id === userProfile.userId);
     const others = members.filter(m => m.user_id !== userProfile.userId);
-
+    
+    // Сначала я
     if (me) {
-      const avatarContent = userProfile.avatar
+      const avatarContent = userProfile.avatar 
         ? `<img src="${userProfile.avatar}" alt="${me.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
         : me.username[0].toUpperCase();
       html += `
@@ -1723,21 +1830,23 @@ function renderTeam() {
         </div>
       `;
     }
-
+    
+    // Потом остальные
     others.forEach(m => {
       const avatarContent = m.avatar
         ? `<img src="${m.avatar}" alt="${m.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
         : m.username[0].toUpperCase();
-
+      
       const timer = teamTimers[m.user_id];
       const hasTimer = timer && m.sharing_time && timer.action && timer.action !== 'stop';
-
+      
       const timerSection = hasTimer ? `
         <div class="tooltip-divider"></div>
         <div class="tooltip-timer-val" id="mtimer-${m.user_id}">${formatTimerFromState(timer)}</div>
         <div class="tooltip-work-label">За день: <span id="mwork-${m.user_id}">${formatWorkTimeForMember(timer)}</span></div>
       ` : '';
 
+      // Зелёная точка на аватарке если шерит время
       const dot = (m.sharing_time && hasTimer) ? `<div class="member-sharing-dot"></div>` : '';
 
       html += `
@@ -1752,8 +1861,12 @@ function renderTeam() {
       `;
     });
   }
-
-  html += `<div class="team-add-slot" onclick="openInviteModal()" title="Пригласить в команду">+</div>`;
+  
+  // Слот + показываем ВСЕГДА
+  html += `
+    <div class="team-add-slot" onclick="openInviteModal()" title="Пригласить в команду">+</div>
+  `;
+  
   container.innerHTML = html;
   startTeamTimerUpdates();
 }
@@ -1761,10 +1874,12 @@ function renderTeam() {
 function formatWorkTimeForMember(timer) {
   if (!timer) return '00:00:00';
   const completed = timer.completedWorkMs || 0;
+  // Добавляем текущую сессию если таймер идёт
   if ((timer.action === 'start' || timer.action === 'resume') && timer.sessionStart) {
     const running = Date.now() - timer.sessionStart - (timer.totalPausedTime || 0);
     return formatTime(completed + Math.max(0, running));
   }
+  // На паузе — добавляем время до момента паузы
   if (timer.action === 'pause' && timer.pauseStart && timer.sessionStart) {
     const running = timer.pauseStart - timer.sessionStart - (timer.totalPausedTime || 0);
     return formatTime(completed + Math.max(0, running));
@@ -1791,12 +1906,14 @@ let teamTimerInterval = null;
 
 function startTeamTimerUpdates() {
   if (teamTimerInterval) clearInterval(teamTimerInterval);
-
+  
   teamTimerInterval = setInterval(() => {
     Object.entries(teamTimers).forEach(([userId, timer]) => {
       if (!timer || timer.action === 'stop' || timer.action === 'pause') return;
+      
       const timerEl = document.getElementById(`mtimer-${userId}`);
       const workEl = document.getElementById(`mwork-${userId}`);
+      
       if (timerEl) timerEl.textContent = formatTimerFromState(timer);
       if (workEl) workEl.textContent = formatWorkTimeForMember(timer);
     });
@@ -1806,12 +1923,19 @@ function startTeamTimerUpdates() {
 function handleTeamTimerUpdate(data) {
   const { userId, timerState, completedWorkMs } = data;
   teamTimers[userId] = { ...timerState, completedWorkMs: completedWorkMs || 0 };
-
+  
+  // Обновляем тултип без полного перерендера
   const timerEl = document.getElementById(`mtimer-${userId}`);
   const workEl = document.getElementById(`mwork-${userId}`);
-  if (timerEl) timerEl.textContent = formatTimerFromState(timerState);
-  if (workEl) workEl.textContent = formatWorkTimeForMember(teamTimers[userId]);
-
+  
+  if (timerEl) {
+    timerEl.textContent = formatTimerFromState(timerState);
+  }
+  if (workEl) {
+    workEl.textContent = formatWorkTimeForMember(teamTimers[userId]);
+  }
+  
+  // Если элементы не существуют (тултип не создан) — перерисовываем команду
   if (!timerEl || timerState.action === 'stop') {
     loadTeam();
   }
@@ -2054,6 +2178,7 @@ async function sendInvite() {
 // === ШЕРИНГ ВРЕМЕНИ ===
 
 function openShareTimeModal() {
+  // Если уже включён — сразу выключаем без модалки
   if (userTeam && userTeam.members) {
     const me = userTeam.members.find(m => m.user_id === userProfile.userId);
     if (me && me.sharing_time) {
@@ -2161,6 +2286,7 @@ function openBoardOverlay() {
 
 function closeBoardOverlay() {
   const overlay = document.getElementById('board-overlay');
+  overlay.style.animation = 'none';
   overlay.style.opacity = '0';
   overlay.style.transform = 'scale(0.98)';
   overlay.style.transition = 'opacity .25s,transform .25s';
@@ -2205,11 +2331,13 @@ function renderBoard() {
     counter.textContent = tasks.length;
     container.innerHTML = tasks.map(t => renderCard(t)).join('');
 
+    // Drag events на карточки
     container.querySelectorAll('.board-card').forEach(card => {
       card.addEventListener('dragstart', onCardDragStart);
       card.addEventListener('dragend',   onCardDragEnd);
     });
 
+    // Drop zone на колонку
     container.addEventListener('dragover', onColDragOver);
     container.addEventListener('dragleave', onColDragLeave);
     container.addEventListener('drop', onColDrop);
@@ -2242,6 +2370,7 @@ function renderCard(task) {
     </div>`;
 }
 
+// Drag & Drop
 function onCardDragStart(e) {
   dragSrcCardId = e.currentTarget.dataset.cardId;
   e.currentTarget.classList.add('dragging');
@@ -2282,6 +2411,7 @@ function onColDrop(e) {
   dragSrcCardId = null;
 }
 
+// Card modal
 function openCardModal(taskId, status) {
   boardEditingCardId = taskId;
   document.getElementById('cardModalTitle').textContent = taskId ? 'Редактировать' : 'Новая задача';
@@ -2318,7 +2448,7 @@ function closeCardModal() {
 }
 
 function saveCard() {
-  const title = document.getElementById('cardTitleInput').value.trim();
+  const title    = document.getElementById('cardTitleInput').value.trim();
   if (!title) { document.getElementById('cardTitleInput').focus(); return; }
   const desc     = document.getElementById('cardDescInput').value.trim();
   const status   = document.getElementById('cardStatusSelect').value;
@@ -2367,6 +2497,328 @@ function deleteCard(taskId) {
 
 window.editCard   = editCard;
 window.deleteCard = deleteCard;
-window.exportCSV  = exportCSV;
-window.exportJSON = exportJSON;
-window.importJSON = importJSON;
+
+
+// ============================================================
+// SPARKLINES + SCRUBBING (FleetWatch-style KPI charts)
+// ============================================================
+
+const SPARK_DAYS = 14; // количество дней в истории
+
+/**
+ * Получает данные за последние N дней для спарклайнов
+ */
+function getSparkData() {
+  const today = new Date();
+  const days = [];
+  for (let i = SPARK_DAYS - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const data = getDataForDate(dateStr);
+    days.push({
+      dateStr,
+      label: d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
+      workMs: data.totalWorkTime,
+      sessions: data.sessionCount,
+      tasksCompleted: data.tasks.filter(t => t.completed).length,
+      tasksTotal: data.tasks.length,
+    });
+  }
+  return days;
+}
+
+/**
+ * Рисует SVG-спарклайн
+ * @param {string} wrapperId  id обёртки
+ * @param {number[]} values   массив числовых значений
+ * @param {string} color      hex/rgb цвет линии
+ */
+function renderSparkline(wrapperId, values, color) {
+  const wrap = document.getElementById(wrapperId);
+  if (!wrap) return;
+  const svg = wrap.querySelector('svg');
+  if (!svg) return;
+
+  const W = wrap.offsetWidth || 240;
+  const H = 44;
+  const pad = 4;
+
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values);
+  const range = max - min || 1;
+
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (W - pad * 2);
+    const y = H - pad - ((v - min) / range) * (H - pad * 2);
+    return [x, y];
+  });
+
+  // Polyline points
+  const pointsStr = pts.map(p => p.join(',')).join(' ');
+
+  // Area fill path
+  const areaPath = `M${pts[0][0]},${H} ` +
+    pts.map(p => `L${p[0]},${p[1]}`).join(' ') +
+    ` L${pts[pts.length - 1][0]},${H} Z`;
+
+  // Gradient id
+  const gradId = `grad-${wrapperId}`;
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity="0.25"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
+      </linearGradient>
+    </defs>
+    <path d="${areaPath}" fill="url(#${gradId})"/>
+    <polyline
+      points="${pointsStr}"
+      fill="none"
+      stroke="${color}"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+    />
+    ${pts.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="${color}" opacity="0" class="spark-dot" data-idx="${i}"/>`).join('')}
+  `;
+}
+
+/**
+ * Подключает crosshair-scrubbing к спарклайну
+ */
+function attachSparkScrubbing(wrapperId, crosshairId, valueElId, values, formatter) {
+  const wrap = document.getElementById(wrapperId);
+  const cross = document.getElementById(crosshairId);
+  const valueEl = document.getElementById(valueElId);
+  if (!wrap || !cross || !valueEl) return;
+
+  let origValue = null;
+
+  wrap.addEventListener('mousemove', (e) => {
+    const rect = wrap.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const pct = Math.min(1, Math.max(0, x / rect.width));
+    const idx = Math.round(pct * (values.length - 1));
+
+    // Позиция crosshair
+    cross.style.left = (pct * 100) + '%';
+    cross.style.opacity = '1';
+
+    // Подсвечиваем точку
+    wrap.querySelectorAll('.spark-dot').forEach((dot, i) => {
+      dot.setAttribute('opacity', i === idx ? '1' : '0');
+    });
+
+    // Динамически обновляем значение (FleetWatch-стиль)
+    if (origValue === null) origValue = valueEl.textContent;
+    animateValueChange(valueEl, formatter(values[idx]));
+  });
+
+  wrap.addEventListener('mouseleave', () => {
+    cross.style.opacity = '0';
+    wrap.querySelectorAll('.spark-dot').forEach(dot => dot.setAttribute('opacity', '0'));
+    if (origValue !== null) {
+      animateValueChange(valueEl, origValue);
+      origValue = null;
+    }
+  });
+}
+
+/**
+ * Плавная смена значения с flash-эффектом (FleetWatch KPI update)
+ */
+let _animFrames = {};
+function animateValueChange(el, newVal) {
+  if (!el || el.textContent === newVal) return;
+  // flash
+  el.style.transition = 'opacity 0.12s ease';
+  el.style.opacity = '0.4';
+  clearTimeout(_animFrames[el.id]);
+  _animFrames[el.id] = setTimeout(() => {
+    el.textContent = newVal;
+    el.style.opacity = '1';
+  }, 80);
+}
+
+/**
+ * Строит все три спарклайна и подключает scrubbing
+ */
+function buildSparklines() {
+  const days = getSparkData();
+  const workVals     = days.map(d => d.workMs);
+  const sessionVals  = days.map(d => d.sessions);
+  const taskVals     = days.map(d => d.tasksCompleted);
+
+  renderSparkline('spark-work',     workVals,    '#6366f1');
+  renderSparkline('spark-sessions', sessionVals, '#22c55e');
+  renderSparkline('spark-tasks',    taskVals,    '#f59e0b');
+
+  attachSparkScrubbing('spark-work',     'cross-work',     'totalWorkTime', workVals,    v => formatTime(v));
+  attachSparkScrubbing('spark-sessions', 'cross-sessions', 'sessionCount',  sessionVals, v => String(v));
+  attachSparkScrubbing('spark-tasks',    'cross-tasks',    'tasksCompleted',taskVals,    v => {
+    // показываем «N из M» для выбранного дня
+    const idx = taskVals.indexOf(v);
+    if (idx >= 0) return `${days[idx].tasksCompleted} из ${days[idx].tasksTotal}`;
+    return String(v);
+  });
+}
+
+// Пересобираем спарклайны после обновления данных
+const _origUpdateStats = typeof updateSelectedDateStats === 'function' ? updateSelectedDateStats : null;
+
+// Переопределяем updateSelectedDateStats — добавляем пересборку спарклайнов
+(function patchStats() {
+  const orig = window.updateSelectedDateStats;
+  window.updateSelectedDateStats = function() {
+    orig && orig.call(this);
+    buildSparklines();
+  };
+})();
+
+// Вызываем при загрузке
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(buildSparklines, 400);
+    window.addEventListener('resize', debounceResize);
+  });
+} else {
+  setTimeout(buildSparklines, 400);
+  window.addEventListener('resize', debounceResize);
+}
+
+let _resizeTimer;
+function debounceResize() {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(buildSparklines, 200);
+}
+
+// ============================================================
+// TIMER DISPLAY — pulse-ring при работающем таймере
+// ============================================================
+
+(function patchTimerDisplay() {
+  const timerEl = document.getElementById('timerDisplay');
+  if (!timerEl) return;
+
+  // Инжектируем ring
+  const ring = document.createElement('div');
+  ring.className = 'timer-ring';
+  ring.id = 'timerRing';
+  timerEl.parentNode.insertBefore(ring, timerEl);
+  timerEl.parentNode.insertBefore(timerEl, ring.nextSibling);
+
+  // Патчим startTimer / pauseTimer / stopTimer
+  ['startTimer', 'pauseTimer', 'stopTimer'].forEach(fn => {
+    const orig = window[fn];
+    window[fn] = function(...args) {
+      orig && orig.apply(this, args);
+      updateTimerRing();
+    };
+  });
+})();
+
+function updateTimerRing() {
+  const ring = document.getElementById('timerRing');
+  const display = document.getElementById('timerDisplay');
+  if (!ring || !display) return;
+  ring.classList.toggle('active', state.timerRunning && !state.timerPaused);
+  display.classList.toggle('running', state.timerRunning && !state.timerPaused);
+  display.classList.toggle('paused', state.timerPaused);
+}
+
+// ============================================================
+// COUNT-UP, FLASH, PROGRESS BAR
+// ============================================================
+
+/**
+ * Flash-анимация при смене значения
+ */
+function flashValue(el, newVal) {
+  if (!el) return;
+  el.style.transition = 'opacity 0.1s ease, transform 0.1s ease';
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(4px)';
+  setTimeout(() => {
+    el.textContent = newVal;
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
+  }, 100);
+}
+
+/**
+ * Count-up анимация (для целых чисел)
+ */
+function countUpAnimate(el, from, to, durationMs) {
+  if (!el || from === to) { if (el) el.textContent = to; return; }
+  const start = performance.now();
+  const diff = to - from;
+  function tick(now) {
+    const progress = Math.min((now - start) / durationMs, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out-cubic
+    el.textContent = Math.round(from + diff * eased);
+    if (progress < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+/**
+ * Обновляет прогресс-бар задач
+ */
+function updateTasksProgressBar(done, total) {
+  const fill = document.getElementById('tasksProgressFill');
+  const label = document.getElementById('tasksProgressLabel');
+  if (!fill || !label) return;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  fill.style.width = pct + '%';
+  label.textContent = total > 0 ? `${done} из ${total} — ${pct}%` : '';
+  // Цвет: красный → жёлтый → зелёный
+  const hue = Math.round(pct * 1.2); // 0 → 0 (red), 100 → 120 (green)
+  fill.style.background = `hsl(${hue}, 70%, 52%)`;
+}
+
+// ============================================================
+// PAGE LOAD ENTRANCE ANIMATIONS
+// ============================================================
+
+(function initEntranceAnims() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runEntranceAnims);
+  } else {
+    runEntranceAnims();
+  }
+})();
+
+function runEntranceAnims() {
+  // Sidebar nav items — staggered entrance
+  const navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach((item, i) => {
+    item.style.opacity = '0';
+    item.style.transform = 'translateX(-12px)';
+    item.style.transition = 'none';
+    setTimeout(() => {
+      item.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      item.style.opacity = '';
+      item.style.transform = '';
+    }, 200 + i * 45);
+  });
+
+  // Main cards — staggered fade-up
+  const cards = document.querySelectorAll('.glass-card');
+  cards.forEach((card, i) => {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(20px)';
+    card.style.transition = 'none';
+    setTimeout(() => {
+      card.style.transition = 'opacity 0.4s ease, transform 0.4s ease, border-color 0.22s ease, box-shadow 0.22s ease';
+      card.style.opacity = '';
+      card.style.transform = '';
+    }, 400 + i * 80);
+  });
+}

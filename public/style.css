@@ -2171,3 +2171,499 @@ main, header { position: relative; z-index: 1; }
   min-width: 100px;
   text-align: right;
 }
+
+/* === ПРОЕКТЫ === */
+
+.task-project-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid;
+  margin-right: 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.task-project-select {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  color: rgba(255,255,255,0.7);
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  margin-top: 8px;
+  width: 100%;
+  cursor: pointer;
+}
+.task-project-select:focus {
+  outline: none;
+  border-color: rgba(99,102,241,0.5);
+}
+
+/* Список проектов в модалке */
+.project-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 8px;
+}
+.project-color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.project-list-name {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.project-list-count {
+  font-size: 0.78rem;
+  opacity: 0.5;
+}
+.project-list-actions {
+  display: flex;
+  gap: 4px;
+}
+.proj-btn-edit, .proj-btn-del {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 3px 6px;
+  border-radius: 6px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.proj-btn-edit:hover, .proj-btn-del:hover { opacity: 1; }
+
+.projects-empty {
+  text-align: center;
+  opacity: 0.4;
+  padding: 24px 0;
+  font-size: 0.9rem;
+}
+
+/* Редактор проекта */
+.project-edit-row {
+  margin-top: 14px;
+  padding: 14px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.project-edit-row input {
+  width: 100%;
+  margin-bottom: 12px;
+}
+.project-color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.proj-color-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.proj-color-dot:hover { transform: scale(1.2); }
+.proj-color-dot.active {
+  border-color: #fff;
+  transform: scale(1.15);
+}
+.project-edit-btns {
+  display: flex;
+  gap: 8px;
+}
+
+/* === КОМПАКТНЫЕ ЗАДАЧИ НА ДАШБОРДЕ === */
+
+.dashboard-tasks {
+  margin-top: 16px;
+}
+
+.dashboard-tasks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.dashboard-tasks-title {
+  font-size: 1rem;
+  font-weight: 600;
+  opacity: 0.9;
+  margin: 0;
+}
+
+.dashboard-tasks-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.dashboard-tasks-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.dashboard-tasks-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dashboard-tasks-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #22c55e);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.dashboard-tasks-label {
+  font-size: 0.75rem;
+  opacity: 0.5;
+  white-space: nowrap;
+}
+
+.dashboard-tasks-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dash-tasks-empty {
+  text-align: center;
+  opacity: 0.35;
+  font-size: 0.85rem;
+  padding: 16px 0;
+}
+
+.dash-task-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  transition: background 0.15s;
+}
+
+.dash-task-item:hover {
+  background: rgba(255,255,255,0.07);
+}
+
+.dash-task-item.completed .dash-task-text {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.dash-task-item input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.dash-task-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dash-task-text {
+  font-size: 0.88rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================
+   TRACKER WIDGET — этап 3
+   ============================================================ */
+
+.tasks-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+}
+
+.tasks-date-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 2px;
+}
+
+/* --- Обёртка виджета --- */
+.tracker-wrap {
+  position: relative;
+}
+
+/* --- Idle --- */
+.tracker-idle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 50px;
+  cursor: pointer;
+  transition: background 0.2s;
+  width: fit-content;
+}
+.tracker-idle:hover { background: rgba(255,255,255,0.09); }
+
+.tracker-play-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg,#6366f1,#22c55e);
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  transition: transform 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+}
+.tracker-play-btn:hover { transform: scale(1.1); box-shadow: 0 0 16px rgba(99,102,241,0.5); }
+
+.tracker-idle-hint {
+  font-size: 0.9rem;
+  opacity: 0.45;
+}
+
+/* --- Active --- */
+.tracker-active {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 50px;
+  position: relative;
+}
+
+.tracker-left { position: relative; flex-shrink: 0; }
+
+.tracker-project-btn {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  color: inherit; cursor: pointer;
+  font-size: 0.85rem; font-weight: 500;
+  padding: 6px 14px;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+}
+.tracker-project-btn:hover { background: rgba(255,255,255,0.14); }
+
+.tracker-project-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tracker-center { flex: 1; min-width: 0; }
+
+.tracker-comment {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 0.88rem;
+  outline: none;
+  padding: 4px 8px;
+  opacity: 0.7;
+}
+.tracker-comment::placeholder { opacity: 0.4; }
+.tracker-comment:focus { opacity: 1; }
+
+.tracker-right {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+
+.tracker-time {
+  font-family: monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  opacity: 0.9;
+  min-width: 72px;
+  text-align: right;
+}
+
+.tracker-stop-btn {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: rgba(239,68,68,0.2);
+  border: 1px solid rgba(239,68,68,0.4);
+  color: #ef4444; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.tracker-stop-btn:hover { background: rgba(239,68,68,0.4); transform: scale(1.1); }
+
+/* --- Дропдаун --- */
+.tracker-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 200;
+  background: #1a1c2a;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  width: 280px;
+  overflow: hidden;
+}
+
+.tracker-dd-back button {
+  background: none; border: none; color: rgba(255,255,255,0.5);
+  font-size: 0.82rem; cursor: pointer; padding: 10px 14px 4px;
+  transition: color 0.15s;
+}
+.tracker-dd-back button:hover { color: #fff; }
+
+.tracker-dd-search { padding: 8px 10px 4px; }
+.tracker-dd-search input {
+  width: 100%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: #fff; font-size: 0.85rem;
+  padding: 7px 12px; outline: none;
+}
+.tracker-dd-search input:focus { border-color: rgba(99,102,241,0.5); }
+
+.tracker-dd-list { max-height: 220px; overflow-y: auto; padding: 4px 0; }
+
+.tracker-dd-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; cursor: pointer;
+  transition: background 0.12s;
+  font-size: 0.88rem;
+}
+.tracker-dd-item:hover { background: rgba(255,255,255,0.07); }
+.tracker-dd-done { opacity: 0.45; }
+
+.tracker-dd-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.tracker-dd-check { font-size: 0.8rem; opacity: 0.6; flex-shrink: 0; }
+.tracker-dd-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tracker-dd-meta { font-size: 0.75rem; opacity: 0.4; }
+.tracker-dd-arrow { opacity: 0.35; font-size: 1.1rem; }
+.tracker-dd-empty { text-align: center; opacity: 0.35; padding: 12px; font-size: 0.82rem; }
+
+.tracker-dd-footer { border-top: 1px solid rgba(255,255,255,0.08); padding: 8px; }
+.tracker-dd-new {
+  width: 100%; background: none; border: none;
+  color: #6366f1; font-size: 0.82rem; cursor: pointer;
+  padding: 6px; border-radius: 8px; text-align: left;
+  transition: background 0.12s;
+}
+.tracker-dd-new:hover { background: rgba(99,102,241,0.12); }
+
+/* --- Анимации --- */
+@keyframes trackerExpand {
+  from { opacity: 0; transform: scaleX(0.7); }
+  to   { opacity: 1; transform: scaleX(1); }
+}
+@keyframes trackerCollapse {
+  from { opacity: 1; transform: scaleX(1); }
+  to   { opacity: 0; transform: scaleX(0.7); }
+}
+@keyframes ddSlideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ddSlideLeft {
+  from { opacity: 0; transform: translateX(30px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes ddSlideRight {
+  from { opacity: 0; transform: translateX(-30px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.tracker-appearing { animation: trackerExpand 0.35s cubic-bezier(.4,0,.2,1) forwards; }
+.tracker-hiding    { animation: trackerCollapse 0.2s ease forwards; }
+.tracker-dd-open   { animation: ddSlideDown 0.18s ease forwards; }
+.tracker-dd-slide-in      { animation: ddSlideLeft 0.2s ease forwards; }
+.tracker-dd-slide-back-in { animation: ddSlideRight 0.2s ease forwards; }
+
+/* --- Фильтры --- */
+.tasks-filter-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tasks-filter-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px;
+  color: rgba(255,255,255,0.6);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.tasks-filter-btn:hover { background: rgba(255,255,255,0.07); color: #fff; }
+.tasks-filter-btn.active {
+  background: rgba(99,102,241,0.2);
+  border-color: rgba(99,102,241,0.5);
+  color: #a5b4fc;
+}
+
+/* Активная задача в трекере */
+.task-item-tracking {
+  border-color: rgba(99,102,241,0.45) !important;
+  background: rgba(99,102,241,0.08) !important;
+}
+.task-item-tracking .task-text::before {
+  content: '▶ ';
+  color: #6366f1;
+  font-size: 0.7em;
+}
+
+/* кнопка паузы в трекере */
+.tracker-pause-btn {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.7);
+  font-size: 0.8rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.tracker-pause-btn:hover { background: rgba(255,255,255,0.16); transform: scale(1.1); }

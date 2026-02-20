@@ -71,6 +71,8 @@ localStorage.setItem('sessionKey', state.sessionKey);
 }
 }
 
+// Загружаем проекты из localStorage
+loadProjects();
 // Подключаемся к WebSocket серверу
 connectWebSocket();
 // Загружаем профиль пользователя
@@ -98,6 +100,8 @@ if (e.key === 'Enter') saveTask();
 });
 
 // Доска задач (новая полноценная)
+document.getElementById('dashAddTaskBtn') && document.getElementById('dashAddTaskBtn').addEventListener('click', () => { switchSidebarTab('tasks'); showTaskInput(); });
+document.getElementById('dashAllTasksBtn') && document.getElementById('dashAllTasksBtn').addEventListener('click', () => switchSidebarTab('tasks'));
 document.getElementById('boardBtn').addEventListener('click', openBoardOverlay);
 window.addEventListener('message', (e) => { if (e.data === 'close-board') closeBoardOverlay(); });
 
@@ -143,45 +147,37 @@ const sidebarTabs = document.querySelectorAll('[data-sidebar-tab]');
 const pageTitleEl = document.getElementById('pageTitle');
 const tabNames = { timer: 'Дашборд', tasks: 'Задачи', calendar: 'Календарь', board: 'Доска' };
 
-sidebarTabs.forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.sidebarTab;
-    // Board — отдельная логика
-    if (tab === 'board') {
-      openBoardOverlay();
-      return;
-    }
-    // Активный пункт
-    sidebarTabs.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    if (pageTitleEl) pageTitleEl.textContent = tabNames[tab] || '';
-    // Переключение секций с плавным переходом
-    const allSections = document.querySelectorAll('[data-tab-content]');
-    const nextSection = document.querySelector(`[data-tab-content="${tab}"]`);
-    allSections.forEach(s => {
-      if (s.dataset.tabContent !== tab) {
-        s.classList.remove('tab-active');
-        s.style.display = 'none';
-      }
+function switchSidebarTab(tab) {
+  if (tab === 'board') { openBoardOverlay(); return; }
+
+  sidebarTabs.forEach(b => b.classList.toggle('active', b.dataset.sidebarTab === tab));
+  if (pageTitleEl) pageTitleEl.textContent = tabNames[tab] || '';
+
+  const allSections = document.querySelectorAll('[data-tab-content]');
+  allSections.forEach(s => { s.classList.remove('tab-active'); s.style.display = 'none'; });
+
+  if (tab === 'timer') {
+    // Дашборд: показываем timer + dashboard-tasks, но НЕ полную tasks
+    document.querySelectorAll('[data-tab-content="timer"]').forEach(s => {
+      s.style.display = ''; s.classList.add('tab-active');
     });
-    if (nextSection) {
-      nextSection.style.display = '';
-      void nextSection.offsetWidth;
-      nextSection.classList.add('tab-active');
-    }
-    // На десктопе показываем всё на дашборде
-    if (tab === 'timer' && window.innerWidth > 768) {
-      document.querySelectorAll('[data-tab-content]').forEach(s => {
-        s.style.display = '';
-        s.classList.add('tab-active');
-      });
-    }
-  });
+  } else {
+    const next = document.querySelector(`[data-tab-content="${tab}"]`);
+    if (next) { next.style.display = ''; void next.offsetWidth; next.classList.add('tab-active'); }
+    if (tab === 'tasks') { renderTasksProjectFilters(); syncTrackerWithTimer(); }
+  }
+}
+
+sidebarTabs.forEach(btn => {
+  btn.addEventListener('click', () => switchSidebarTab(btn.dataset.sidebarTab));
 });
 
 // Sidebar settings / notifications
 const sidebarSettingsBtn = document.getElementById('sidebarSettings');
 if (sidebarSettingsBtn) sidebarSettingsBtn.addEventListener('click', openSettings);
+
+const sidebarProjectsBtn = document.getElementById('sidebarProjects');
+if (sidebarProjectsBtn) sidebarProjectsBtn.addEventListener('click', openProjectsModal);
 
 const sidebarNotifBtn = document.getElementById('sidebarNotifications');
 if (sidebarNotifBtn) sidebarNotifBtn.addEventListener('click', () => {
@@ -530,6 +526,9 @@ document.getElementById('stopBtn').disabled = true;
 updateSelectedDateStats();
 showToast('Сессия завершена!', 'success');
 
+// Записываем время в задачу трекера
+trackerAssignTime();
+
 // Синхронизируем остановку таймера
 syncTimerState('stop', {});
 }
@@ -540,6 +539,7 @@ if (state.timerRunning && !state.timerPaused) {
 state.elapsedTime = Date.now() - state.currentSessionStart;
 const displayTime = state.elapsedTime - state.totalPausedTime;
 document.getElementById('timerDisplay').textContent = formatTime(displayTime);
+updateTrackerTime();
 // Обновляем рабочее время в реальном времени
 if (state.selectedDate === state.currentDate) {
 updateSelectedDateStats();
@@ -560,7 +560,16 @@ return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${
 
 function showTaskInput() {
 document.getElementById('taskInput').style.display = 'block';
+renderTaskProjectSelect();
 document.getElementById('taskText').focus();
+}
+
+function renderTaskProjectSelect() {
+  const sel = document.getElementById('taskProjectSelect');
+  if (!sel) return;
+  const projects = getProjects();
+  sel.innerHTML = `<option value="">Без проекта</option>` +
+    projects.map(p => `<option value="${p.id}" style="color:${p.color}">${p.name}</option>`).join('');
 }
 
 function hideTaskInput() {
@@ -571,11 +580,14 @@ document.getElementById('taskText').value = '';
 function saveTask() {
 const taskText = document.getElementById('taskText').value.trim();
 if (taskText) {
+const selEl = document.getElementById('taskProjectSelect');
+const projectId = selEl && selEl.value ? Number(selEl.value) : null;
 const task = {
 id: Date.now(),
 text: taskText,
 completed: false,
-date: state.selectedDate
+date: state.selectedDate,
+projectId: projectId
 };
 
 const tasks = getTasks();
@@ -664,21 +676,30 @@ function renderTasks() {
 const tasks = getTasks().filter(t => t.date === state.selectedDate);
 const tasksList = document.getElementById('tasksList');
 
+renderDashTasks();
+
 if (tasks.length === 0) {
 tasksList.innerHTML = '<li style="text-align: center; color: rgba(255, 255, 255, 0.5); padding: 20px;">Нет задач на эту дату</li>';
 return;
 }
 
-tasksList.innerHTML = tasks.map(task => `
+tasksList.innerHTML = tasks.map(task => {
+const project = task.projectId ? getProjectById(task.projectId) : null;
+const projectBadge = project
+  ? `<span class="task-project-badge" style="background:${project.color}20;color:${project.color};border-color:${project.color}40">${escapeHTML(project.name)}</span>`
+  : '';
+return `
        <li class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
            <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask(${task.id})">
            <div class="task-content">
+               ${projectBadge}
                <span class="task-text">${escapeHTML(task.text)}</span>
                ${task.completed && task.timeSpent ? `<span class="task-time">⏱ ${formatTime(task.timeSpent)}</span>` : ''}
            </div>
            <button class="delete-btn" onclick="deleteTask(${task.id})">Удалить</button>
        </li>
-   `).join('');
+   `;
+}).join('');
 }
 
 function updateTasksTitle() {
@@ -693,6 +714,44 @@ titleText = 'Задачи на ' + dateObj.toLocaleDateString('ru-RU', { day: 'n
 }
 
 document.getElementById('tasksTitle').textContent = titleText;
+}
+
+// === КОМПАКТНЫЕ ЗАДАЧИ НА ДАШБОРДЕ ===
+
+function renderDashTasks() {
+  const today = new Date().toISOString().split('T')[0];
+  const tasks = cache.tasks.filter(t => t.date === today);
+  const list = document.getElementById('dashTasksList');
+  if (!list) return;
+
+  const completed = tasks.filter(t => t.completed).length;
+  const total = tasks.length;
+
+  // Прогресс
+  const fill = document.getElementById('dashTasksFill');
+  const label = document.getElementById('dashTasksLabel');
+  if (fill) fill.style.width = total ? `${Math.round(completed/total*100)}%` : '0%';
+  if (label) label.textContent = `${completed} из ${total}`;
+
+  if (tasks.length === 0) {
+    list.innerHTML = '<li class="dash-tasks-empty">Нет задач на сегодня</li>';
+    return;
+  }
+
+  list.innerHTML = tasks.map(task => {
+    const project = task.projectId ? getProjectById(task.projectId) : null;
+    const badge = project
+      ? `<span class="task-project-badge" style="background:${project.color}20;color:${project.color};border-color:${project.color}40">${escapeHTML(project.name)}</span>`
+      : '';
+    return `
+      <li class="dash-task-item ${task.completed ? 'completed' : ''}">
+        <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask(${task.id})">
+        <div class="dash-task-body">
+          ${badge}
+          <span class="dash-task-text">${escapeHTML(task.text)}</span>
+        </div>
+      </li>`;
+  }).join('');
 }
 
 // === КАЛЕНДАРЬ ===
@@ -1098,8 +1157,58 @@ connectWebSocket();
 // In-memory кеш — актуален пока открыта вкладка
 const cache = {
 tasks: [],
-sessions: {} // { 'sessions_2025-01-01': [...] }
+sessions: {}, // { 'sessions_2025-01-01': [...] }
+projects: []  // [{ id, name, color }]
 };
+
+// === ПРОЕКТЫ ===
+
+const PROJECTS_KEY = 'linktime_projects';
+
+function getProjects() {
+  return cache.projects;
+}
+
+function saveProjects(projects) {
+  cache.projects = projects;
+  try { localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects)); } catch(e) {}
+}
+
+function loadProjects() {
+  try {
+    const raw = localStorage.getItem(PROJECTS_KEY);
+    if (raw) cache.projects = JSON.parse(raw);
+  } catch(e) {}
+}
+
+function getProjectById(id) {
+  return cache.projects.find(p => p.id === id) || null;
+}
+
+function createProject(name, color) {
+  const project = { id: Date.now(), name: name.trim(), color: color || '#6366f1' };
+  const projects = getProjects();
+  projects.push(project);
+  saveProjects(projects);
+  return project;
+}
+
+function deleteProject(id) {
+  // Убираем projectId у задач этого проекта
+  const tasks = getTasks().map(t => t.projectId === id ? { ...t, projectId: null } : t);
+  saveTasks(tasks);
+  saveProjects(getProjects().filter(p => p.id !== id));
+}
+
+function renameProject(id, name, color) {
+  const projects = getProjects().map(p => p.id === id ? { ...p, name: name.trim(), color: color || p.color } : p);
+  saveProjects(projects);
+}
+
+const PROJECT_COLORS = [
+  '#6366f1','#8b5cf6','#ec4899','#ef4444',
+  '#f97316','#eab308','#10b981','#06b6d4','#3b82f6'
+];
 
 function getTasks() {
 return cache.tasks;
@@ -2209,6 +2318,106 @@ async function disableShareTime() {
   }
 }
 
+// === УПРАВЛЕНИЕ ПРОЕКТАМИ ===
+
+function openProjectsModal() {
+  renderProjectsList();
+  document.getElementById('projectsModal').classList.add('active');
+}
+
+function closeProjectsModal() {
+  document.getElementById('projectsModal').classList.remove('active');
+  document.getElementById('projectEditRow').style.display = 'none';
+  editingProjectId = null;
+}
+
+let editingProjectId = null;
+let selectedProjectColor = '#6366f1';
+
+function renderProjectsList() {
+  const list = document.getElementById('projectsListEl');
+  const projects = getProjects();
+  if (projects.length === 0) {
+    list.innerHTML = '<div class="projects-empty">Нет проектов. Создайте первый!</div>';
+    return;
+  }
+  const taskCounts = {};
+  getTasks().forEach(t => { if (t.projectId) taskCounts[t.projectId] = (taskCounts[t.projectId]||0)+1; });
+  list.innerHTML = projects.map(p => `
+    <div class="project-list-item">
+      <div class="project-color-dot" style="background:${p.color}"></div>
+      <div class="project-list-name">${escapeHTML(p.name)}</div>
+      <div class="project-list-count">${taskCounts[p.id]||0} задач</div>
+      <div class="project-list-actions">
+        <button class="proj-btn-edit" onclick="startEditProject(${p.id})">✏️</button>
+        <button class="proj-btn-del" onclick="confirmDeleteProject(${p.id})">🗑</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function startAddProject() {
+  editingProjectId = null;
+  selectedProjectColor = '#6366f1';
+  document.getElementById('projectNameInput').value = '';
+  renderColorPicker('projectColorPicker', selectedProjectColor);
+  document.getElementById('projectEditRow').style.display = 'block';
+  document.getElementById('projectNameInput').focus();
+}
+
+function startEditProject(id) {
+  const p = getProjectById(id);
+  if (!p) return;
+  editingProjectId = id;
+  selectedProjectColor = p.color;
+  document.getElementById('projectNameInput').value = p.name;
+  renderColorPicker('projectColorPicker', selectedProjectColor);
+  document.getElementById('projectEditRow').style.display = 'block';
+  document.getElementById('projectNameInput').focus();
+}
+
+function saveProjectEdit() {
+  const name = document.getElementById('projectNameInput').value.trim();
+  if (!name) { showToast('Введите название', 'error'); return; }
+  if (editingProjectId) {
+    renameProject(editingProjectId, name, selectedProjectColor);
+    showToast('Проект обновлён', 'success');
+  } else {
+    createProject(name, selectedProjectColor);
+    showToast('Проект создан', 'success');
+  }
+  document.getElementById('projectEditRow').style.display = 'none';
+  editingProjectId = null;
+  renderProjectsList();
+  renderTasks();
+}
+
+function confirmDeleteProject(id) {
+  const p = getProjectById(id);
+  if (!p) return;
+  if (confirm(`Удалить проект "${p.name}"? Задачи останутся, но потеряют привязку.`)) {
+    deleteProject(id);
+    renderProjectsList();
+    renderTasks();
+    showToast('Проект удалён', 'info');
+  }
+}
+
+function renderColorPicker(containerId, selected) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = PROJECT_COLORS.map(c =>
+    `<button class="proj-color-dot ${c===selected?'active':''}" style="background:${c}" data-color="${c}" onclick="pickProjectColor('${containerId}','${c}')"></button>`
+  ).join('');
+}
+
+function pickProjectColor(containerId, color) {
+  selectedProjectColor = color;
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.querySelectorAll('.proj-color-dot').forEach(b => b.classList.toggle('active', b.dataset.color===color));
+}
+
 async function confirmShareTime() {
   try {
     const res = await fetch(`${getApiBase()}/api/team/sharing`, {
@@ -2822,3 +3031,350 @@ function runEntranceAnims() {
     }, 400 + i * 80);
   });
 }
+
+
+// ============================================================
+// TRACKER WIDGET — этап 3
+// ============================================================
+
+const tracker = {
+  projectId: null,
+  taskId: null,
+  projectName: null,
+  taskName: null,
+  projectColor: null,
+  comment: '',
+  ddMode: 'projects', // 'projects' | 'tasks'
+};
+
+let trackerFilterProject = 'all';
+
+// Записывает elapsed time в задачу трекера при остановке таймера
+function trackerAssignTime() {
+  if (!tracker.taskId) return;
+  const elapsed = state.elapsedTime - state.totalPausedTime;
+  if (elapsed <= 0) return;
+  const tasks = getTasks();
+  const task = tasks.find(t => t.id === tracker.taskId);
+  if (!task) return;
+  task.timeSpent = (task.timeSpent || 0) + elapsed;
+  if (!task.completed) {
+    task.completed = true;
+    task.completedAt = Date.now();
+  }
+  saveTasks(tasks);
+  renderTasks();
+  updateSelectedDateStats();
+  showToast(`Время записано: ${formatTime(elapsed)} → "${task.text}"`, 'success');
+}
+
+function initTracker() {
+  const playBtn  = document.getElementById('trackerPlayBtn');
+  const stopBtn  = document.getElementById('trackerStopBtn');
+  const pauseBtn = document.getElementById('trackerPauseBtn');
+  const projBtn  = document.getElementById('trackerProjectBtn');
+  const search   = document.getElementById('trackerSearch');
+  const newProjBtn = document.getElementById('trackerNewProjectBtn');
+
+  if (!playBtn) return;
+
+  playBtn.addEventListener('click', trackerStart);
+  stopBtn  && stopBtn.addEventListener('click', trackerStop);
+  pauseBtn && pauseBtn.addEventListener('click', trackerTogglePause);
+  projBtn  && projBtn.addEventListener('click', (e) => { e.stopPropagation(); trackerToggleDropdown(); });
+  search   && search.addEventListener('input', trackerRenderDdList);
+  newProjBtn && newProjBtn.addEventListener('click', (e) => { e.stopPropagation(); trackerQuickNewProject(); });
+
+  document.addEventListener('click', (e) => {
+    const dd = document.getElementById('trackerDropdown');
+    const btn = document.getElementById('trackerProjectBtn');
+    if (dd && !dd.contains(e.target) && e.target !== btn) trackerCloseDropdown();
+  });
+
+  // Синхронизировать виджет с состоянием таймера
+  syncTrackerWithTimer();
+}
+
+function trackerStart() {
+  // Запускаем основной таймер
+  if (!state.timerRunning) startTimer();
+
+  const idle   = document.getElementById('trackerIdle');
+  const active = document.getElementById('trackerActive');
+  idle.classList.add('tracker-hiding');
+  setTimeout(() => {
+    idle.style.display = 'none';
+    idle.classList.remove('tracker-hiding');
+    active.style.display = 'flex';
+    active.classList.add('tracker-appearing');
+    setTimeout(() => active.classList.remove('tracker-appearing'), 400);
+  }, 200);
+}
+
+function trackerStop() {
+  if (state.timerRunning) stopTimer();
+
+  // Сохраняем комментарий если есть
+  const comment = document.getElementById('trackerComment').value.trim();
+  if (comment && tracker.taskId) {
+    const tasks = getTasks();
+    const t = tasks.find(t => t.id === tracker.taskId);
+    if (t) { t.boardDesc = comment; saveTasks(tasks); }
+  }
+
+  // Сбрасываем трекер
+  tracker.projectId = null; tracker.taskId = null;
+  tracker.projectName = null; tracker.taskName = null;
+  tracker.projectColor = null;
+  document.getElementById('trackerComment').value = '';
+  trackerResetLabel();
+
+  const active = document.getElementById('trackerActive');
+  const idle   = document.getElementById('trackerIdle');
+  active.classList.add('tracker-hiding');
+  setTimeout(() => {
+    active.style.display = 'none';
+    active.classList.remove('tracker-hiding');
+    idle.style.display = 'flex';
+    idle.classList.add('tracker-appearing');
+    setTimeout(() => idle.classList.remove('tracker-appearing'), 400);
+  }, 200);
+}
+
+function trackerTogglePause() {
+  pauseTimer(!state.timerPaused);
+  const btn = document.getElementById('trackerPauseBtn');
+  if (btn) btn.textContent = state.timerPaused ? '▶' : '⏸';
+}
+
+function syncTrackerWithTimer() {
+  const idle   = document.getElementById('trackerIdle');
+  const active = document.getElementById('trackerActive');
+  if (!idle || !active) return;
+  if (state.timerRunning) {
+    idle.style.display   = 'none';
+    active.style.display = 'flex';
+    updateTrackerTime();
+  } else {
+    idle.style.display   = 'flex';
+    active.style.display = 'none';
+  }
+}
+
+// Обновляем время в виджете (вызывается из updateTimer)
+function updateTrackerTime() {
+  const el = document.getElementById('trackerTime');
+  if (!el) return;
+  const timerEl = document.getElementById('timerDisplay');
+  if (timerEl) el.textContent = timerEl.textContent;
+}
+
+// === ДРОПДАУН ===
+
+function trackerToggleDropdown() {
+  const dd = document.getElementById('trackerDropdown');
+  if (!dd) return;
+  if (dd.style.display === 'none' || !dd.style.display) {
+    tracker.ddMode = 'projects';
+    dd.style.display = 'block';
+    dd.classList.add('tracker-dd-open');
+    document.getElementById('trackerSearch').value = '';
+    document.getElementById('trackerDdBack').style.display = 'none';
+    trackerRenderDdList();
+    setTimeout(() => document.getElementById('trackerSearch').focus(), 50);
+  } else {
+    trackerCloseDropdown();
+  }
+}
+
+function trackerCloseDropdown() {
+  const dd = document.getElementById('trackerDropdown');
+  if (!dd) return;
+  dd.classList.remove('tracker-dd-open');
+  dd.classList.add('tracker-dd-close');
+  setTimeout(() => {
+    dd.style.display = 'none';
+    dd.classList.remove('tracker-dd-close');
+  }, 180);
+}
+
+function trackerRenderDdList() {
+  const list = document.getElementById('trackerDdList');
+  const q = (document.getElementById('trackerSearch').value || '').toLowerCase();
+  if (!list) return;
+
+  if (tracker.ddMode === 'projects') {
+    const projects = getProjects().filter(p => !q || p.name.toLowerCase().includes(q));
+    if (projects.length === 0) {
+      list.innerHTML = `<div class="tracker-dd-empty">Нет проектов</div>`;
+      return;
+    }
+    list.innerHTML = projects.map(p => {
+      const cnt = getTasks().filter(t => t.projectId === p.id && t.date === state.selectedDate).length;
+      return `<div class="tracker-dd-item" onclick="trackerSelectProject(${p.id})">
+        <span class="tracker-dd-dot" style="background:${p.color}"></span>
+        <span class="tracker-dd-name">${escapeHTML(p.name)}</span>
+        <span class="tracker-dd-meta">${cnt} задач</span>
+        <span class="tracker-dd-arrow">›</span>
+      </div>`;
+    }).join('');
+  } else {
+    // Задачи выбранного проекта
+    const tasks = getTasks().filter(t =>
+      t.projectId === tracker.projectId &&
+      t.date === state.selectedDate &&
+      (!q || t.text.toLowerCase().includes(q))
+    );
+    const noTaskItem = `<div class="tracker-dd-item tracker-dd-notask" onclick="trackerSelectTask(null, 'Без задачи')">
+      <span class="tracker-dd-name" style="opacity:0.5">Без задачи</span>
+    </div>`;
+    if (tasks.length === 0) {
+      list.innerHTML = noTaskItem + `<div class="tracker-dd-empty">Нет задач по этому проекту</div>`;
+      return;
+    }
+    list.innerHTML = noTaskItem + tasks.map(t => `
+      <div class="tracker-dd-item ${t.completed ? 'tracker-dd-done' : ''}" onclick="trackerSelectTask(${t.id}, '${escapeHTML(t.text).replace(/'/g,"\\'")}')">
+        <span class="tracker-dd-check">${t.completed ? '✓' : '○'}</span>
+        <span class="tracker-dd-name">${escapeHTML(t.text)}</span>
+      </div>`).join('');
+  }
+}
+
+function trackerSelectProject(projectId) {
+  const p = getProjectById(projectId);
+  if (!p) return;
+  tracker.projectId = projectId;
+  tracker.projectName = p.name;
+  tracker.projectColor = p.color;
+  tracker.ddMode = 'tasks';
+
+  // Анимация slide-left
+  const list = document.getElementById('trackerDdList');
+  list.classList.add('tracker-dd-slide-out');
+  setTimeout(() => {
+    list.classList.remove('tracker-dd-slide-out');
+    list.classList.add('tracker-dd-slide-in');
+    document.getElementById('trackerSearch').value = '';
+    document.getElementById('trackerDdBack').style.display = 'block';
+    trackerRenderDdList();
+    setTimeout(() => list.classList.remove('tracker-dd-slide-in'), 220);
+  }, 150);
+}
+
+function trackerBackToProjects() {
+  tracker.ddMode = 'projects';
+  const list = document.getElementById('trackerDdList');
+  list.classList.add('tracker-dd-slide-back-out');
+  setTimeout(() => {
+    list.classList.remove('tracker-dd-slide-back-out');
+    list.classList.add('tracker-dd-slide-back-in');
+    document.getElementById('trackerSearch').value = '';
+    document.getElementById('trackerDdBack').style.display = 'none';
+    trackerRenderDdList();
+    setTimeout(() => list.classList.remove('tracker-dd-slide-back-in'), 220);
+  }, 150);
+}
+
+function trackerSelectTask(taskId, taskName) {
+  tracker.taskId = taskId;
+  tracker.taskName = taskName;
+  trackerCloseDropdown();
+  trackerUpdateLabel();
+  // Фокус на комментарий
+  setTimeout(() => document.getElementById('trackerComment') && document.getElementById('trackerComment').focus(), 200);
+}
+
+function trackerUpdateLabel() {
+  const dot   = document.getElementById('trackerProjectDot');
+  const label = document.getElementById('trackerProjectLabel');
+  if (!label) return;
+  if (tracker.projectName) {
+    dot.style.display = 'inline-block';
+    dot.style.background = tracker.projectColor || '#6366f1';
+    label.textContent = tracker.taskName
+      ? `${tracker.projectName} › ${tracker.taskName}`
+      : tracker.projectName;
+  } else {
+    trackerResetLabel();
+  }
+}
+
+function trackerResetLabel() {
+  const dot   = document.getElementById('trackerProjectDot');
+  const label = document.getElementById('trackerProjectLabel');
+  if (dot)   { dot.style.display = 'none'; }
+  if (label) label.textContent = '+ Проект и задача';
+}
+
+function trackerQuickNewProject() {
+  const name = prompt('Название нового проекта:');
+  if (!name || !name.trim()) return;
+  const p = createProject(name.trim(), '#6366f1');
+  renderTaskProjectSelect();
+  renderTasksProjectFilters();
+  trackerSelectProject(p.id);
+}
+
+// === ФИЛЬТРЫ ПО ПРОЕКТАМ ===
+
+function renderTasksProjectFilters() {
+  const wrap = document.getElementById('tasksProjectFilters');
+  if (!wrap) return;
+  const projects = getProjects();
+  wrap.innerHTML = projects.map(p =>
+    `<button class="tasks-filter-btn" data-filter="${p.id}"
+      style="${trackerFilterProject == p.id ? `background:${p.color}30;border-color:${p.color};color:${p.color}` : `border-color:${p.color}50;color:${p.color}`}"
+      onclick="setTaskFilter(${p.id}, this)">${p.name}</button>`
+  ).join('');
+}
+
+function setTaskFilter(projectId, btn) {
+  trackerFilterProject = projectId;
+  document.querySelectorAll('.tasks-filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderTasks();
+  renderTasksProjectFilters();
+}
+
+// Патчим renderTasks для поддержки фильтра и рефреша фильтров
+const _origRenderTasks = renderTasks;
+function renderTasks() {
+  const tasks = getTasks().filter(t => {
+    const dateOk = t.date === state.selectedDate;
+    if (!dateOk) return false;
+    if (trackerFilterProject === 'all') return true;
+    return t.projectId == trackerFilterProject;
+  });
+
+  renderDashTasks();
+  renderTasksProjectFilters();
+
+  const tasksList = document.getElementById('tasksList');
+  if (!tasksList) return;
+
+  if (tasks.length === 0) {
+    tasksList.innerHTML = '<li style="text-align:center;color:rgba(255,255,255,0.4);padding:24px">Нет задач</li>';
+    return;
+  }
+
+  tasksList.innerHTML = tasks.map(task => {
+    const project = task.projectId ? getProjectById(task.projectId) : null;
+    const projectBadge = project
+      ? `<span class="task-project-badge" style="background:${project.color}20;color:${project.color};border-color:${project.color}40">${escapeHTML(project.name)}</span>`
+      : '';
+    const activeClass = tracker.taskId === task.id ? 'task-item-tracking' : '';
+    return `
+      <li class="task-item ${task.completed ? 'completed' : ''} ${activeClass}" data-task-id="${task.id}">
+        <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask(${task.id})">
+        <div class="task-content">
+          ${projectBadge}
+          <span class="task-text">${escapeHTML(task.text)}</span>
+          ${task.completed && task.timeSpent ? `<span class="task-time">⏱ ${formatTime(task.timeSpent)}</span>` : ''}
+        </div>
+        <button class="delete-btn" onclick="deleteTask(${task.id})">Удалить</button>
+      </li>`;
+  }).join('');
+}
+
+// Вызываем initTracker при загрузке
+document.addEventListener('DOMContentLoaded', () => setTimeout(initTracker, 100));

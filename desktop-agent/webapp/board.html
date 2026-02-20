@@ -6,13 +6,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:'Inter',sans-serif;color:#fff;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#080a10;font-family:'Inter',sans-serif;color:#fff;user-select:none}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px}
 #app{display:flex;width:100%;height:100%;position:relative}
 
 /* ─── TOOLBAR ─── */
-#toolbar{width:52px;height:100%;background:rgba(255,255,255,0.03);border-right:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:3px;flex-shrink:0;z-index:100}
+#toolbar{width:52px;height:100%;background:rgba(13,15,26,0.98);border-right:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:3px;flex-shrink:0;z-index:100}
 .t-sep{width:30px;height:1px;background:rgba(255,255,255,0.08);margin:5px 0;flex-shrink:0}
 .t-spacer{flex:1}
 .tb{width:38px;height:38px;border-radius:9px;border:none;background:transparent;color:rgba(255,255,255,0.4);font-size:1.05rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;position:relative;flex-shrink:0}
@@ -34,7 +34,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 #csvg .conn-hit{pointer-events:stroke;cursor:pointer}
 
 /* ─── CARDS ─── */
-.bc{position:absolute;border-radius:14px;border:1.5px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;transition:border-color .2s,box-shadow .2s;cursor:default;min-width:180px;min-height:100px;z-index:2}
+.bc{position:absolute;border-radius:14px;border:1.5px solid rgba(255,255,255,0.09);display:flex;flex-direction:column;transition:border-color .2s,box-shadow .2s;cursor:default;min-width:180px;min-height:100px;z-index:2;backdrop-filter:blur(2px)}
 .bc:hover{border-color:rgba(255,255,255,0.22)}
 .bc.sel{border-color:var(--my-sel-color,rgba(99,102,241,.7))!important;box-shadow:0 0 0 3px var(--my-sel-shadow,rgba(99,102,241,.18)),0 16px 48px rgba(0,0,0,.5)}
 .bc.rem-sel{border-width:2px!important;box-shadow:0 0 0 3px var(--rem-sel-shadow),0 8px 32px rgba(0,0,0,.4)}
@@ -82,7 +82,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 .bc-port:hover{transform:translateY(-50%) scale(1.4)!important;background:#a5b4fc}
 
 /* ─── INSPECTOR ─── */
-#insp{width:272px;height:100%;background:rgba(9,11,20,.98);border-left:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .28s cubic-bezier(.22,1,.36,1);position:absolute;right:0;top:0;z-index:300;overflow-y:auto}
+#insp{width:272px;height:100%;background:rgba(8,10,16,0.99);border-left:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .28s cubic-bezier(.22,1,.36,1);position:absolute;right:0;top:0;z-index:300;overflow-y:auto}
 #insp.open{transform:translateX(0)}
 .ih{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 12px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
 .ih h3{font-size:.73rem;font-weight:600;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.08em}
@@ -136,7 +136,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 #chint{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.35);border-radius:10px;padding:7px 16px;font-size:.73rem;color:#818cf8;display:none;pointer-events:none;z-index:10}
 
 /* ─── CONTEXT MENU ─── */
-#ctx{position:fixed;background:rgba(12,14,26,.98);border:1px solid rgba(255,255,255,.1);border-radius:11px;padding:5px;min-width:160px;z-index:9000;display:none;backdrop-filter:blur(16px);box-shadow:0 16px 48px rgba(0,0,0,.6)}
+#ctx{position:fixed;background:rgba(13,15,26,0.99);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:5px;min-width:160px;z-index:9000;display:none;backdrop-filter:blur(20px);box-shadow:0 20px 60px rgba(0,0,0,.7)}
 .ci{padding:7px 11px;border-radius:6px;font-size:.75rem;color:rgba(255,255,255,.72);cursor:pointer;display:flex;align-items:center;gap:7px;transition:background .1s}
 .ci:hover{background:rgba(255,255,255,.07);color:#fff}
 .ci.danger{color:rgba(239,68,68,.8)}
@@ -144,7 +144,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 .csep{height:1px;background:rgba(255,255,255,.06);margin:3px 0}
 
 /* ─── TOAST ─── */
-#toast{position:fixed;bottom:56px;left:50%;transform:translateX(-50%) translateY(8px);background:rgba(14,16,28,.97);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 18px;font-size:.75rem;color:#fff;opacity:0;transition:all .25s;z-index:9999;pointer-events:none}
+#toast{position:fixed;bottom:56px;left:50%;transform:translateX(-50%) translateY(8px);background:rgba(13,15,26,0.98);border:1px solid rgba(255,255,255,.09);border-radius:11px;padding:9px 18px;font-size:.75rem;color:#fff;opacity:0;transition:all .28s cubic-bezier(.22,1,.36,1);z-index:9999;pointer-events:none;box-shadow:0 12px 40px rgba(0,0,0,.5)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.ok{border-color:rgba(16,185,129,.4);color:#6ee7b7}
 #toast.err{border-color:rgba(239,68,68,.4);color:#fca5a5}
@@ -188,9 +188,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 .color-preset:hover{transform:scale(1.2);border-color:#fff}
 
 
-#dropov{display:none} /* не используется */
+/* ─── CARD HOVER ELEVATION (FleetWatch style) ─── */
+.bc:hover{border-color:rgba(255,255,255,0.18);box-shadow:0 0 0 1px rgba(255,255,255,0.08),0 12px 36px rgba(0,0,0,0.5)}
+.bc.sel{border-color:var(--my-sel-color,rgba(99,102,241,.75))!important;box-shadow:0 0 0 3px var(--my-sel-shadow,rgba(99,102,241,.2)),0 16px 48px rgba(0,0,0,.55)}
+
+/* ─── BOARD BACKGROUND GRID ─── */
+#vp::before{content:'';position:absolute;inset:0;background-image:radial-gradient(ellipse 60% 40% at 70% 15%,rgba(99,102,241,0.05) 0%,transparent 60%),radial-gradient(ellipse 40% 30% at 20% 75%,rgba(139,92,246,0.04) 0%,transparent 50%);pointer-events:none;z-index:0}
+
+#dropov{display:none}
 .bc.drag-over{border-color:rgba(99,102,241,.8)!important;box-shadow:0 0 0 3px rgba(99,102,241,.25)!important;background:rgba(99,102,241,.07)!important}
-.bc.drag-over::after{content:'🖼 Отпустите для вставки';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#818cf8;font-weight:600;pointer-events:none;background:rgba(10,12,24,.75);border-radius:13px;z-index:100}
+.bc.drag-over::after{content:'🖼 Отпустите для вставки';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#818cf8;font-weight:600;pointer-events:none;background:rgba(8,10,16,.8);border-radius:13px;z-index:100}
+
 </style>
 </head>
 <body>
