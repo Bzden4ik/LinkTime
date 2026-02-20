@@ -30,7 +30,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 
 /* ─── SVG overlay: full viewport, viewport-space coords via getBCR ─── */
 #csvg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;overflow:visible}
-#csvg .cg{pointer-events:visiblePainted}
+#csvg .cg{pointer-events:none}
 #csvg .conn-hit{pointer-events:stroke;cursor:pointer}
 
 /* ─── CARDS ─── */
@@ -1139,7 +1139,10 @@ document.getElementById('btn-back').addEventListener('click',()=>{window.parent&
 vp.addEventListener('mousedown',e=>{
   if(e.button===1){startPan(e);return}
   if(e.button!==0)return;
-  const onBg=e.target===vp||e.target===canvas||e.target===document.getElementById('csvg');
+  const onBg = e.target===vp || e.target===canvas
+    || e.target===document.getElementById('csvg')
+    || e.target===document.getElementById('conn-layer')
+    || e.target.tagName==='svg' || e.target.tagName==='SVGSVGElement';
   if(onBg){
     if(S.tool==='card'){const cp=cpt(e.clientX,e.clientY);addCard(cp.x,cp.y);setTool('select');return}
     // Cancel connection mode on bg click
