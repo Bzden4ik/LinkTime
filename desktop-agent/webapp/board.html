@@ -326,6 +326,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 // ═══════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════
+let _saveTThrottle=0;
 const params = new URLSearchParams(location.search);
 const SESSION_KEY = params.get('sessionKey')||'dev';
 let currentBoard = localStorage.getItem('board_tab_'+SESSION_KEY) || 'personal';
@@ -1075,7 +1076,6 @@ function startPan(e){
   vp.classList.add('panning');
 }
 
-let _saveTThrottle=0;
 function applyT(){
   canvas.style.transform=`translate(${S.tx}px,${S.ty}px) scale(${S.scale})`;
   document.getElementById('sb-zoom').textContent=Math.round(S.scale*100)+'%';
