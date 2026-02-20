@@ -446,7 +446,13 @@ function sendLiveBlock(cardId, blockId, patch) {
 function switchBoard(boardType) {
   currentBoard = boardType;
   localStorage.setItem('board_tab_'+SESSION_KEY, boardType);
-  S.cards=[]; S.connections=[]; S.sel=null; S.tx=0; S.ty=0; S.scale=1;
+  // Сохраняем трансформ текущей доски перед переключением
+  const prevBoard = currentBoard === boardType ? boardType : (boardType === 'team' ? 'personal' : 'team');
+  // Восстанавливаем трансформ для новой доски
+  const savedT = localStorage.getItem('board_transform_'+SESSION_KEY+'_'+boardType);
+  const t = savedT ? JSON.parse(savedT) : null;
+  S.cards=[]; S.connections=[]; S.sel=null;
+  S.tx = t ? t.tx : 0; S.ty = t ? t.ty : 0; S.scale = t ? t.scale : 1;
   document.querySelectorAll('.btab').forEach(b => b.classList.toggle('active', b.dataset.board === boardType));
   if (boardType === 'team') {
     initUsername().then(() => connectBoardWS());
@@ -1069,10 +1075,14 @@ function startPan(e){
   vp.classList.add('panning');
 }
 
+let _saveTThrottle=0;
 function applyT(){
   canvas.style.transform=`translate(${S.tx}px,${S.ty}px) scale(${S.scale})`;
   document.getElementById('sb-zoom').textContent=Math.round(S.scale*100)+'%';
   updateConnsOnly();
+  const now=Date.now();if(now-_saveTThrottle>200){_saveTThrottle=now;
+    localStorage.setItem('board_transform_'+SESSION_KEY+'_'+currentBoard, JSON.stringify({tx:S.tx,ty:S.ty,scale:S.scale}));
+  }
 }
 function cpt(sx,sy){
   const r=vp.getBoundingClientRect();
