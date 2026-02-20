@@ -382,7 +382,7 @@ function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
-    }, 300);
+    }, 800);
     return;
   }
   // Личная: дебаунс-сохранение через API
@@ -419,12 +419,19 @@ function sendLiveText(cardId, field, value) {
 }
 
 // Отправка live-патча для блока внутри карточки
-let blockSendThrottle = 0;
+let blockDragThrottle = 0;
+let blockResizeThrottle = 0;
 function sendLiveBlock(cardId, blockId, patch) {
   if (currentBoard !== 'team') return;
   const now = Date.now();
-  if (now - blockSendThrottle < 16) return;
-  blockSendThrottle = now;
+  const isResize = patch.w !== undefined;
+  if (isResize) {
+    if (now - blockResizeThrottle < 16) return;
+    blockResizeThrottle = now;
+  } else {
+    if (now - blockDragThrottle < 16) return;
+    blockDragThrottle = now;
+  }
   boardSend({type:'board_live', cardId, patch:{block:{id:blockId, ...patch}}});
 }
 
@@ -516,7 +523,8 @@ function connectBoardWS() {
           if (p.block.y !== undefined) b.y = p.block.y;
           if (p.block.w !== undefined) b.w = p.block.w;
           if (p.block.content !== undefined) b.content = p.block.content;
-          const bel = document.getElementById('bl-' + b.id);
+          let bel = document.getElementById('bl-' + b.id);
+          if (!bel) { drawBlock(c, b); bel = document.getElementById('bl-' + b.id); }
           if (bel) {
             if (p.block.x !== undefined) bel.style.left = b.x + 'px';
             if (p.block.y !== undefined) bel.style.top = b.y + 'px';
