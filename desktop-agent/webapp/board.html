@@ -378,22 +378,12 @@ async function loadBoard() {
 
 function save() {
   if (currentBoard === 'team') {
-    // Дебаунс для текста — не спамим WS на каждый символ
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
     }, 800);
     return;
   }
-
-// Немедленная отправка для структурных изменений (создание/удаление карточек, связей)
-function saveNow() {
-  if (currentBoard !== 'team') { save(); return; }
-  clearTimeout(saveTimer);
-  boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
-  // Сохраняем в БД через API
-  fetch(`${API_BASE}/api/board/team/${SESSION_KEY}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cards:S.cards,connections:S.connections})}).catch(()=>{});
-}
   // Личная: дебаунс-сохранение через API
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
@@ -405,6 +395,14 @@ function saveNow() {
       });
     } catch(e) {}
   }, 600);
+}
+
+// Немедленная отправка для структурных изменений (создание/удаление карточек, связей)
+function saveNow() {
+  if (currentBoard !== 'team') { save(); return; }
+  clearTimeout(saveTimer);
+  boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
+  fetch(`${API_BASE}/api/board/team/${SESSION_KEY}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cards:S.cards,connections:S.connections})}).catch(()=>{});
 }
 
 // Немедленная отправка без дебаунса — для drag/resize в реальном времени
