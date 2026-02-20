@@ -1466,7 +1466,7 @@ window.addEventListener('mousemove',e=>{
   }
   if(S.connFrom){
     updateTempLine(e.clientX,e.clientY);
-    const now=Date.now();if(now-connPreviewThrottle<50)return;connPreviewThrottle=now;
+    const now=Date.now();if(now-connPreviewThrottle<16)return;connPreviewThrottle=now;
     const cp=cpt(e.clientX,e.clientY);
     boardSend({type:'board_conn_preview', fromCardId:S.connFrom, x:cp.x, y:cp.y});
   }
