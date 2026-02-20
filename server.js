@@ -610,6 +610,19 @@ function handleBoardLive(ws, data) {
     }, ws);
 }
 
+function handleBoardConnPreview(ws, data) {
+    const teamId = ws._boardTeamId;
+    if (!teamId) return;
+    boardBroadcast(teamId, {
+        type: 'board_conn_preview',
+        userId: ws._boardUserId,
+        color: ws._boardColor,
+        fromCardId: data.fromCardId, // null = отменили
+        x: data.x,
+        y: data.y
+    }, ws);
+}
+
 function handleBoardSel(ws, data) {
     const teamId = ws._boardTeamId;
     if (!teamId) return;
@@ -728,6 +741,9 @@ wss.on('connection', (ws, request) => {
                     break;
                 case 'board_sel':
                     handleBoardSel(ws, data);
+                    break;
+                case 'board_conn_preview':
+                    handleBoardConnPreview(ws, data);
                     break;
             }
         } catch (error) {

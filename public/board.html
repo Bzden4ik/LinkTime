@@ -599,6 +599,22 @@ function connectBoardWS() {
         }
         if (p.x !== undefined || p.y !== undefined || p.w !== undefined || p.h !== undefined) updateConnsOnly();
       }
+    } else if(msg.type==='board_conn_preview'){
+      const uid = msg.userId || msg.username;
+      if(!msg.fromCardId){ removeRemoteConnPreview(uid); return; }
+      const src=getCard(msg.fromCardId);if(!src)return;
+      const fe=document.getElementById('c-'+src.id);if(!fe)return;
+      const vr=vp.getBoundingClientRect();
+      const fr=fe.getBoundingClientRect();
+      const x1=fr.right-vr.left, y1=fr.top-vr.top+fr.height/2;
+      // canvas-coords → viewport-coords
+      const x2=msg.x*S.scale+S.tx+vr.left-vr.left;
+      const y2=msg.y*S.scale+S.ty+vr.top-vr.top;
+      const d=connPath(x1,y1,x2,y2);
+      const lines=getOrCreateRemoteConnSVG(uid, msg.color);
+      lines.glow.setAttribute('d',d);
+      lines.base.setAttribute('d',d);
+      lines.dsh.setAttribute('d',d);
     } else if(msg.type==='board_sel'){
       const uid = msg.userId || msg.username;
       const clr = msg.color || hashColor(uid);
@@ -673,6 +689,23 @@ document.addEventListener('click',()=>document.getElementById('color-picker-popu
 
 const remoteCursors={};
 const remoteSelections={};
+const remoteConnPreviews={};
+
+function getOrCreateRemoteConnSVG(uid, color){
+  if(remoteConnPreviews[uid]) return remoteConnPreviews[uid];
+  const clr = color || '#6366f1';
+  const mk=(w,op,dash)=>{const p=svgEl('path');p.setAttribute('fill','none');p.setAttribute('stroke',clr);p.setAttribute('stroke-width',w);p.setAttribute('stroke-opacity',op);if(dash)p.setAttribute('stroke-dasharray','4 22');return p;};
+  const g=svgEl('g');
+  const glow=mk(14,.12),base=mk(2.5,.95),dsh=mk(1.5,1,true);
+  g.append(glow,base,dsh);
+  connL.appendChild(g);
+  remoteConnPreviews[uid]={g,glow,base,dsh};
+  return remoteConnPreviews[uid];
+}
+
+function removeRemoteConnPreview(uid){
+  if(remoteConnPreviews[uid]){remoteConnPreviews[uid].g.remove();delete remoteConnPreviews[uid];}
+}
 
 function applyRemoteSel(uid, cardId, color){
   // Снимаем старое
@@ -712,7 +745,10 @@ function drawRemoteCursor(uid, username, cx, cy, color){
   remoteCursors[uid].style.top=sy+'px';
 }
 
-function clearRemoteCursors(){for(const k in remoteCursors){remoteCursors[k].remove();delete remoteCursors[k];}}
+function clearRemoteCursors(){
+  for(const k in remoteCursors){remoteCursors[k].remove();delete remoteCursors[k];}
+  for(const k in remoteConnPreviews){removeRemoteConnPreview(k);}
+}
 
 function updateOnlineUsers(users){
   const el=document.getElementById('board-online');
@@ -1177,7 +1213,8 @@ function setConnFrom(id){
   S.connFrom=id;
   document.getElementById('chint').style.display=id?'block':'none';
   tempConn.style.display=id?'':'none';
-  if(!id){tpGlow.setAttribute('d','');tpBase.setAttribute('d','');tpDash.setAttribute('d','')}
+  if(!id){tpGlow.setAttribute('d','');tpBase.setAttribute('d','');tpDash.setAttribute('d','');
+    boardSend({type:'board_conn_preview', fromCardId:null});}
   document.querySelectorAll('.bc').forEach(e=>e.classList.toggle('cmode',!!id));
 }
 
@@ -1427,7 +1464,11 @@ window.addEventListener('mousemove',e=>{
     if(el){el.style.width=b.w+'px';const img=el.querySelector('img');if(img)img.style.width=b.w+'px'}
     sendLiveBlock(br.cardId, br.blockId, {w:b.w});
   }
-  if(S.connFrom)updateTempLine(e.clientX,e.clientY);
+  if(S.connFrom){
+    updateTempLine(e.clientX,e.clientY);
+    const cp=cpt(e.clientX,e.clientY);
+    boardSend({type:'board_conn_preview', fromCardId:S.connFrom, x:cp.x, y:cp.y});
+  }
 });
 
 window.addEventListener('mouseup',()=>{
