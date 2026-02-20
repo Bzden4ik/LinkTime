@@ -427,7 +427,6 @@ function saveNow() {
   if (currentBoard !== 'team') { save(); return; }
   clearTimeout(saveTimer);
   boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
-  fetch(`${API_BASE}/api/board/team/${SESSION_KEY}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cards:S.cards,connections:S.connections})}).catch(()=>{});
 }
 
 // Немедленная отправка без дебаунса — для drag/resize в реальном времени
