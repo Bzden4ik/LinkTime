@@ -411,8 +411,10 @@ function saveImmediate(cardId) {
 }
 
 // Отправка live-патча для текста (без throttle — пользователь печатает)
+let textSendThrottle = 0;
 function sendLiveText(cardId, field, value) {
   if (currentBoard !== 'team') return;
+  const now=Date.now();if(now-textSendThrottle<50)return;textSendThrottle=now;
   boardSend({type:'board_live', cardId, patch:{[field]: value}});
 }
 
@@ -787,6 +789,7 @@ function drawBlock(card,block){
     });
     inner.addEventListener('input',()=>{
       block.content=inner.innerHTML;
+      const now=Date.now();if(now-blockSendThrottle<50)return;blockSendThrottle=now;
       boardSend({type:'board_live', cardId:card.id, patch:{block:{id:block.id, content:inner.innerHTML}}});
     });
     inner.addEventListener('keydown',e=>e.stopPropagation());
