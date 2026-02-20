@@ -653,8 +653,9 @@ wss.on('connection', (ws, request) => {
         let data;
         try { data = JSON.parse(message); } catch { return; }
         const isCursor = data.type === 'board_cursor';
-        if (!checkWsRateLimit(clientIp, isCursor)) {
-            if (!isCursor && ws.readyState === WebSocket.OPEN) {
+        const isLive = data.type === 'board_live';
+        if (!checkWsRateLimit(clientIp, isCursor || isLive)) {
+            if (!isCursor && !isLive && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }));
             }
             return;

@@ -486,16 +486,18 @@ function connectBoardWS() {
       renderAll();applyT();
     } else if(msg.type==='board_update'&&msg.from!==boardUsername){
       S.cards=msg.data.cards||[];S.connections=msg.data.connections||[];
-      // Если сам не перетаскиваем и не редактируем — полный рендер
-      // Если редактируем текст — только двигаем карточки в DOM без пересоздания
-      if(S.drag||S.resize){
-        // Только обновляем связи, позиции уже актуальны локально
+      if(S.drag||S.resize||S.blockDrag||S.blockResize){
+        // Не трогаем DOM — только связи
         updateConnsOnly();
       } else if(isEd()){
-        // Обновляем позиции/размеры карточек без разрушения DOM (не трогаем textarea)
         S.cards.forEach(c=>{
           const el=document.getElementById('c-'+c.id);
           if(el){el.style.left=c.x+'px';el.style.top=c.y+'px';el.style.width=c.w+'px';el.style.height=c.h+'px';}
+          // Обновляем блоки внутри карточки без пересоздания
+          (c.blocks||[]).forEach(b=>{
+            const bel=document.getElementById('bl-'+b.id);
+            if(bel){bel.style.left=b.x+'px';bel.style.top=b.y+'px';if(b.w)bel.style.width=b.w+'px';}
+          });
         });
         requestAnimationFrame(()=>updateConnsOnly());
       } else {
