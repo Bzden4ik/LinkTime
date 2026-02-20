@@ -1076,6 +1076,7 @@ function startPan(e){
 }
 
 let _saveTThrottle=0;
+let _saveTThrottle=0;
 function applyT(){
   canvas.style.transform=`translate(${S.tx}px,${S.ty}px) scale(${S.scale})`;
   document.getElementById('sb-zoom').textContent=Math.round(S.scale*100)+'%';
