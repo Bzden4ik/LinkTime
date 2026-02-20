@@ -611,6 +611,18 @@ function handleBoardUpdate(ws, data) {
     }, ws);
 }
 
+function handleBoardLive(ws, data) {
+    const teamId = ws._boardTeamId;
+    if (!teamId) return;
+    // Просто пробрасываем патч всем кроме отправителя — не сохраняем в БД
+    boardBroadcast(teamId, {
+        type: 'board_live',
+        cardId: data.cardId,
+        patch: data.patch,
+        from: ws._boardUsername
+    }, ws);
+}
+
 function handleBoardCursor(ws, data) {
     const teamId = ws._boardTeamId;
     if (!teamId) { console.log(`[Board] board_cursor: no teamId on ws (not joined?)`); return; }
@@ -682,6 +694,9 @@ wss.on('connection', (ws, request) => {
                     break;
                 case 'board_update':
                     handleBoardUpdate(ws, data);
+                    break;
+                case 'board_live':
+                    handleBoardLive(ws, data);
                     break;
                 case 'board_cursor':
                     handleBoardCursor(ws, data);

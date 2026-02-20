@@ -400,12 +400,20 @@ function save() {
 
 // Немедленная отправка без дебаунса — для drag/resize в реальном времени
 let dragSendThrottle = 0;
-function saveImmediate() {
+function saveImmediate(cardId) {
   if (currentBoard !== 'team') return;
   const now = Date.now();
-  if (now - dragSendThrottle < 40) return; // ~25fps
+  if (now - dragSendThrottle < 16) return; // ~60fps
   dragSendThrottle = now;
-  boardSend({type:'board_update', data:{cards:S.cards, connections:S.connections}});
+  const c = S.cards.find(x => x.id === cardId);
+  if (!c) return;
+  boardSend({type:'board_live', cardId, patch:{x:c.x, y:c.y, w:c.w, h:c.h}});
+}
+
+// Отправка live-патча для текста (без throttle — пользователь печатает)
+function sendLiveText(cardId, field, value) {
+  if (currentBoard !== 'team') return;
+  boardSend({type:'board_live', cardId, patch:{[field]: value}});
 }
 
 // Инициализация вкладок
@@ -480,6 +488,34 @@ function connectBoardWS() {
         requestAnimationFrame(()=>updateConnsOnly());
       } else {
         renderAll();
+      }
+    } else if(msg.type==='board_live'){
+      // Реальное время: применяем патч к карточке без полного рендера
+      const c = S.cards.find(x => x.id === msg.cardId);
+      if (!c) return;
+      const p = msg.patch;
+      if (p.x !== undefined) c.x = p.x;
+      if (p.y !== undefined) c.y = p.y;
+      if (p.w !== undefined) c.w = p.w;
+      if (p.h !== undefined) c.h = p.h;
+      if (p.title !== undefined) c.title = p.title;
+      if (p.desc !== undefined) c.desc = p.desc;
+      // Обновляем DOM напрямую
+      const el = document.getElementById('c-' + msg.cardId);
+      if (el) {
+        if (p.x !== undefined) el.style.left = c.x + 'px';
+        if (p.y !== undefined) el.style.top = c.y + 'px';
+        if (p.w !== undefined) el.style.width = c.w + 'px';
+        if (p.h !== undefined) el.style.height = c.h + 'px';
+        if (p.title !== undefined) {
+          const ta = el.querySelector('.bc-title');
+          if (ta && ta !== document.activeElement) { ta.value = p.title; arTA(ta); }
+        }
+        if (p.desc !== undefined) {
+          const ta = el.querySelector('.bc-desc-ta');
+          if (ta && ta !== document.activeElement) { ta.value = p.desc; arTA(ta); }
+        }
+        if (p.x !== undefined || p.y !== undefined || p.w !== undefined || p.h !== undefined) updateConnsOnly();
       }
     } else if(msg.type==='board_cursor'){
       drawRemoteCursor(msg.userId || msg.username, msg.username, msg.x, msg.y);
@@ -604,13 +640,13 @@ function drawCard(card){
 
   const titleTA=el.querySelector('.bc-title');
   arTA(titleTA);
-  titleTA.addEventListener('input',()=>{arTA(titleTA);card.title=titleTA.value;save()});
+  titleTA.addEventListener('input',()=>{arTA(titleTA);card.title=titleTA.value;save();sendLiveText(card.id,'title',titleTA.value)});
   titleTA.addEventListener('mousedown',e=>e.stopPropagation());
   titleTA.addEventListener('focus',()=>selectCard(card.id));
 
   const descTA=el.querySelector('.bc-desc-ta');
   arTA(descTA);
-  descTA.addEventListener('input',()=>{arTA(descTA);card.desc=descTA.value;save()});
+  descTA.addEventListener('input',()=>{arTA(descTA);card.desc=descTA.value;save();sendLiveText(card.id,'desc',descTA.value)});
   descTA.addEventListener('mousedown',e=>e.stopPropagation());
   descTA.addEventListener('focus',()=>selectCard(card.id));
 
@@ -1165,7 +1201,7 @@ window.addEventListener('mousemove',e=>{
     const el=document.getElementById('c-'+c.id);
     if(el){el.style.left=nx+'px';el.style.top=ny+'px'}
     updateConnsOnly();
-    saveImmediate();
+    saveImmediate(c.id);
   }
   if(S.resize){
     const r=S.resize;
@@ -1177,7 +1213,7 @@ window.addEventListener('mousemove',e=>{
     const el=document.getElementById('c-'+c.id);
     if(el){el.style.width=nw+'px';el.style.height=nh+'px'}
     updateConnsOnly();
-    saveImmediate();
+    saveImmediate(r.cardId);
     if(S.sel===r.cardId){document.getElementById('iw').value=Math.round(nw);document.getElementById('ih').value=Math.round(nh)}
   }
   if(S.blockDrag){
