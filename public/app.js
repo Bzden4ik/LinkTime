@@ -166,11 +166,9 @@ sidebarTabs.forEach(btn => {
     });
     if (nextSection) {
       nextSection.style.display = '';
-      // Force reflow
       void nextSection.offsetWidth;
       nextSection.classList.add('tab-active');
     }
-    });
     // На десктопе показываем всё на дашборде
     if (tab === 'timer' && window.innerWidth > 768) {
       document.querySelectorAll('[data-tab-content]').forEach(s => {
