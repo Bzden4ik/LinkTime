@@ -649,8 +649,13 @@ const tempConn=document.getElementById('temp-conn');
 const insp=document.getElementById('insp');
 const epick=document.getElementById('epick');
 
-S.tx=Math.max(0,(vp.clientWidth||900)/2-300);
-S.ty=Math.max(0,(vp.clientHeight||700)/2-200);
+{
+  const savedT = localStorage.getItem('board_transform_'+SESSION_KEY+'_'+currentBoard);
+  const t = savedT ? JSON.parse(savedT) : null;
+  S.tx = t ? t.tx : Math.max(0,(vp.clientWidth||900)/2-300);
+  S.ty = t ? t.ty : Math.max(0,(vp.clientHeight||700)/2-200);
+  S.scale = t ? t.scale : 1;
+}
 applyT();
 
 // ═══════════════════════════════════════════
