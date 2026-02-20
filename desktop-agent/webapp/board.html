@@ -60,6 +60,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 
 /* ─── CONTENT BLOCKS ─── */
 .cb{position:absolute;cursor:grab;z-index:3;border-radius:6px;border:1.5px solid transparent;transition:border-color .15s}
+.cb.cb-text{z-index:4}
+.cb.cb-image{z-index:3}
 .cb:hover{border-color:rgba(99,102,241,.3)}
 .cb.cb-sel{border-color:rgba(99,102,241,.6);cursor:grab}
 .cb.cb-editing{cursor:text}
@@ -929,7 +931,7 @@ function drawBlock(card,block){
 
   const isSel=S.selBlock&&S.selBlock.blockId===block.id;
   const el=document.createElement('div');
-  el.className='cb'+(isSel?' cb-sel':'');
+  el.className='cb cb-'+block.type+(isSel?' cb-sel':'');
   el.id='bl-'+block.id;
   el.style.cssText=`left:${block.x}px;top:${block.y}px;${block.w?'width:'+block.w+'px':''}`;
 
