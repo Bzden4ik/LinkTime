@@ -167,9 +167,22 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
 
 /* ─── ONLINE USERS ─── */
 #board-online{position:absolute;top:10px;right:14px;display:flex;gap:6px;align-items:center;z-index:200}
-.bonline-dot{width:28px;height:28px;border-radius:50%;background:rgba(99,102,241,.25);border:1.5px solid rgba(99,102,241,.5);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#a5b4fc;cursor:default;position:relative}
+.bonline-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff;cursor:default;position:relative}
 .bonline-dot .tip{position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);background:#1a1d2e;border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.85);font-size:.65rem;padding:3px 8px;border-radius:6px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s}
 .bonline-dot:hover .tip{opacity:1}
+/* Своя иконка с кнопкой смены цвета */
+#my-color-btn{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff;cursor:pointer;position:relative;transition:border-color .2s}
+#my-color-btn:hover{border-color:#fff}
+#my-color-btn .tip{position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);background:#1a1d2e;border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.85);font-size:.65rem;padding:3px 8px;border-radius:6px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;z-index:10}
+#my-color-btn:hover .tip{opacity:1}
+/* Попап пикера */
+#color-picker-popup{position:absolute;top:36px;right:0;background:#12141f;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;display:none;flex-direction:column;gap:8px;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,.5);width:160px}
+#color-picker-popup.open{display:flex}
+#color-picker-popup label{font-size:.62rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.06em}
+#color-picker-popup input[type=color]{width:100%;height:32px;border:none;border-radius:7px;cursor:pointer;background:none;padding:0}
+.color-presets{display:flex;flex-wrap:wrap;gap:5px}
+.color-preset{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .15s,border-color .15s}
+.color-preset:hover{transform:scale(1.2);border-color:#fff}
 
 
 #dropov{position:fixed;inset:0;background:rgba(99,102,241,.1);border:3px dashed rgba(99,102,241,.5);z-index:8999;display:none;align-items:center;justify-content:center;font-size:1.1rem;color:#818cf8;pointer-events:none}
@@ -212,7 +225,17 @@ html,body{width:100%;height:100%;overflow:hidden;background:#080c14;font-family:
       <button class="btab active" data-board="personal">🙋 Личный</button>
       <button class="btab" data-board="team">👥 Командный</button>
     </div>
-    <div id="board-online" style="display:none"></div>
+    <div id="board-online" style="display:none">
+  <div id="my-color-btn">
+    <span id="my-color-label">?</span>
+    <span class="tip">Мой цвет</span>
+    <div id="color-picker-popup">
+      <label>Выбери цвет</label>
+      <input type="color" id="colorPickerInput">
+      <div class="color-presets" id="colorPresets"></div>
+    </div>
+  </div>
+</div>
     <!-- SVG overlay: full viewport size, z-index above canvas, coords via getBoundingClientRect -->
     <svg id="csvg">
       <defs>
@@ -497,7 +520,8 @@ function connectBoardWS() {
   if(boardWs && boardWs.readyState <= 1){boardWs.onclose=null;boardWs.close();}
   boardWs = new WebSocket(WS_URL);
   boardWs.onopen = () => {
-    boardWs.send(JSON.stringify({type:'board_join', sessionKey:SESSION_KEY, username:boardUsername}));
+    initMyColor();
+    boardWs.send(JSON.stringify({type:'board_join', sessionKey:SESSION_KEY, username:boardUsername, color:myColor}));
     document.getElementById('board-online').style.display='flex';
   };
   boardWs.onmessage = (e) => {
@@ -578,7 +602,7 @@ function connectBoardWS() {
       const uid = msg.userId || msg.username;
       if(remoteCursors[uid]){remoteCursors[uid].remove();delete remoteCursors[uid];}
     } else if(msg.type==='board_cursor'){
-      drawRemoteCursor(msg.userId || msg.username, msg.username, msg.x, msg.y);
+      drawRemoteCursor(msg.userId || msg.username, msg.username, msg.x, msg.y, msg.color);
     } else if(msg.type==='board_online'){
       updateOnlineUsers(msg.users);
     }
@@ -603,17 +627,61 @@ function boardSend(msg){
   if(boardWs&&boardWs.readyState===WebSocket.OPEN)boardWs.send(JSON.stringify(msg));
 }
 
+// ─── ЦВЕТ ПОЛЬЗОВАТЕЛЯ ───
+const PRESET_COLORS=['#6366f1','#ec4899','#10b981','#f59e0b','#06b6d4','#ef4444','#8b5cf6','#f97316','#14b8a6','#84cc16'];
+function hashColor(str){
+  let h=5381;for(let i=0;i<str.length;i++)h=(h*33)^str.charCodeAt(i);
+  return PRESET_COLORS[Math.abs(h)%PRESET_COLORS.length];
+}
+let myColor = localStorage.getItem('board_color_'+SESSION_KEY) || null;
+
+function initMyColor(){
+  if(!myColor) myColor = hashColor(SESSION_KEY);
+  localStorage.setItem('board_color_'+SESSION_KEY, myColor);
+  const btn=document.getElementById('my-color-btn');
+  btn.style.background=myColor;
+  document.getElementById('my-color-label').textContent=(boardUsername||'?').slice(0,2).toUpperCase();
+  document.getElementById('colorPickerInput').value=myColor;
+  // Пресеты
+  const ps=document.getElementById('colorPresets');
+  ps.innerHTML=PRESET_COLORS.map(c=>`<div class="color-preset" style="background:${c}" data-color="${c}"></div>`).join('');
+  ps.querySelectorAll('.color-preset').forEach(el=>el.addEventListener('click',()=>applyMyColor(el.dataset.color)));
+}
+
+function applyMyColor(c){
+  myColor=c;
+  localStorage.setItem('board_color_'+SESSION_KEY, c);
+  document.getElementById('my-color-btn').style.background=c;
+  document.getElementById('colorPickerInput').value=c;
+  boardSend({type:'board_color', color:c});
+  // Переподключаемся чтобы обновить цвет в board_join
+  if(boardWs&&boardWs.readyState===WebSocket.OPEN)
+    boardWs.send(JSON.stringify({type:'board_join', sessionKey:SESSION_KEY, username:boardUsername, color:c}));
+}
+
+document.getElementById('colorPickerInput').addEventListener('input',e=>applyMyColor(e.target.value));
+document.getElementById('my-color-btn').addEventListener('click',e=>{
+  e.stopPropagation();
+  document.getElementById('color-picker-popup').classList.toggle('open');
+});
+document.addEventListener('click',()=>document.getElementById('color-picker-popup').classList.remove('open'));
+
 const remoteCursors={};
-function drawRemoteCursor(uid, username, cx, cy){
-  // Конвертируем canvas-coords в viewport-coords с учётом текущего transform
+function drawRemoteCursor(uid, username, cx, cy, color){
+  const clr = color || hashColor(uid);
   const r=vp.getBoundingClientRect();
   const sx = cx * S.scale + S.tx + r.left;
   const sy = cy * S.scale + S.ty + r.top;
-
   if(!remoteCursors[uid]){
     const el=document.createElement('div');el.className='rcursor';
-    el.innerHTML=`<svg width="14" height="20" viewBox="0 0 14 20"><path d="M0 0L14 8L7 10L4 18L0 0Z" fill="#6366f1" stroke="#fff" stroke-width="1"/></svg><span class="rcursor-label">${esc(username)}</span>`;
+    el.innerHTML=`<svg width="14" height="20" viewBox="0 0 14 20"><path d="M0 0L14 8L7 10L4 18L0 0Z" fill="${clr}" stroke="#fff" stroke-width="1"/></svg><span class="rcursor-label" style="background:${clr}">${esc(username)}</span>`;
     document.body.appendChild(el);remoteCursors[uid]=el;
+  } else {
+    // Обновляем цвет если изменился
+    const path=remoteCursors[uid].querySelector('path');
+    const label=remoteCursors[uid].querySelector('.rcursor-label');
+    if(path)path.setAttribute('fill',clr);
+    if(label)label.style.background=clr;
   }
   remoteCursors[uid].style.left=sx+'px';
   remoteCursors[uid].style.top=sy+'px';
@@ -623,9 +691,17 @@ function clearRemoteCursors(){for(const k in remoteCursors){remoteCursors[k].rem
 
 function updateOnlineUsers(users){
   const el=document.getElementById('board-online');
-  el.innerHTML=users.filter(u=>u!==boardUsername).map(u=>
-    `<div class="bonline-dot">${esc(u.slice(0,2).toUpperCase())}<span class="tip">${esc(u)}</span></div>`
-  ).join('');
+  const others = users.filter(u=>(u.username||u)!==boardUsername);
+  const dots = others.map(u=>{
+    const clr=(u.color)||hashColor(u.userId||u.username||u);
+    const name=u.username||u;
+    return `<div class="bonline-dot" style="background:${clr}">${esc(name.slice(0,2).toUpperCase())}<span class="tip">${esc(name)}</span></div>`;
+  }).join('');
+  // Оставляем my-color-btn, заменяем остальное
+  const myBtn=document.getElementById('my-color-btn');
+  el.innerHTML='';
+  el.appendChild(myBtn);
+  el.insertAdjacentHTML('beforeend', dots);
 }
 
 document.addEventListener('mouseleave',()=>{

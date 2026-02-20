@@ -554,10 +554,9 @@ function boardBroadcast(teamId, message, excludeWs = null) {
 }
 
 function handleBoardJoin(ws, data) {
-    const { sessionKey, username } = data;
+    const { sessionKey, username, color } = data;
     if (!sessionKey || !username) return;
 
-    // Получаем пользователя и его команду
     const user = stmts.getUserBySession.get(sessionKey);
     if (!user) { console.log(`[Board] board_join: user not found for sessionKey=${sessionKey}`); return; }
     const team = stmts.getUserTeam.get(user.user_id);
@@ -568,18 +567,19 @@ function handleBoardJoin(ws, data) {
     ws._boardTeamId = teamId;
     ws._boardUsername = username;
     ws._boardUserId = user.user_id;
+    ws._boardColor = color || null;
 
     if (!boardSessions.has(teamId)) boardSessions.set(teamId, new Map());
-    boardSessions.get(teamId).set(ws, { username, userId: user.user_id });
+    boardSessions.get(teamId).set(ws, { username, userId: user.user_id, color: ws._boardColor });
 
     // Отправляем текущее состояние доски
     const row = stmts.getTeamBoard.get(teamId);
     const boardData = row ? JSON.parse(row.data) : { cards: [], connections: [] };
     ws.send(JSON.stringify({ type: 'board_init', data: boardData }));
 
-    // Отправляем список онлайн участников
+    // Отправляем список онлайн участников с цветами
     const online = [];
-    for (const [, info] of boardSessions.get(teamId)) online.push(info.username);
+    for (const [, info] of boardSessions.get(teamId)) online.push({ username: info.username, userId: info.userId, color: info.color });
     boardBroadcast(teamId, { type: 'board_online', users: online });
 }
 
@@ -610,6 +610,18 @@ function handleBoardLive(ws, data) {
     }, ws);
 }
 
+function handleBoardColor(ws, data) {
+    const teamId = ws._boardTeamId;
+    if (!teamId) return;
+    ws._boardColor = data.color;
+    const members = boardSessions.get(teamId);
+    if (members && members.has(ws)) members.get(ws).color = data.color;
+    // Рассылаем обновлённый список онлайн
+    const online = [];
+    for (const [, info] of members) online.push({ username: info.username, userId: info.userId, color: info.color });
+    boardBroadcast(teamId, { type: 'board_online', users: online });
+}
+
 function handleBoardCursorLeave(ws) {
     const teamId = ws._boardTeamId;
     if (!teamId) return;
@@ -624,6 +636,7 @@ function handleBoardCursor(ws, data) {
         type: 'board_cursor',
         username: ws._boardUsername,
         userId: ws._boardUserId,
+        color: ws._boardColor,
         x: data.x,
         y: data.y
     }, ws);
@@ -697,6 +710,9 @@ wss.on('connection', (ws, request) => {
                     break;
                 case 'board_cursor_leave':
                     handleBoardCursorLeave(ws);
+                    break;
+                case 'board_color':
+                    handleBoardColor(ws, data);
                     break;
             }
         } catch (error) {
