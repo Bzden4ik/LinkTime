@@ -574,6 +574,9 @@ function connectBoardWS() {
         }
         if (p.x !== undefined || p.y !== undefined || p.w !== undefined || p.h !== undefined) updateConnsOnly();
       }
+    } else if(msg.type==='board_cursor_leave'){
+      const uid = msg.userId || msg.username;
+      if(remoteCursors[uid]){remoteCursors[uid].remove();delete remoteCursors[uid];}
     } else if(msg.type==='board_cursor'){
       drawRemoteCursor(msg.userId || msg.username, msg.username, msg.x, msg.y);
     } else if(msg.type==='board_online'){
@@ -589,7 +592,7 @@ function connectBoardWS() {
 }
 
 function disconnectBoardWS(){
-  if(boardWs){boardWs.onclose=null;boardWs.close();boardWs=null;}
+  if(boardWs){boardSend({type:'board_cursor_leave'});boardWs.onclose=null;boardWs.close();boardWs=null;}
   document.getElementById('board-online').style.display='none';
   clearRemoteCursors();
   updateOnlineUsers([]);
@@ -624,6 +627,14 @@ function updateOnlineUsers(users){
     `<div class="bonline-dot">${esc(u.slice(0,2).toUpperCase())}<span class="tip">${esc(u)}</span></div>`
   ).join('');
 }
+
+document.addEventListener('mouseleave',()=>{
+  boardSend({type:'board_cursor_leave'});
+});
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) boardSend({type:'board_cursor_leave'});
+});
 
 document.addEventListener('mousemove',e=>{
   if(currentBoard!=='team')return;

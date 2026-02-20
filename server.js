@@ -610,6 +610,12 @@ function handleBoardLive(ws, data) {
     }, ws);
 }
 
+function handleBoardCursorLeave(ws) {
+    const teamId = ws._boardTeamId;
+    if (!teamId) return;
+    boardBroadcast(teamId, {type:'board_cursor_leave', userId:ws._boardUserId}, ws);
+}
+
 function handleBoardCursor(ws, data) {
     const teamId = ws._boardTeamId;
     if (!teamId) { console.log(`[Board] board_cursor: no teamId on ws (not joined?)`); return; }
@@ -688,6 +694,9 @@ wss.on('connection', (ws, request) => {
                     break;
                 case 'board_cursor':
                     handleBoardCursor(ws, data);
+                    break;
+                case 'board_cursor_leave':
+                    handleBoardCursorLeave(ws);
                     break;
             }
         } catch (error) {
