@@ -561,6 +561,24 @@
 @keyframes boardFadeIn{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
 </style>
 
+<!-- ===== MEDIA LIGHTBOX ===== -->
+<div id="mediaLightbox" style="display:none">
+  <div class="mlb-overlay" id="mlbOverlay"></div>
+  <div class="mlb-content">
+    <button class="mlb-close" id="mlbClose">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    <button class="mlb-nav mlb-prev" id="mlbPrev">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button class="mlb-nav mlb-next" id="mlbNext">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+    <div class="mlb-media" id="mlbMedia"></div>
+    <div class="mlb-counter" id="mlbCounter"></div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="app.js"></script>
@@ -968,11 +986,18 @@
       var content = m.type === 'video'
         ? '<video src="' + m.data + '" muted></video>'
         : '<img src="' + m.data + '" alt="' + esc(m.name) + '" />';
-      return '<div class="pt-detail-media-item">' + content +
+      return '<div class="pt-detail-media-item" data-idx="' + i + '">' + content +
         '<button class="pt-detail-media-del" data-idx="' + i + '">&times;</button></div>';
     }).join('');
+    detailMediaList.querySelectorAll('.pt-detail-media-item').forEach(function(item) {
+      item.addEventListener('click', function(e) {
+        if (e.target.closest('.pt-detail-media-del')) return;
+        openLightbox(detailMedia, +item.dataset.idx);
+      });
+    });
     detailMediaList.querySelectorAll('.pt-detail-media-del').forEach(function(btn) {
-      btn.addEventListener('click', function() {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
         detailMedia.splice(+btn.dataset.idx, 1);
         renderMedia();
       });
@@ -994,6 +1019,53 @@
   }, 300);
 
   loadData();
+})();
+
+// ===== MEDIA LIGHTBOX =====
+(function initLightbox() {
+  var lb = document.getElementById('mediaLightbox');
+  var lbMedia = document.getElementById('mlbMedia');
+  var lbCounter = document.getElementById('mlbCounter');
+  var lbClose = document.getElementById('mlbClose');
+  var lbPrev = document.getElementById('mlbPrev');
+  var lbNext = document.getElementById('mlbNext');
+  var lbOverlay = document.getElementById('mlbOverlay');
+  var items = [], cur = 0;
+
+  window.openLightbox = function(mediaArr, idx) {
+    items = mediaArr; cur = idx;
+    lb.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    show();
+  };
+
+  function show() {
+    var m = items[cur];
+    lbMedia.innerHTML = m.type === 'video'
+      ? '<video src="' + m.data + '" controls autoplay></video>'
+      : '<img src="' + m.data + '" />';
+    lbCounter.textContent = items.length > 1 ? (cur + 1) + ' / ' + items.length : '';
+    lbPrev.style.display = cur > 0 ? '' : 'none';
+    lbNext.style.display = cur < items.length - 1 ? '' : 'none';
+  }
+
+  function close() {
+    lb.style.display = 'none';
+    document.body.style.overflow = '';
+    lbMedia.innerHTML = '';
+    items = []; cur = 0;
+  }
+
+  lbClose.addEventListener('click', close);
+  lbOverlay.addEventListener('click', close);
+  lbPrev.addEventListener('click', function() { if (cur > 0) { cur--; show(); } });
+  lbNext.addEventListener('click', function() { if (cur < items.length - 1) { cur++; show(); } });
+  document.addEventListener('keydown', function(e) {
+    if (lb.style.display === 'none') return;
+    if (e.key === 'Escape') close();
+    if (e.key === 'ArrowLeft' && cur > 0) { cur--; show(); }
+    if (e.key === 'ArrowRight' && cur < items.length - 1) { cur++; show(); }
+  });
 })();
 </script>
 </body>
