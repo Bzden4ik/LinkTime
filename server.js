@@ -516,6 +516,18 @@ app.post('/api/team/kick', (req, res) => {
     const targetUser = stmts.getUserByUserId.get(targetUserId);
     if (targetUser) notifyUser(targetUser.session_key, { type: 'kicked_from_team' });
 
+    // Проверяем: если owner остался один — расформировываем команду
+    const remaining = stmts.getTeamMembers.all(team.id);
+    if (remaining.length <= 1) {
+        // Уведомляем owner что команда расформирована
+        notifyUser(user.session_key, { type: 'team_disbanded' });
+        // Удаляем всех участников и саму команду
+        db.prepare('DELETE FROM team_members WHERE team_id = ?').run(team.id);
+        db.prepare('DELETE FROM teams WHERE id = ?').run(team.id);
+        db.prepare('DELETE FROM team_boards WHERE team_id = ?').run(team.id);
+        return res.json({ ok: true, disbanded: true });
+    }
+
     // Уведомляем остальных
     const members = stmts.getTeamMembers.all(team.id);
     members.forEach(m => {

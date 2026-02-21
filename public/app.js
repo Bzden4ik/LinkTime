@@ -999,6 +999,11 @@ userTeam = null;
 renderTeam();
 showToast('Вы были исключены из команды');
 break;
+case 'team_disbanded':
+userTeam = null;
+renderTeam();
+showToast('Команда расформирована');
+break;
 case 'team_timer_update':
 handleTeamTimerUpdate(message);
 break;
