@@ -1133,6 +1133,7 @@ min-width: 44px;
 
 .team-member-avatar:hover .member-tooltip {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .tooltip-username {
@@ -1141,6 +1142,20 @@ min-width: 44px;
   color: rgba(255,255,255,0.9);
   letter-spacing: 0.01em;
 }
+.tooltip-role-owner { font-size: 0.7rem; opacity: 0.8; }
+.tooltip-kick-btn {
+  margin-top: 6px;
+  width: 100%;
+  padding: 4px 0;
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: #f87171;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.tooltip-kick-btn:hover { background: rgba(239,68,68,0.3); }
 
 .tooltip-you {
   font-weight: 400;

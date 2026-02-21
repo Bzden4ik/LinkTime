@@ -994,6 +994,11 @@ break;
 case 'team_updated':
 loadTeam();
 break;
+case 'kicked_from_team':
+userTeam = null;
+renderTeam();
+showToast('Вы были исключены из команды');
+break;
 case 'team_timer_update':
 handleTeamTimerUpdate(message);
 break;
@@ -1633,16 +1638,18 @@ function renderTeam() {
         <div class="tooltip-work-label">За день: <span id="mwork-${m.user_id}">${formatWorkTimeForMember(timer)}</span></div>
       ` : '';
 
-      // Зелёная точка на аватарке если шерит время
       const dot = (m.sharing_time && hasTimer) ? `<div class="member-sharing-dot"></div>` : '';
+      const roleLabel = m.role === 'owner' ? `<span class="tooltip-role-owner">👑 Глава</span>` : '';
+      const kickBtn = (me && me.role === 'owner') ? `<button class="tooltip-kick-btn" onclick="kickMember('${m.user_id}')">Выгнать</button>` : '';
 
       html += `
         <div class="team-member-avatar" data-user-id="${m.user_id}">
           ${avatarContent}
           ${dot}
           <div class="member-tooltip">
-            <div class="tooltip-username">${m.username}</div>
+            <div class="tooltip-username">${m.username} ${roleLabel}</div>
             ${timerSection}
+            ${kickBtn}
           </div>
         </div>
       `;
@@ -1656,6 +1663,20 @@ function renderTeam() {
   
   container.innerHTML = html;
   startTeamTimerUpdates();
+}
+
+async function kickMember(targetUserId) {
+  if (!confirm('Выгнать участника из команды?')) return;
+  try {
+    const res = await fetch('/api/team/kick', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionKey: state.sessionKey, targetUserId })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Ошибка'); return; }
+    await loadTeam();
+  } catch (e) { showToast('Ошибка сети'); }
 }
 
 function formatWorkTimeForMember(timer) {

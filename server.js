@@ -495,6 +495,37 @@ app.get('/api/team/:sessionKey', (req, res) => {
 });
 
 // === API: Включить/выключить шеринг времени ===
+// === API: Выгнать участника из команды (только owner) ===
+app.post('/api/team/kick', (req, res) => {
+    const { sessionKey, targetUserId } = req.body;
+    const user = stmts.getUserBySession.get(sessionKey);
+    if (!user) return res.status(400).json({ error: 'Профиль не найден' });
+    const team = stmts.getUserTeam.get(user.user_id);
+    if (!team) return res.status(404).json({ error: 'Команда не найдена' });
+
+    // Проверяем что текущий пользователь — owner
+    const myMembership = db.prepare('SELECT role FROM team_members WHERE team_id = ? AND user_id = ?').get(team.id, user.user_id);
+    if (!myMembership || myMembership.role !== 'owner') return res.status(403).json({ error: 'Только владелец может выгонять участников' });
+
+    // Нельзя выгнать самого себя через этот эндпоинт
+    if (targetUserId === user.user_id) return res.status(400).json({ error: 'Нельзя выгнать себя' });
+
+    db.prepare('DELETE FROM team_members WHERE team_id = ? AND user_id = ?').run(team.id, targetUserId);
+
+    // Уведомляем выгнанного
+    const targetUser = stmts.getUserByUserId.get(targetUserId);
+    if (targetUser) notifyUser(targetUser.session_key, { type: 'kicked_from_team' });
+
+    // Уведомляем остальных
+    const members = stmts.getTeamMembers.all(team.id);
+    members.forEach(m => {
+        const memberUser = stmts.getUserByUserId.get(m.user_id);
+        if (memberUser) notifyUser(memberUser.session_key, { type: 'team_updated', teamId: team.id });
+    });
+
+    res.json({ ok: true });
+});
+
 app.post('/api/team/sharing', (req, res) => {
     const { sessionKey, enabled } = req.body;
     const user = stmts.getUserBySession.get(sessionKey);
