@@ -139,20 +139,97 @@
 
 <!-- Задачи -->
 <section class="tasks-section glass-card" data-tab-content="tasks">
-<div class="tasks-header">
-<h2 id="tasksTitle">Задачи на сегодня</h2>
-<div class="tasks-header-btns">
-<button class="btn btn-add" id="addTaskBtn">+ Добавить</button>
+
+<!-- ===== PROJECT TREE ===== -->
+<div class="pt-header">
+  <h2 class="pt-title">Проекты и задачи</h2>
+  <div class="pt-header-actions">
+    <button class="pt-add-btn" id="ptAddBtn" title="Создать...">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+    <!-- Add dropdown -->
+    <div class="pt-add-dropdown" id="ptAddDropdown">
+      <button class="pt-add-option" id="ptAddProject">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Новый проект
+      </button>
+      <button class="pt-add-option" id="ptAddTask">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Новая задача
+      </button>
+    </div>
+  </div>
 </div>
+
+<!-- Inline create input -->
+<div class="pt-create" id="ptCreate" style="display:none">
+  <input class="pt-create-input" id="ptCreateInput" type="text" placeholder="Название..." />
+  <div class="pt-create-actions">
+    <button class="pt-create-save" id="ptCreateSave">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+    </button>
+    <button class="pt-create-cancel" id="ptCreateCancel">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
 </div>
-<div class="task-input" id="taskInput" style="display: none;">
-<input type="text" id="taskText" placeholder="Введите задачу...">
-<div class="task-input-controls">
-<button class="btn btn-small" id="saveTaskBtn">Сохранить</button>
-<button class="btn btn-small btn-cancel" id="cancelTaskBtn">Отмена</button>
+
+<!-- Project tree list -->
+<div class="pt-tree" id="ptTree">
+  <!-- Rendered by JS: projects with nested tasks -->
 </div>
+
+<!-- Tasks without project -->
+<div class="pt-orphan-section" id="ptOrphanSection" style="display:none">
+  <div class="pt-orphan-label">Без проекта</div>
+  <div class="pt-orphan-list" id="ptOrphanList"></div>
 </div>
-<ul class="tasks-list" id="tasksList"></ul>
+
+<!-- Task detail panel (slide-in overlay) -->
+<div class="pt-detail" id="ptDetail" style="display:none">
+  <div class="pt-detail-header">
+    <button class="pt-detail-back" id="ptDetailBack">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M5 12l7 7M5 12l7-7"/></svg>
+    </button>
+    <span class="pt-detail-title" id="ptDetailTitle">Задача</span>
+    <span class="pt-detail-time-badge" id="ptDetailTimeBadge" title="Время на задачу"></span>
+  </div>
+
+  <div class="pt-detail-body">
+    <!-- Task name (editable) -->
+    <input class="pt-detail-name" id="ptDetailName" type="text" placeholder="Название задачи..." />
+
+    <!-- Description -->
+    <textarea class="pt-detail-desc" id="ptDetailDesc" placeholder="Добавить описание..." rows="3"></textarea>
+
+    <!-- Date & Time range -->
+    <div class="pt-detail-row">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <input class="pt-detail-date" id="ptDetailDate" type="date" />
+      <input class="pt-detail-time" id="ptDetailTimeStart" type="time" placeholder="Начало" />
+      <span class="pt-detail-time-sep">—</span>
+      <input class="pt-detail-time" id="ptDetailTimeEnd" type="time" placeholder="Конец" />
+    </div>
+
+    <!-- Media attachments -->
+    <div class="pt-detail-media-section">
+      <div class="pt-detail-media-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        <span>Вложения</span>
+        <label class="pt-detail-media-add" id="ptDetailMediaAdd">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <input type="file" id="ptDetailFileInput" accept="image/*,video/*" multiple style="display:none" />
+        </label>
+      </div>
+      <div class="pt-detail-media-list" id="ptDetailMediaList"></div>
+    </div>
+  </div>
+
+  <div class="pt-detail-footer">
+    <button class="pt-detail-save" id="ptDetailSave">Сохранить</button>
+  </div>
+</div>
+
 </section>
 
 <!-- Календарь -->
@@ -484,6 +561,43 @@
 @keyframes boardFadeIn{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
 </style>
 
+<!-- Модальное окно: подтверждение выгона -->
+<div class="modal" id="kickConfirmModal">
+<div class="modal-content" style="max-width:360px">
+  <div class="modal-header">
+    <h2>Исключить участника</h2>
+    <button class="close-btn" id="kickConfirmClose">×</button>
+  </div>
+  <div class="modal-body">
+    <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:20px">
+      Вы уверены, что хотите исключить <strong id="kickConfirmName"></strong> из команды?
+    </p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-cancel" id="kickConfirmNo">Отмена</button>
+      <button class="btn" id="kickConfirmYes" style="background:var(--danger,#ef4444);color:#fff;border-color:transparent">Исключить</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ===== MEDIA LIGHTBOX ===== -->
+<div id="mediaLightbox" style="display:none">
+  <div class="mlb-overlay" id="mlbOverlay"></div>
+  <div class="mlb-content">
+    <button class="mlb-close" id="mlbClose">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    <button class="mlb-nav mlb-prev" id="mlbPrev">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button class="mlb-nav mlb-next" id="mlbNext">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+    <div class="mlb-media" id="mlbMedia"></div>
+    <div class="mlb-counter" id="mlbCounter"></div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="app.js"></script>
@@ -539,6 +653,576 @@
       loader.classList.add('fade-out');
       setTimeout(() => loader.remove(), 400);
     }, 1200);
+  });
+})();
+
+// === PROJECT TREE ===
+(function initProjectTree() {
+  const tree = document.getElementById('ptTree');
+  if (!tree) return;
+
+  const addBtn = document.getElementById('ptAddBtn');
+  const addDropdown = document.getElementById('ptAddDropdown');
+  const addProjectOpt = document.getElementById('ptAddProject');
+  const addTaskOpt = document.getElementById('ptAddTask');
+  const createBox = document.getElementById('ptCreate');
+  const createInput = document.getElementById('ptCreateInput');
+  const createSave = document.getElementById('ptCreateSave');
+  const createCancel = document.getElementById('ptCreateCancel');
+  const orphanSection = document.getElementById('ptOrphanSection');
+  const orphanList = document.getElementById('ptOrphanList');
+
+  const sessionKey = localStorage.getItem('sessionKey') || 'default';
+  let projects = [];
+  let tasks = [];
+  let createMode = null;
+  let createProjectId = null;
+  let openProjects = JSON.parse(localStorage.getItem('pt_open') || '{}');
+  const colors = ['#6366f1','#ec4899','#f59e0b','#10b981','#06b6d4','#8b5cf6','#ef4444','#f97316'];
+
+  async function api(method, path, body) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch('/api/' + path, opts);
+    return res.json();
+  }
+
+  async function loadData() {
+    try {
+      const data = await api('GET', 'projects/' + sessionKey);
+      projects = data.projects || [];
+      tasks = data.tasks || [];
+    } catch (e) {
+      projects = []; tasks = [];
+    }
+    render();
+  }
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  // Track last completion time for elapsed calc
+  var lastCheckTime = null;
+  var trackedTimerStart = null; // tracks which timer session we're in
+
+  function fmtDur(ms) {
+    if (!ms || ms <= 0) return '';
+    var s = Math.floor(ms / 1000);
+    if (s < 60) return s + 'с';
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + 'м ' + (s % 60) + 'с';
+    var h = Math.floor(m / 60);
+    return h + 'ч ' + (m % 60) + 'м';
+  }
+
+  function fmtDate(d) {
+    if (!d) return '';
+    var today = new Date().toISOString().slice(0,10);
+    if (d === today) return 'Сегодня';
+    var parts = d.split('-');
+    var months = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+    return +parts[2] + ' ' + months[+parts[1]-1];
+  }
+
+  function renderTask(t, i) {
+    var timeHtml = t.time_spent ? '<span class="pt-task-time">' + fmtDur(t.time_spent) + '</span>' : '';
+    var dateHtml = '';
+    if (t.due_date) {
+      var isOverdue = !t.completed && t.due_date < new Date().toISOString().slice(0,10);
+      dateHtml = '<span class="pt-task-date' + (isOverdue ? ' overdue' : '') + '">' + fmtDate(t.due_date) + '</span>';
+    }
+    return '<div class="pt-task' + (t.completed ? ' done' : '') + '" data-task-id="' + t.id + '">' +
+      '<button class="pt-task-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button>' +
+      '<span class="pt-task-text pt-task-open">' + esc(t.text) + '</span>' +
+      dateHtml + timeHtml +
+      '<button class="pt-task-del" title="Удалить"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>' +
+    '</div>';
+  }
+
+  function buildProjectHTML(p, pTasks, doneCount) {
+    var isOpen = openProjects[p.id];
+    var tasksHtml = pTasks.map(function(t, ti) { return renderTask(t, ti); }).join('');
+    if (!pTasks.length) tasksHtml = '<div class="pt-add-inline pt-empty-hint" style="opacity:0.5;cursor:default;padding-left:30px;">Нет задач</div>';
+    return '<div class="pt-project' + (isOpen ? ' open' : '') + '" data-project-id="' + p.id + '">' +
+      '<div class="pt-project-head">' +
+        '<svg class="pt-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>' +
+        '<span class="pt-project-dot" style="background:' + p.color + '"></span>' +
+        '<span class="pt-project-name">' + esc(p.name) + '</span>' +
+        '<span class="pt-project-count">' + doneCount + '/' + pTasks.length + '</span>' +
+        '<div class="pt-project-actions">' +
+          '<button class="pt-project-action pt-add-task-in" title="Добавить задачу"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>' +
+          '<button class="pt-project-action danger pt-del-project" title="Удалить"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pt-tasks">' + tasksHtml + '</div>' +
+    '</div>';
+  }
+
+  function render() {
+    // === DIFF RENDER: обновляем только изменившиеся элементы ===
+    var existingProjectIds = Array.from(tree.querySelectorAll('.pt-project')).map(function(el) { return +el.dataset.projectId; });
+    var newProjectIds = projects.map(function(p) { return p.id; });
+
+    // Удаляем проекты которых больше нет
+    existingProjectIds.forEach(function(pid) {
+      if (newProjectIds.indexOf(pid) === -1) {
+        var el = tree.querySelector('.pt-project[data-project-id="' + pid + '"]');
+        if (el) el.remove();
+      }
+    });
+
+    // Обновляем/добавляем проекты
+    projects.forEach(function(p, pi) {
+      var pTasks = tasks.filter(function(t) { return t.project_id === p.id; });
+      var doneCount = pTasks.filter(function(t) { return t.completed; }).length;
+      var existing = tree.querySelector('.pt-project[data-project-id="' + p.id + '"]');
+
+      if (!existing) {
+        // Новый проект — создаём и анимируем
+        var div = document.createElement('div');
+        div.innerHTML = buildProjectHTML(p, pTasks, doneCount);
+        var el = div.firstElementChild;
+        el.classList.add('animate-in');
+        el.addEventListener('animationend', function() { el.classList.remove('animate-in'); }, { once: true });
+        tree.appendChild(el);
+      } else {
+        // Обновляем счётчик и цвет без пересоздания
+        var countEl = existing.querySelector('.pt-project-count');
+        if (countEl) countEl.textContent = doneCount + '/' + pTasks.length;
+        var dotEl = existing.querySelector('.pt-project-dot');
+        if (dotEl) dotEl.style.background = p.color;
+        var nameEl = existing.querySelector('.pt-project-name');
+        if (nameEl && nameEl.textContent !== p.name) nameEl.textContent = p.name;
+        // Открытость
+        if (openProjects[p.id]) existing.classList.add('open');
+        // Диффим задачи внутри проекта
+        diffTasks(existing.querySelector('.pt-tasks'), pTasks);
+      }
+    });
+
+    // Переупорядочиваем проекты только если порядок изменился
+    var children = Array.from(tree.querySelectorAll('.pt-project'));
+    var needsReorder = projects.some(function(p, i) { return !children[i] || +children[i].dataset.projectId !== p.id; });
+    if (needsReorder) {
+      projects.forEach(function(p) {
+        var el = tree.querySelector('.pt-project[data-project-id="' + p.id + '"]');
+        if (el) tree.appendChild(el);
+      });
+    }
+
+    // Orphan tasks
+    var orphans = tasks.filter(function(t) { return !t.project_id; });
+    if (orphans.length) {
+      orphanSection.style.display = '';
+      diffTasks(orphanList, orphans);
+    } else {
+      orphanSection.style.display = 'none';
+      orphanList.innerHTML = '';
+    }
+  }
+
+  function diffTasks(container, newTasks) {
+    var existingIds = Array.from(container.querySelectorAll('.pt-task')).map(function(el) { return +el.dataset.taskId; });
+    var newIds = newTasks.map(function(t) { return t.id; });
+
+    // Удаляем отсутствующие
+    existingIds.forEach(function(tid) {
+      if (newIds.indexOf(tid) === -1) {
+        var el = container.querySelector('.pt-task[data-task-id="' + tid + '"]');
+        if (el) el.remove();
+      }
+    });
+
+    // Убираем пустую подсказку если есть задачи
+    if (newTasks.length) {
+      var hint = container.querySelector('.pt-empty-hint');
+      if (hint) hint.remove();
+    }
+
+    // Обновляем/добавляем задачи
+    newTasks.forEach(function(t, i) {
+      var existing = container.querySelector('.pt-task[data-task-id="' + t.id + '"]');
+      if (!existing) {
+        var div = document.createElement('div');
+        div.innerHTML = renderTask(t, i);
+        var el = div.firstElementChild;
+        el.classList.add('animate-in');
+        el.addEventListener('animationend', function() { el.classList.remove('animate-in'); }, { once: true });
+        container.appendChild(el);
+      } else {
+        // Обновляем состояние без пересоздания
+        existing.classList.toggle('done', !!t.completed);
+        var txt = existing.querySelector('.pt-task-text');
+        if (txt && txt.textContent !== t.text) txt.textContent = t.text;
+        // Обновляем время
+        var timeEl = existing.querySelector('.pt-task-time');
+        var newTime = t.time_spent ? fmtDur(t.time_spent) : '';
+        if (newTime && !timeEl) {
+          var span = document.createElement('span');
+          span.className = 'pt-task-time';
+          span.textContent = newTime;
+          existing.insertBefore(span, existing.querySelector('.pt-task-del'));
+        } else if (!newTime && timeEl) {
+          timeEl.remove();
+        } else if (timeEl && timeEl.textContent !== newTime) {
+          timeEl.textContent = newTime;
+        }
+        // Обновляем дату
+        var dateEl = existing.querySelector('.pt-task-date');
+        var newDate = t.due_date ? fmtDate(t.due_date) : '';
+        var isOverdue = !t.completed && t.due_date && t.due_date < new Date().toISOString().slice(0,10);
+        if (newDate && !dateEl) {
+          var dspan = document.createElement('span');
+          dspan.className = 'pt-task-date' + (isOverdue ? ' overdue' : '');
+          dspan.textContent = newDate;
+          existing.insertBefore(dspan, existing.querySelector('.pt-task-del'));
+        } else if (!newDate && dateEl) {
+          dateEl.remove();
+        } else if (dateEl) {
+          dateEl.textContent = newDate;
+          dateEl.classList.toggle('overdue', !!isOverdue);
+        }
+      }
+    });
+
+    // Переупорядочиваем задачи только если порядок изменился
+    var taskChildren = Array.from(container.querySelectorAll('.pt-task'));
+    var taskNeedsReorder = newTasks.some(function(t, i) { return !taskChildren[i] || +taskChildren[i].dataset.taskId !== t.id; });
+    if (taskNeedsReorder) {
+      newTasks.forEach(function(t) {
+        var el = container.querySelector('.pt-task[data-task-id="' + t.id + '"]');
+        if (el) container.appendChild(el);
+      });
+    }
+
+    // Добавляем пустую подсказку если задач нет
+    if (!newTasks.length && !container.querySelector('.pt-empty-hint')) {
+      container.innerHTML = '<div class="pt-add-inline pt-empty-hint" style="opacity:0.5;cursor:default;padding-left:30px;">Нет задач</div>';
+    }
+  }
+
+  function bindEvents() {}
+
+  // === EVENT DELEGATION (один раз навсегда) ===
+  function initDelegation() {
+    // Клик по шапке проекта (раскрыть/свернуть)
+    tree.addEventListener('click', async function(e) {
+      var head = e.target.closest('.pt-project-head');
+      if (head && !e.target.closest('.pt-project-action')) {
+        var proj = head.closest('.pt-project');
+        var pid = +proj.dataset.projectId;
+        proj.classList.toggle('open');
+        openProjects[pid] = proj.classList.contains('open');
+        localStorage.setItem('pt_open', JSON.stringify(openProjects));
+        return;
+      }
+
+      // Добавить задачу в проект
+      var addTaskBtn = e.target.closest('.pt-add-task-in');
+      if (addTaskBtn) {
+        e.stopPropagation();
+        var pid = +addTaskBtn.closest('.pt-project').dataset.projectId;
+        showCreate('task-in-project', pid);
+        return;
+      }
+
+      // Удалить проект
+      var delProjBtn = e.target.closest('.pt-del-project');
+      if (delProjBtn) {
+        e.stopPropagation();
+        var proj = delProjBtn.closest('.pt-project');
+        var pid = +proj.dataset.projectId;
+        proj.classList.add('removing');
+        proj.addEventListener('animationend', async function() {
+          await api('DELETE', 'projects/' + sessionKey + '/' + pid);
+          await loadData();
+        }, { once: true });
+        return;
+      }
+    });
+
+    // Делегация на весь документ для задач (в проектах и orphan)
+    document.addEventListener('click', async function(e) {
+      // Чекбокс задачи
+      var checkBtn = e.target.closest('.pt-task-check');
+      if (checkBtn) {
+        var taskEl = checkBtn.closest('.pt-task');
+        var tid = +taskEl.dataset.taskId;
+        var task = tasks.find(function(t) { return t.id === tid; });
+        if (!task) return;
+        var elapsed = 0;
+        if (!task.completed) {
+          var now = Date.now();
+          var st = (typeof state !== 'undefined') ? state : window.state;
+          var timerOn = st && st.timerRunning && st.currentSessionStart;
+          if (!timerOn) { lastCheckTime = null; trackedTimerStart = null; }
+          if (timerOn && trackedTimerStart !== st.currentSessionStart) {
+            trackedTimerStart = st.currentSessionStart;
+            lastCheckTime = st.currentSessionStart;
+          }
+          if (lastCheckTime && timerOn) elapsed = Math.round(now - lastCheckTime);
+          lastCheckTime = now;
+        }
+        var newCompleted = !task.completed;
+        await api('PATCH', 'tasks/' + sessionKey + '/' + tid + '/toggle', { completed: newCompleted, timeSpent: newCompleted ? elapsed : 0 });
+        await loadData();
+        return;
+      }
+
+      // Открыть детали задачи
+      var openSpan = e.target.closest('.pt-task-open');
+      if (openSpan) {
+        var tid = +openSpan.closest('.pt-task').dataset.taskId;
+        openDetail(tid);
+        return;
+      }
+
+      // Удалить задачу
+      var delBtn = e.target.closest('.pt-task-del');
+      if (delBtn) {
+        var taskEl = delBtn.closest('.pt-task');
+        var tid = +taskEl.dataset.taskId;
+        taskEl.classList.add('removing');
+        taskEl.addEventListener('animationend', async function() {
+          await api('DELETE', 'tasks/' + sessionKey + '/' + tid);
+          await loadData();
+        }, { once: true });
+        return;
+      }
+    });
+  }
+  initDelegation();
+
+  addBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    addDropdown.classList.toggle('open');
+  });
+
+  addProjectOpt.addEventListener('click', function() {
+    addDropdown.classList.remove('open');
+    showCreate('project');
+  });
+
+  addTaskOpt.addEventListener('click', function() {
+    addDropdown.classList.remove('open');
+    showCreate('task');
+  });
+
+  function showCreate(mode, projectId) {
+    createMode = mode;
+    createProjectId = projectId || null;
+    createBox.style.display = 'flex';
+    createInput.placeholder = mode === 'project' ? 'Название проекта...' : 'Название задачи...';
+    createInput.value = '';
+    createInput.focus();
+  }
+
+  function hideCreate() {
+    createBox.style.display = 'none';
+    createMode = null;
+    createProjectId = null;
+  }
+
+  async function doCreate() {
+    var val = createInput.value.trim();
+    if (!val) return;
+    if (createMode === 'project') {
+      var color = colors[projects.length % colors.length];
+      await api('POST', 'projects/' + sessionKey, { name: val, color: color });
+    } else {
+      await api('POST', 'tasks/' + sessionKey, { text: val, projectId: createProjectId });
+      if (createProjectId) openProjects[createProjectId] = true;
+    }
+    hideCreate();
+    await loadData();
+  }
+
+  createSave.addEventListener('click', doCreate);
+  createCancel.addEventListener('click', hideCreate);
+  createInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doCreate();
+    if (e.key === 'Escape') hideCreate();
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!addBtn.contains(e.target) && !addDropdown.contains(e.target)) {
+      addDropdown.classList.remove('open');
+    }
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') addDropdown.classList.remove('open');
+  });
+
+  // === DETAIL PANEL ===
+  var detailPanel = document.getElementById('ptDetail');
+  var detailBack = document.getElementById('ptDetailBack');
+  var detailName = document.getElementById('ptDetailName');
+  var detailDesc = document.getElementById('ptDetailDesc');
+  var detailDate = document.getElementById('ptDetailDate');
+  var detailTimeStart = document.getElementById('ptDetailTimeStart');
+  var detailTimeEnd = document.getElementById('ptDetailTimeEnd');
+  var detailTimeBadge = document.getElementById('ptDetailTimeBadge');
+  var detailMediaList = document.getElementById('ptDetailMediaList');
+  var detailFileInput = document.getElementById('ptDetailFileInput');
+  var detailSave = document.getElementById('ptDetailSave');
+  var currentDetailId = null;
+  var detailMedia = [];
+
+  async function openDetail(taskId) {
+    currentDetailId = taskId;
+    var task = tasks.find(function(t) { return t.id === taskId; });
+    if (!task) return;
+    // Try to load full data from server
+    try {
+      var full = await api('GET', 'tasks/' + sessionKey + '/' + taskId);
+      if (full && full.id) task = full;
+    } catch(e) {}
+    detailName.value = task.text || '';
+    detailDesc.value = task.description || '';
+    detailDate.value = task.due_date || '';
+    detailTimeStart.value = task.time_start || '';
+    detailTimeEnd.value = task.time_end || '';
+    detailTimeBadge.textContent = task.time_spent ? fmtDur(task.time_spent) : '';
+    detailMedia = task.media ? (typeof task.media === 'string' ? JSON.parse(task.media) : task.media) : [];
+    renderMedia();
+    detailPanel.style.display = 'flex';
+  }
+
+  function closeDetail() {
+    detailPanel.style.display = 'none';
+    currentDetailId = null;
+    detailMedia = [];
+  }
+
+  detailBack.addEventListener('click', closeDetail);
+
+  detailSave.addEventListener('click', async function() {
+    if (!currentDetailId) return;
+    // Save name if changed
+    var task = tasks.find(function(t) { return t.id === currentDetailId; });
+    var newName = detailName.value.trim();
+    if (task && newName && newName !== task.text) {
+      await api('PUT', 'tasks/' + sessionKey + '/' + currentDetailId, { text: newName, projectId: task.project_id });
+    }
+    // Save details
+    await api('PATCH', 'tasks/' + sessionKey + '/' + currentDetailId + '/details', {
+      description: detailDesc.value.trim(),
+      dueDate: detailDate.value || null,
+      timeStart: detailTimeStart.value || null,
+      timeEnd: detailTimeEnd.value || null,
+      media: detailMedia.length ? detailMedia : null
+    });
+    closeDetail();
+    await loadData();
+  });
+
+  // Media: file input handler
+  detailFileInput.addEventListener('change', function() {
+    var files = detailFileInput.files;
+    for (var i = 0; i < files.length; i++) {
+      (function(file) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          detailMedia.push({
+            name: file.name,
+            type: file.type.startsWith('video') ? 'video' : 'image',
+            data: e.target.result
+          });
+          renderMedia();
+        };
+        reader.readAsDataURL(file);
+      })(files[i]);
+    }
+    detailFileInput.value = '';
+  });
+
+  function renderMedia() {
+    if (!detailMedia.length) {
+      detailMediaList.innerHTML = '<span style="font-size:0.72rem;color:var(--text-muted)">Нет вложений</span>';
+      return;
+    }
+    detailMediaList.innerHTML = detailMedia.map(function(m, i) {
+      var content = m.type === 'video'
+        ? '<video src="' + m.data + '" muted></video>'
+        : '<img src="' + m.data + '" alt="' + esc(m.name) + '" />';
+      return '<div class="pt-detail-media-item" data-idx="' + i + '">' + content +
+        '<button class="pt-detail-media-del" data-idx="' + i + '">&times;</button></div>';
+    }).join('');
+    detailMediaList.querySelectorAll('.pt-detail-media-item').forEach(function(item) {
+      item.addEventListener('click', function(e) {
+        if (e.target.closest('.pt-detail-media-del')) return;
+        openLightbox(detailMedia, +item.dataset.idx);
+      });
+    });
+    detailMediaList.querySelectorAll('.pt-detail-media-del').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        detailMedia.splice(+btn.dataset.idx, 1);
+        renderMedia();
+      });
+    });
+  }
+
+  // Reset lastCheckTime when timer stops
+  var wasRunning = false;
+  setInterval(function() {
+    var st2 = (typeof state !== 'undefined') ? state : window.state;
+    if (!st2) return;
+    var running = st2.timerRunning;
+    // Timer stopped — clear everything
+    if (wasRunning && !running) {
+      lastCheckTime = null;
+      trackedTimerStart = null;
+    }
+    wasRunning = running;
+  }, 300);
+
+  loadData();
+})();
+
+// ===== MEDIA LIGHTBOX =====
+(function initLightbox() {
+  var lb = document.getElementById('mediaLightbox');
+  var lbMedia = document.getElementById('mlbMedia');
+  var lbCounter = document.getElementById('mlbCounter');
+  var lbClose = document.getElementById('mlbClose');
+  var lbPrev = document.getElementById('mlbPrev');
+  var lbNext = document.getElementById('mlbNext');
+  var lbOverlay = document.getElementById('mlbOverlay');
+  var items = [], cur = 0;
+
+  window.openLightbox = function(mediaArr, idx) {
+    items = mediaArr; cur = idx;
+    lb.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    show();
+  };
+
+  function show() {
+    var m = items[cur];
+    lbMedia.innerHTML = m.type === 'video'
+      ? '<video src="' + m.data + '" controls autoplay></video>'
+      : '<img src="' + m.data + '" />';
+    lbCounter.textContent = items.length > 1 ? (cur + 1) + ' / ' + items.length : '';
+    lbPrev.style.display = cur > 0 ? '' : 'none';
+    lbNext.style.display = cur < items.length - 1 ? '' : 'none';
+  }
+
+  function close() {
+    lb.style.display = 'none';
+    document.body.style.overflow = '';
+    lbMedia.innerHTML = '';
+    items = []; cur = 0;
+  }
+
+  lbClose.addEventListener('click', close);
+  lbOverlay.addEventListener('click', close);
+  lbPrev.addEventListener('click', function() { if (cur > 0) { cur--; show(); } });
+  lbNext.addEventListener('click', function() { if (cur < items.length - 1) { cur++; show(); } });
+  document.addEventListener('keydown', function(e) {
+    if (lb.style.display === 'none') return;
+    if (e.key === 'Escape') close();
+    if (e.key === 'ArrowLeft' && cur > 0) { cur--; show(); }
+    if (e.key === 'ArrowRight' && cur < items.length - 1) { cur++; show(); }
   });
 })();
 </script>

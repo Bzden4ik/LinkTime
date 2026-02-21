@@ -80,11 +80,24 @@
 <header>
 <h1>Дашборд</h1>
 <div class="header-right">
-  <!-- Поиск (декоративный) -->
-  <div class="header-search">
+  <!-- Поиск -->
+  <div class="header-search" id="headerSearch">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <span>Поиск...</span>
     <kbd>⌘F</kbd>
+  </div>
+
+  <!-- Поиск: оверлей -->
+  <div class="search-overlay" id="searchOverlay" style="display:none">
+    <div class="search-box">
+      <div class="search-input-row">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="search-input" id="searchInput" type="text" placeholder="Поиск по задачам, проектам, команде..." autocomplete="off" />
+        <kbd class="search-esc">Esc</kbd>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+    <div class="search-backdrop" id="searchBackdrop"></div>
   </div>
   <!-- Синхр -->
   <div class="header-sync">
@@ -692,8 +705,10 @@
       const data = await api('GET', 'projects/' + sessionKey);
       projects = data.projects || [];
       tasks = data.tasks || [];
+      window._ptData = { projects, tasks };
     } catch (e) {
       projects = []; tasks = [];
+      window._ptData = { projects: [], tasks: [] };
     }
     render();
   }
@@ -1224,6 +1239,163 @@
     if (e.key === 'ArrowLeft' && cur > 0) { cur--; show(); }
     if (e.key === 'ArrowRight' && cur < items.length - 1) { cur++; show(); }
   });
+})();
+// ===== SEARCH =====
+(function initSearch() {
+  const overlay   = document.getElementById('searchOverlay');
+  const backdrop  = document.getElementById('searchBackdrop');
+  const input     = document.getElementById('searchInput');
+  const results   = document.getElementById('searchResults');
+  const trigger   = document.getElementById('headerSearch');
+  let activeIdx   = -1;
+
+  function open() {
+    overlay.style.display = 'flex';
+    input.value = '';
+    results.innerHTML = '';
+    activeIdx = -1;
+    setTimeout(() => input.focus(), 30);
+  }
+  function close() {
+    overlay.style.display = 'none';
+    input.value = '';
+    results.innerHTML = '';
+  }
+
+  trigger.addEventListener('click', open);
+  backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'f') { e.preventDefault(); open(); return; }
+    if (overlay.style.display === 'none') return;
+    if (e.key === 'Escape') { close(); return; }
+    const items = results.querySelectorAll('.search-item');
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); highlight(items); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); highlight(items); }
+    if (e.key === 'Enter' && activeIdx >= 0 && items[activeIdx]) items[activeIdx].click();
+  });
+
+  function highlight(items) {
+    items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
+    if (items[activeIdx]) items[activeIdx].scrollIntoView({ block: 'nearest' });
+  }
+
+  function hl(text, q) {
+    if (!q) return escapeHTML(text);
+    const idx = text.toLowerCase().indexOf(q.toLowerCase());
+    if (idx === -1) return escapeHTML(text);
+    return escapeHTML(text.slice(0, idx)) + '<mark>' + escapeHTML(text.slice(idx, idx + q.length)) + '</mark>' + escapeHTML(text.slice(idx + q.length));
+  }
+  function escapeHTML(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  input.addEventListener('input', function() {
+    const q = input.value.trim();
+    activeIdx = -1;
+    if (!q) { results.innerHTML = ''; return; }
+    render(q);
+  });
+
+  function render(q) {
+    const ql = q.toLowerCase();
+    let html = '';
+    let total = 0;
+
+    // --- Проекты ---
+    const ptData = window._ptData || { projects: [], tasks: [] };
+    const matchProjects = ptData.projects.filter(p => p.name.toLowerCase().includes(ql));
+    if (matchProjects.length) {
+      html += '<div class="search-group-label">Проекты</div>';
+      matchProjects.forEach(p => {
+        total++;
+        const taskCount = ptData.tasks.filter(t => t.project_id === p.id).length;
+        html += `<div class="search-item" data-action="project" data-id="${p.id}">
+          <div class="search-item-icon" style="background:${p.color}22;color:${p.color}">${p.icon || '📁'}</div>
+          <div class="search-item-body">
+            <div class="search-item-title">${hl(p.name, q)}</div>
+            <div class="search-item-sub">${taskCount} задач</div>
+          </div>
+          <span class="search-item-badge">Проект</span>
+        </div>`;
+      });
+    }
+
+    // --- Задачи ---
+    const matchTasks = ptData.tasks.filter(t => t.text.toLowerCase().includes(ql));
+    if (matchTasks.length) {
+      html += '<div class="search-group-label">Задачи</div>';
+      matchTasks.slice(0, 12).forEach(t => {
+        total++;
+        const proj = ptData.projects.find(p => p.id === t.project_id);
+        const sub = proj ? proj.name : 'Без проекта';
+        const done = t.completed ? 'opacity:0.5;text-decoration:line-through' : '';
+        html += `<div class="search-item" data-action="task" data-id="${t.id}" data-project-id="${t.project_id || ''}">
+          <div class="search-item-icon">${t.completed ? '✅' : '⬜'}</div>
+          <div class="search-item-body" style="${done}">
+            <div class="search-item-title">${hl(t.text, q)}</div>
+            <div class="search-item-sub">${escapeHTML(sub)}</div>
+          </div>
+          <span class="search-item-badge">${t.completed ? 'Готово' : 'Задача'}</span>
+        </div>`;
+      });
+    }
+
+    // --- Команда ---
+    const team = window.userTeam;
+    if (team && team.members) {
+      const matchMembers = team.members.filter(m => m.username.toLowerCase().includes(ql) || (m.user_id && m.user_id.toLowerCase().includes(ql)));
+      if (matchMembers.length) {
+        html += '<div class="search-group-label">Команда</div>';
+        matchMembers.forEach(m => {
+          total++;
+          const letter = m.username[0].toUpperCase();
+          html += `<div class="search-item" data-action="member" data-user-id="${m.user_id}">
+            <div class="search-item-icon" style="background:rgba(99,102,241,0.15);color:#818cf8;font-weight:700">${letter}</div>
+            <div class="search-item-body">
+              <div class="search-item-title">${hl(m.username, q)}</div>
+              <div class="search-item-sub">ID: ${m.user_id}${m.role === 'owner' ? ' · 👑 Глава' : ''}</div>
+            </div>
+            <span class="search-item-badge">Участник</span>
+          </div>`;
+        });
+      }
+    }
+
+    if (!total) {
+      html = `<div class="search-empty">Ничего не найдено по запросу «${escapeHTML(q)}»</div>`;
+    }
+    results.innerHTML = html;
+
+    // Навешиваем клики
+    results.querySelectorAll('.search-item').forEach(item => {
+      item.addEventListener('click', () => handleAction(item));
+    });
+  }
+
+  function handleAction(item) {
+    const action = item.dataset.action;
+    close();
+    if (action === 'project') {
+      // Переключаемся на вкладку задач и раскрываем проект
+      document.querySelector('[data-sidebar-tab="tasks"]')?.click();
+      const pid = +item.dataset.id;
+      setTimeout(() => {
+        const el = document.querySelector('.pt-project[data-project-id="' + pid + '"]');
+        if (el) { el.classList.add('open'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      }, 100);
+    } else if (action === 'task') {
+      document.querySelector('[data-sidebar-tab="tasks"]')?.click();
+      const pid = item.dataset.projectId;
+      const tid = +item.dataset.id;
+      setTimeout(() => {
+        if (pid) {
+          const proj = document.querySelector('.pt-project[data-project-id="' + pid + '"]');
+          if (proj) proj.classList.add('open');
+        }
+        const el = document.querySelector('.pt-task[data-task-id="' + tid + '"]');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+    // member — просто закрываем, можно расширить
+  }
 })();
 </script>
 </body>

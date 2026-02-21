@@ -13,6 +13,9 @@ lastTaskMarkedMs: 0
 };
 
 let timerInterval = null;
+let userProfile = null; // { userId, username, email }
+let userTeam = null; // { team, members: [] }
+let teamTimers = {}; // { userId: { action, sessionStart, totalPausedTime, ... } }
 let ws = null;
 let reconnectInterval = null;
 let heartbeatInterval = null;
@@ -81,13 +84,6 @@ document.getElementById('startBtn').addEventListener('click', startTimer);
 document.getElementById('pauseBtn').addEventListener('click', () => pauseTimer(false));
 document.getElementById('stopBtn').addEventListener('click', stopTimer);
 
-// Задачи
-document.getElementById('addTaskBtn').addEventListener('click', showTaskInput);
-document.getElementById('saveTaskBtn').addEventListener('click', saveTask);
-document.getElementById('cancelTaskBtn').addEventListener('click', hideTaskInput);
-document.getElementById('taskText').addEventListener('keypress', (e) => {
-if (e.key === 'Enter') saveTask();
-});
 
 // Доска задач (новая полноценная)
 document.getElementById('boardBtn').addEventListener('click', openBoardOverlay);
@@ -494,68 +490,10 @@ const seconds = totalSeconds % 60;
 return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// === ЗАДАЧИ ===
 
-function showTaskInput() {
-document.getElementById('taskInput').style.display = 'block';
-document.getElementById('taskText').focus();
-}
-
-function hideTaskInput() {
-document.getElementById('taskInput').style.display = 'none';
-document.getElementById('taskText').value = '';
-}
-
-function saveTask() {
-const taskText = document.getElementById('taskText').value.trim();
-if (taskText) {
-const task = {
-id: Date.now(),
-text: taskText,
-completed: false,
-date: state.selectedDate
-};
-
-const tasks = getTasks();
-tasks.push(task);
-saveTasks(tasks);
-
-hideTaskInput();
-renderTasks();
-updateSelectedDateStats();
-showToast('Задача добавлена!', 'success');
-}
-}
-
-function toggleTask(taskId) {
-const tasks = getTasks();
-const task = tasks.find(t => t.id === Number(taskId));
-if (task) {
-task.completed = !task.completed;
-if (task.completed) {
-task.completedAt = Date.now();
-if (state.timerRunning && state.currentSessionStart) {
-let displayMs = Date.now() - state.currentSessionStart - state.totalPausedTime;
-if (state.timerPaused && state.currentPauseStart) {
-displayMs -= (Date.now() - state.currentPauseStart);
-}
-displayMs = Math.max(0, displayMs);
-task.timeSpent = displayMs - state.lastTaskMarkedMs;
-state.lastTaskMarkedMs = displayMs;
-} else {
-task.timeSpent = 0;
-}
-showToast('Задача выполнена! 🎉', 'success');
-} else {
-// Снимаем отметку — убираем время
-task.completedAt = null;
-task.timeSpent = null;
-}
-saveTasks(tasks);
-renderTasks();
-updateSelectedDateStats();
-}
-}
+// Заглушки — старые задачи перенесены в проекты (pt-tree)
+function renderTasks() {}
+function updateTasksTitle() {}
 
 // Получить общее рабочее время за дату (мс)
 function getTotalWorkTimeForDate(dateStr) {
@@ -571,67 +509,6 @@ return data.totalWorkTime + Math.max(0, currentWork);
 return data.totalWorkTime;
 }
 
-function deleteTask(taskId) {
-const id = Number(taskId);
-const btn = document.querySelector(`[data-task-id="${id}"] .delete-btn`);
-if (!btn) return;
-
-if (btn.dataset.confirming === '1') {
-    // Второй клик — удаляем
-    const tasks = getTasks().filter(t => t.id !== id);
-    saveTasks(tasks);
-    renderTasks();
-    updateSelectedDateStats();
-    showToast('Задача удалена', 'info');
-} else {
-    // Первый клик — просим подтверждения
-    btn.dataset.confirming = '1';
-    btn.textContent = 'Точно?';
-    btn.style.background = 'rgba(239,68,68,0.3)';
-    setTimeout(() => {
-        if (btn && btn.dataset.confirming === '1') {
-            btn.dataset.confirming = '';
-            btn.textContent = 'Удалить';
-            btn.style.background = '';
-        }
-    }, 3000);
-}
-}
-
-function renderTasks() {
-const tasks = getTasks().filter(t => t.date === state.selectedDate);
-const tasksList = document.getElementById('tasksList');
-
-if (tasks.length === 0) {
-tasksList.innerHTML = '<li style="text-align: center; color: rgba(255, 255, 255, 0.5); padding: 20px;">Нет задач на эту дату</li>';
-return;
-}
-
-tasksList.innerHTML = tasks.map(task => `
-       <li class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
-           <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask(${task.id})">
-           <div class="task-content">
-               <span class="task-text">${escapeHTML(task.text)}</span>
-               ${task.completed && task.timeSpent ? `<span class="task-time">⏱ ${formatTime(task.timeSpent)}</span>` : ''}
-           </div>
-           <button class="delete-btn" onclick="deleteTask(${task.id})">Удалить</button>
-       </li>
-   `).join('');
-}
-
-function updateTasksTitle() {
-const dateObj = new Date(state.selectedDate + 'T00:00:00');
-const today = new Date().toISOString().split('T')[0];
-
-let titleText;
-if (state.selectedDate === today) {
-titleText = 'Задачи на сегодня';
-} else {
-titleText = 'Задачи на ' + dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-}
-
-document.getElementById('tasksTitle').textContent = titleText;
-}
 
 // === КАЛЕНДАРЬ ===
 
@@ -1117,6 +994,11 @@ break;
 case 'team_updated':
 loadTeam();
 break;
+case 'kicked_from_team':
+userTeam = null;
+renderTeam();
+showToast('Вы были исключены из команды');
+break;
 case 'team_timer_update':
 handleTeamTimerUpdate(message);
 break;
@@ -1528,8 +1410,6 @@ toast.classList.remove('show');
 }
 
 // Экспорт функций для глобального доступа (для onclick в HTML)
-window.toggleTask = toggleTask;
-window.deleteTask = deleteTask;
 window.exportCSV = exportCSV;
 window.exportJSON = exportJSON;
 window.importJSON = importJSON;
@@ -1657,10 +1537,7 @@ migrateBtn.textContent = 'Перенести данные из браузера 
 }
 
 // === ПРОФИЛЬ И КОМАНДЫ ===
-
-let userProfile = null; // { userId, username, email }
-let userTeam = null; // { team, members: [] }
-let teamTimers = {}; // { userId: { action, sessionStart, totalPausedTime, ... } }
+// userProfile, userTeam, teamTimers — объявлены вверху файла
 
 function getApiBase() {
   return WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
@@ -1761,16 +1638,18 @@ function renderTeam() {
         <div class="tooltip-work-label">За день: <span id="mwork-${m.user_id}">${formatWorkTimeForMember(timer)}</span></div>
       ` : '';
 
-      // Зелёная точка на аватарке если шерит время
       const dot = (m.sharing_time && hasTimer) ? `<div class="member-sharing-dot"></div>` : '';
+      const roleLabel = m.role === 'owner' ? `<span class="tooltip-role-owner">👑 Глава</span>` : '';
+      const kickBtn = (me && me.role === 'owner') ? `<button class="tooltip-kick-btn" onclick="kickMember('${m.user_id}')">Выгнать</button>` : '';
 
       html += `
         <div class="team-member-avatar" data-user-id="${m.user_id}">
           ${avatarContent}
           ${dot}
           <div class="member-tooltip">
-            <div class="tooltip-username">${m.username}</div>
+            <div class="tooltip-username">${m.username} ${roleLabel}</div>
             ${timerSection}
+            ${kickBtn}
           </div>
         </div>
       `;
@@ -1784,6 +1663,43 @@ function renderTeam() {
   
   container.innerHTML = html;
   startTeamTimerUpdates();
+}
+
+async function kickMember(targetUserId) {
+  const members = userTeam && userTeam.members || [];
+  const target = members.find(m => m.user_id === targetUserId);
+  const name = target ? target.username : targetUserId;
+
+  const modal = document.getElementById('kickConfirmModal');
+  document.getElementById('kickConfirmName').textContent = name;
+  modal.classList.add('active');
+
+  return new Promise(resolve => {
+    function close(confirmed) {
+      modal.classList.remove('active');
+      document.getElementById('kickConfirmYes').removeEventListener('click', onYes);
+      document.getElementById('kickConfirmNo').removeEventListener('click', onNo);
+      document.getElementById('kickConfirmClose').removeEventListener('click', onNo);
+      resolve(confirmed);
+    }
+    async function onYes() {
+      close(true);
+      try {
+        const res = await fetch('/api/team/kick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionKey: state.sessionKey, targetUserId })
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || 'Ошибка'); return; }
+        await loadTeam();
+      } catch (e) { showToast('Ошибка сети'); }
+    }
+    function onNo() { close(false); }
+    document.getElementById('kickConfirmYes').addEventListener('click', onYes);
+    document.getElementById('kickConfirmNo').addEventListener('click', onNo);
+    document.getElementById('kickConfirmClose').addEventListener('click', onNo);
+  });
 }
 
 function formatWorkTimeForMember(timer) {
