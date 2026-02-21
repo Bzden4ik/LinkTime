@@ -115,6 +115,33 @@ try {
     )`);
 } catch (e) {}
 
+// Миграция: таблицы проектов и задач проектов
+try {
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_key TEXT NOT NULL,
+            name TEXT NOT NULL,
+            color TEXT DEFAULT '#6366f1',
+            icon TEXT DEFAULT '📁',
+            sort_order INTEGER DEFAULT 0,
+            created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+        );
+        CREATE TABLE IF NOT EXISTS project_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_key TEXT NOT NULL,
+            project_id INTEGER DEFAULT NULL,
+            text TEXT NOT NULL,
+            completed INTEGER DEFAULT 0,
+            sort_order INTEGER DEFAULT 0,
+            created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+            completed_at INTEGER DEFAULT NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+        );
+    `);
+    console.log('[DB] Migration: projects & project_tasks tables ready');
+} catch (e) {}
+
 console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
 
 // Prepared statements для производительности
@@ -178,6 +205,20 @@ const stmts = {
     getPersonalBoard: db.prepare('SELECT data FROM personal_boards WHERE session_key = ?'),
     upsertPersonalBoard: db.prepare(`INSERT INTO personal_boards (session_key, data, updated_at) VALUES (?, ?, ?)
         ON CONFLICT(session_key) DO UPDATE SET data = ?, updated_at = ?`),
+    // Projects
+    getProjects: db.prepare('SELECT * FROM projects WHERE session_key = ? ORDER BY sort_order, created_at'),
+    createProject: db.prepare('INSERT INTO projects (session_key, name, color, icon) VALUES (?, ?, ?, ?)'),
+    updateProject: db.prepare('UPDATE projects SET name = ?, color = ?, icon = ? WHERE id = ? AND session_key = ?'),
+    deleteProject: db.prepare('DELETE FROM projects WHERE id = ? AND session_key = ?'),
+    // Project tasks
+    getProjectTasks: db.prepare('SELECT * FROM project_tasks WHERE session_key = ? ORDER BY completed, sort_order, created_at DESC'),
+    getTasksByProject: db.prepare('SELECT * FROM project_tasks WHERE project_id = ? AND session_key = ? ORDER BY completed, sort_order, created_at DESC'),
+    getTasksNoProject: db.prepare('SELECT * FROM project_tasks WHERE project_id IS NULL AND session_key = ? ORDER BY completed, sort_order, created_at DESC'),
+    createProjectTask: db.prepare('INSERT INTO project_tasks (session_key, project_id, text) VALUES (?, ?, ?)'),
+    updateProjectTask: db.prepare('UPDATE project_tasks SET text = ?, project_id = ? WHERE id = ? AND session_key = ?'),
+    toggleProjectTask: db.prepare('UPDATE project_tasks SET completed = ?, completed_at = ? WHERE id = ? AND session_key = ?'),
+    deleteProjectTask: db.prepare('DELETE FROM project_tasks WHERE id = ? AND session_key = ?'),
+    moveTaskToProject: db.prepare('UPDATE project_tasks SET project_id = ? WHERE id = ? AND session_key = ?'),
 };
 
 // === ХЕЛПЕРЫ ДЛЯ БД ===
@@ -493,6 +534,64 @@ app.get('/api/board/team/:sessionKey', (req, res) => {
     const row = stmts.getTeamBoard.get(team.id);
     const data = row ? JSON.parse(row.data) : { cards: [], connections: [] };
     res.json(data);
+});
+
+// === API: Проекты ===
+app.get('/api/projects/:sessionKey', (req, res) => {
+    const projects = stmts.getProjects.all(req.params.sessionKey);
+    const tasks = stmts.getProjectTasks.all(req.params.sessionKey);
+    res.json({ projects, tasks });
+});
+
+app.post('/api/projects/:sessionKey', (req, res) => {
+    const { name, color, icon } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
+    const result = stmts.createProject.run(req.params.sessionKey, name.trim(), color || '#6366f1', icon || '📁');
+    const project = { id: result.lastInsertRowid, session_key: req.params.sessionKey, name: name.trim(), color: color || '#6366f1', icon: icon || '📁', sort_order: 0, created_at: Date.now() };
+    res.json(project);
+});
+
+app.put('/api/projects/:sessionKey/:id', (req, res) => {
+    const { name, color, icon } = req.body;
+    stmts.updateProject.run(name, color, icon, +req.params.id, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+app.delete('/api/projects/:sessionKey/:id', (req, res) => {
+    stmts.deleteProject.run(+req.params.id, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+// === API: Задачи проектов ===
+app.post('/api/tasks/:sessionKey', (req, res) => {
+    const { text, projectId } = req.body;
+    if (!text || !text.trim()) return res.status(400).json({ error: 'Text required' });
+    const result = stmts.createProjectTask.run(req.params.sessionKey, projectId || null, text.trim());
+    const task = { id: result.lastInsertRowid, session_key: req.params.sessionKey, project_id: projectId || null, text: text.trim(), completed: 0, sort_order: 0, created_at: Date.now(), completed_at: null };
+    res.json(task);
+});
+
+app.put('/api/tasks/:sessionKey/:id', (req, res) => {
+    const { text, projectId } = req.body;
+    stmts.updateProjectTask.run(text, projectId !== undefined ? projectId : null, +req.params.id, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+app.patch('/api/tasks/:sessionKey/:id/toggle', (req, res) => {
+    const { completed } = req.body;
+    stmts.toggleProjectTask.run(completed ? 1 : 0, completed ? Date.now() : null, +req.params.id, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+app.delete('/api/tasks/:sessionKey/:id', (req, res) => {
+    stmts.deleteProjectTask.run(+req.params.id, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+app.patch('/api/tasks/:sessionKey/:id/move', (req, res) => {
+    const { projectId } = req.body;
+    stmts.moveTaskToProject.run(projectId || null, +req.params.id, req.params.sessionKey);
+    res.json({ ok: true });
 });
 
 // Fallback — отдаём index.html для SPA

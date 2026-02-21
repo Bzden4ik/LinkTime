@@ -89,6 +89,10 @@ document.getElementById('taskText').addEventListener('keypress', (e) => {
 if (e.key === 'Enter') saveTask();
 });
 
+// Доска задач (новая полноценная)
+document.getElementById('boardBtn').addEventListener('click', openBoardOverlay);
+window.addEventListener('message', (e) => { if (e.data === 'close-board') closeBoardOverlay(); });
+
 // Настройки
 document.getElementById('settingsBtn') && document.getElementById('settingsBtn').addEventListener('click', openSettings);
 document.getElementById('burgerBtn').addEventListener('click', toggleBurger);
@@ -109,9 +113,7 @@ document.getElementById('cancelShareTime').addEventListener('click', closeShareT
 document.addEventListener('click', (e) => {
   if (!document.getElementById('burgerWrap').contains(e.target)) closeBurger();
 });
-// Доска задач (новая полноценная)
-document.getElementById('boardBtn').addEventListener('click', openBoardOverlay);
-window.addEventListener('message', (e) => { if (e.data === 'close-board') closeBoardOverlay(); });
+document.getElementById('closeSettings').addEventListener('click', closeSettings);
 document.getElementById('generateQR').addEventListener('click', generateQRCode);
 document.getElementById('showKey').addEventListener('click', showSessionKey);
 document.getElementById('scanQR').addEventListener('click', startQRScanner);
@@ -476,6 +478,7 @@ if (state.timerRunning && !state.timerPaused) {
 state.elapsedTime = Date.now() - state.currentSessionStart;
 const displayTime = state.elapsedTime - state.totalPausedTime;
 document.getElementById('timerDisplay').textContent = formatTime(displayTime);
+// Обновляем рабочее время в реальном времени
 if (state.selectedDate === state.currentDate) {
 updateSelectedDateStats();
 }
@@ -574,12 +577,14 @@ const btn = document.querySelector(`[data-task-id="${id}"] .delete-btn`);
 if (!btn) return;
 
 if (btn.dataset.confirming === '1') {
+    // Второй клик — удаляем
     const tasks = getTasks().filter(t => t.id !== id);
     saveTasks(tasks);
     renderTasks();
     updateSelectedDateStats();
     showToast('Задача удалена', 'info');
 } else {
+    // Первый клик — просим подтверждения
     btn.dataset.confirming = '1';
     btn.textContent = 'Точно?';
     btn.style.background = 'rgba(239,68,68,0.3)';
@@ -726,6 +731,7 @@ sessionTime -= pause.duration;
 });
 totalWorkTime += Math.max(0, sessionTime);
 } else if (dateStr === state.currentDate && state.timerRunning && state.currentSessionStart && session.start === state.currentSessionStart) {
+// Текущая активная сессия — считаем в реальном времени
 let currentWork = Date.now() - session.start - state.totalPausedTime;
 if (state.timerPaused && state.currentPauseStart) {
 currentWork -= (Date.now() - state.currentPauseStart);
@@ -792,19 +798,29 @@ function exportJSON() {
 function exportCSV() {
     const sessions = cache.sessions || {};
     const rows = [['Дата', 'Начало', 'Конец', 'Длительность (мин)', 'Задачи']];
+
     for (const key of Object.keys(sessions).sort()) {
         const date = key.replace('sessions_', '');
         const daySessions = sessions[key] || [];
         const tasks = (cache.tasks || [])
             .filter(t => t.date === date && t.completed)
-            .map(t => t.text).join('; ');
+            .map(t => t.text)
+            .join('; ');
+
         for (const s of daySessions) {
             const start = new Date(s.startTime);
             const end = s.endTime ? new Date(s.endTime) : new Date();
             const dur = Math.round((end - start - (s.totalPausedTime || 0)) / 60000);
-            rows.push([date, start.toLocaleTimeString('ru'), s.endTime ? end.toLocaleTimeString('ru') : '', dur, tasks]);
+            rows.push([
+                date,
+                start.toLocaleTimeString('ru'),
+                s.endTime ? end.toLocaleTimeString('ru') : '',
+                dur,
+                tasks
+            ]);
         }
     }
+
     const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -828,6 +844,7 @@ function importJSON() {
             try {
                 const data = JSON.parse(ev.target.result);
                 if (data.tasks) {
+                    // Merge с существующими данными
                     const existing = cache.tasks || [];
                     const existingIds = new Set(existing.map(t => t.id));
                     const newTasks = data.tasks.filter(t => !existingIds.has(t.id));
@@ -858,13 +875,8 @@ function importJSON() {
 
 // === НАСТРОЙКИ ===
 
-function closeSettings() {
-document.getElementById('settingsModal').classList.remove('active');
-}
-
 function openSettings() {
 document.getElementById('settingsModal').classList.add('active');
-document.getElementById('closeSettings').onclick = closeSettings;
 renderAppLists();
 
     // Показываем секцию автозапуска только в Electron
@@ -1036,9 +1048,10 @@ return cache.sessions[`sessions_${dateStr}`] || [];
 
 function connectWebSocket() {
 try {
+// Закрываем старое соединение если оно ещё открыто/подключается
 if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-    ws.onclose = null;
-    ws.close();
+ws.onclose = null; // Не триггерим reconnect от старого сокета
+ws.close();
 }
 ws = new WebSocket(WS_URL);
 
@@ -1175,6 +1188,7 @@ state.timerPaused = false;
 state.currentSessionStart = timerData.sessionStart;
 state.totalPausedTime = timerData.totalPausedTime || 0;
 
+if (timerInterval) clearInterval(timerInterval);
 timerInterval = setInterval(updateTimer, 1000);
 updateTimer(); // Мгновенное обновление дисплея
 
@@ -1474,6 +1488,7 @@ if (!data) return;
 
 if (data.tasks && Array.isArray(data.tasks)) {
     const local = cache.tasks || [];
+    // Merge по id: remote побеждает для существующих, локальные уникальные сохраняются
     const remoteById = new Map(data.tasks.map(t => [t.id, t]));
     const localUnique = local.filter(t => !remoteById.has(t.id));
     cache.tasks = [...data.tasks, ...localUnique];
@@ -1481,12 +1496,14 @@ if (data.tasks && Array.isArray(data.tasks)) {
 }
 
 if (data.sessions) {
+    // Merge сессий по датам: для каждой даты объединяем по startTime
     const local = cache.sessions || {};
     const remote = data.sessions;
     const merged = { ...local };
     for (const key of Object.keys(remote)) {
         const localArr = local[key] || [];
         const remoteArr = remote[key] || [];
+        // Объединяем по startTime, remote побеждает при конфликте
         const byStart = new Map(localArr.map(s => [s.startTime, s]));
         for (const s of remoteArr) byStart.set(s.startTime, s);
         merged[key] = Array.from(byStart.values())
@@ -1513,6 +1530,9 @@ toast.classList.remove('show');
 // Экспорт функций для глобального доступа (для onclick в HTML)
 window.toggleTask = toggleTask;
 window.deleteTask = deleteTask;
+window.exportCSV = exportCSV;
+window.exportJSON = exportJSON;
+window.importJSON = importJSON;
 
 // === УПРАВЛЕНИЕ СПИСКАМИ ПРИЛОЖЕНИЙ (white/black) ===
 
@@ -1703,15 +1723,17 @@ function updateShareTimeBtnLabel() {
 
 function renderTeam() {
   const container = document.getElementById('teamSlots');
+  
   let html = '';
-
+  
   if (userTeam && userTeam.team) {
     const members = userTeam.members || [];
     const me = members.find(m => m.user_id === userProfile.userId);
     const others = members.filter(m => m.user_id !== userProfile.userId);
-
+    
+    // Сначала я
     if (me) {
-      const avatarContent = userProfile.avatar
+      const avatarContent = userProfile.avatar 
         ? `<img src="${userProfile.avatar}" alt="${me.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
         : me.username[0].toUpperCase();
       html += `
@@ -1723,21 +1745,23 @@ function renderTeam() {
         </div>
       `;
     }
-
+    
+    // Потом остальные
     others.forEach(m => {
       const avatarContent = m.avatar
         ? `<img src="${m.avatar}" alt="${m.username}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
         : m.username[0].toUpperCase();
-
+      
       const timer = teamTimers[m.user_id];
       const hasTimer = timer && m.sharing_time && timer.action && timer.action !== 'stop';
-
+      
       const timerSection = hasTimer ? `
         <div class="tooltip-divider"></div>
         <div class="tooltip-timer-val" id="mtimer-${m.user_id}">${formatTimerFromState(timer)}</div>
         <div class="tooltip-work-label">За день: <span id="mwork-${m.user_id}">${formatWorkTimeForMember(timer)}</span></div>
       ` : '';
 
+      // Зелёная точка на аватарке если шерит время
       const dot = (m.sharing_time && hasTimer) ? `<div class="member-sharing-dot"></div>` : '';
 
       html += `
@@ -1752,8 +1776,12 @@ function renderTeam() {
       `;
     });
   }
-
-  html += `<div class="team-add-slot" onclick="openInviteModal()" title="Пригласить в команду">+</div>`;
+  
+  // Слот + показываем ВСЕГДА
+  html += `
+    <div class="team-add-slot" onclick="openInviteModal()" title="Пригласить в команду">+</div>
+  `;
+  
   container.innerHTML = html;
   startTeamTimerUpdates();
 }
@@ -1761,10 +1789,12 @@ function renderTeam() {
 function formatWorkTimeForMember(timer) {
   if (!timer) return '00:00:00';
   const completed = timer.completedWorkMs || 0;
+  // Добавляем текущую сессию если таймер идёт
   if ((timer.action === 'start' || timer.action === 'resume') && timer.sessionStart) {
     const running = Date.now() - timer.sessionStart - (timer.totalPausedTime || 0);
     return formatTime(completed + Math.max(0, running));
   }
+  // На паузе — добавляем время до момента паузы
   if (timer.action === 'pause' && timer.pauseStart && timer.sessionStart) {
     const running = timer.pauseStart - timer.sessionStart - (timer.totalPausedTime || 0);
     return formatTime(completed + Math.max(0, running));
@@ -1791,12 +1821,14 @@ let teamTimerInterval = null;
 
 function startTeamTimerUpdates() {
   if (teamTimerInterval) clearInterval(teamTimerInterval);
-
+  
   teamTimerInterval = setInterval(() => {
     Object.entries(teamTimers).forEach(([userId, timer]) => {
       if (!timer || timer.action === 'stop' || timer.action === 'pause') return;
+      
       const timerEl = document.getElementById(`mtimer-${userId}`);
       const workEl = document.getElementById(`mwork-${userId}`);
+      
       if (timerEl) timerEl.textContent = formatTimerFromState(timer);
       if (workEl) workEl.textContent = formatWorkTimeForMember(timer);
     });
@@ -1806,12 +1838,19 @@ function startTeamTimerUpdates() {
 function handleTeamTimerUpdate(data) {
   const { userId, timerState, completedWorkMs } = data;
   teamTimers[userId] = { ...timerState, completedWorkMs: completedWorkMs || 0 };
-
+  
+  // Обновляем тултип без полного перерендера
   const timerEl = document.getElementById(`mtimer-${userId}`);
   const workEl = document.getElementById(`mwork-${userId}`);
-  if (timerEl) timerEl.textContent = formatTimerFromState(timerState);
-  if (workEl) workEl.textContent = formatWorkTimeForMember(teamTimers[userId]);
-
+  
+  if (timerEl) {
+    timerEl.textContent = formatTimerFromState(timerState);
+  }
+  if (workEl) {
+    workEl.textContent = formatWorkTimeForMember(teamTimers[userId]);
+  }
+  
+  // Если элементы не существуют (тултип не создан) — перерисовываем команду
   if (!timerEl || timerState.action === 'stop') {
     loadTeam();
   }
@@ -2054,6 +2093,7 @@ async function sendInvite() {
 // === ШЕРИНГ ВРЕМЕНИ ===
 
 function openShareTimeModal() {
+  // Если уже включён — сразу выключаем без модалки
   if (userTeam && userTeam.members) {
     const me = userTeam.members.find(m => m.user_id === userProfile.userId);
     if (me && me.sharing_time) {
@@ -2161,6 +2201,7 @@ function openBoardOverlay() {
 
 function closeBoardOverlay() {
   const overlay = document.getElementById('board-overlay');
+  overlay.style.animation = 'none';
   overlay.style.opacity = '0';
   overlay.style.transform = 'scale(0.98)';
   overlay.style.transition = 'opacity .25s,transform .25s';
@@ -2205,11 +2246,13 @@ function renderBoard() {
     counter.textContent = tasks.length;
     container.innerHTML = tasks.map(t => renderCard(t)).join('');
 
+    // Drag events на карточки
     container.querySelectorAll('.board-card').forEach(card => {
       card.addEventListener('dragstart', onCardDragStart);
       card.addEventListener('dragend',   onCardDragEnd);
     });
 
+    // Drop zone на колонку
     container.addEventListener('dragover', onColDragOver);
     container.addEventListener('dragleave', onColDragLeave);
     container.addEventListener('drop', onColDrop);
@@ -2242,6 +2285,7 @@ function renderCard(task) {
     </div>`;
 }
 
+// Drag & Drop
 function onCardDragStart(e) {
   dragSrcCardId = e.currentTarget.dataset.cardId;
   e.currentTarget.classList.add('dragging');
@@ -2282,6 +2326,7 @@ function onColDrop(e) {
   dragSrcCardId = null;
 }
 
+// Card modal
 function openCardModal(taskId, status) {
   boardEditingCardId = taskId;
   document.getElementById('cardModalTitle').textContent = taskId ? 'Редактировать' : 'Новая задача';
@@ -2318,7 +2363,7 @@ function closeCardModal() {
 }
 
 function saveCard() {
-  const title = document.getElementById('cardTitleInput').value.trim();
+  const title    = document.getElementById('cardTitleInput').value.trim();
   if (!title) { document.getElementById('cardTitleInput').focus(); return; }
   const desc     = document.getElementById('cardDescInput').value.trim();
   const status   = document.getElementById('cardStatusSelect').value;
@@ -2367,6 +2412,3 @@ function deleteCard(taskId) {
 
 window.editCard   = editCard;
 window.deleteCard = deleteCard;
-window.exportCSV  = exportCSV;
-window.exportJSON = exportJSON;
-window.importJSON = importJSON;
