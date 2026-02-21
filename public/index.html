@@ -711,7 +711,7 @@
       var isOverdue = !t.completed && t.due_date < new Date().toISOString().slice(0,10);
       dateHtml = '<span class="pt-task-date' + (isOverdue ? ' overdue' : '') + '">' + fmtDate(t.due_date) + '</span>';
     }
-    return '<div class="pt-task' + (t.completed ? ' done' : '') + '" data-task-id="' + t.id + '" style="animation-delay:' + (i * 0.02) + 's">' +
+    return '<div class="pt-task' + (t.completed ? ' done' : '') + '" data-task-id="' + t.id + '">' +
       '<button class="pt-task-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button>' +
       '<span class="pt-task-text pt-task-open">' + esc(t.text) + '</span>' +
       dateHtml + timeHtml +
@@ -782,7 +782,7 @@
     // Переупорядочиваем проекты если нужно (по порядку в массиве)
     projects.forEach(function(p) {
       var el = tree.querySelector('.pt-project[data-project-id="' + p.id + '"]');
-      if (el) tree.appendChild(el); // перемещает в конец если порядок изменился
+      if (el) tree.appendChild(el);
     });
 
     // Orphan tasks
@@ -794,8 +794,6 @@
       orphanSection.style.display = 'none';
       orphanList.innerHTML = '';
     }
-
-    bindEvents();
   }
 
   function diffTasks(container, newTasks) {
@@ -873,38 +871,52 @@
     }
   }
 
-  function bindEvents() {
-    tree.querySelectorAll('.pt-project-head').forEach(function(head) {
-      head.addEventListener('click', function(e) {
-        if (e.target.closest('.pt-project-action')) return;
+  function bindEvents() {}
+
+  // === EVENT DELEGATION (один раз навсегда) ===
+  function initDelegation() {
+    // Клик по шапке проекта (раскрыть/свернуть)
+    tree.addEventListener('click', async function(e) {
+      var head = e.target.closest('.pt-project-head');
+      if (head && !e.target.closest('.pt-project-action')) {
         var proj = head.closest('.pt-project');
         var pid = +proj.dataset.projectId;
         proj.classList.toggle('open');
         openProjects[pid] = proj.classList.contains('open');
         localStorage.setItem('pt_open', JSON.stringify(openProjects));
-      });
-    });
+        return;
+      }
 
-    tree.querySelectorAll('.pt-add-task-in').forEach(function(btn) {
-      btn.addEventListener('click', function(e) {
+      // Добавить задачу в проект
+      var addTaskBtn = e.target.closest('.pt-add-task-in');
+      if (addTaskBtn) {
         e.stopPropagation();
-        var pid = +btn.closest('.pt-project').dataset.projectId;
+        var pid = +addTaskBtn.closest('.pt-project').dataset.projectId;
         showCreate('task-in-project', pid);
-      });
-    });
+        return;
+      }
 
-    tree.querySelectorAll('.pt-del-project').forEach(function(btn) {
-      btn.addEventListener('click', async function(e) {
+      // Удалить проект
+      var delProjBtn = e.target.closest('.pt-del-project');
+      if (delProjBtn) {
         e.stopPropagation();
-        var pid = +btn.closest('.pt-project').dataset.projectId;
-        await api('DELETE', 'projects/' + sessionKey + '/' + pid);
-        await loadData();
-      });
+        var proj = delProjBtn.closest('.pt-project');
+        var pid = +proj.dataset.projectId;
+        proj.classList.add('removing');
+        proj.addEventListener('animationend', async function() {
+          await api('DELETE', 'projects/' + sessionKey + '/' + pid);
+          await loadData();
+        }, { once: true });
+        return;
+      }
     });
 
-    document.querySelectorAll('.pt-task-check').forEach(function(btn) {
-      btn.addEventListener('click', async function() {
-        var taskEl = btn.closest('.pt-task');
+    // Делегация на весь документ для задач (в проектах и orphan)
+    document.addEventListener('click', async function(e) {
+      // Чекбокс задачи
+      var checkBtn = e.target.closest('.pt-task-check');
+      if (checkBtn) {
+        var taskEl = checkBtn.closest('.pt-task');
         var tid = +taskEl.dataset.taskId;
         var task = tasks.find(function(t) { return t.id === tid; });
         if (!task) return;
@@ -913,48 +925,43 @@
           var now = Date.now();
           var st = (typeof state !== 'undefined') ? state : window.state;
           var timerOn = st && st.timerRunning && st.currentSessionStart;
-          // If timer not running, no time to track
-          if (!timerOn) {
-            lastCheckTime = null;
-            trackedTimerStart = null;
-          }
-          // New timer session — set anchor to timer start moment
+          if (!timerOn) { lastCheckTime = null; trackedTimerStart = null; }
           if (timerOn && trackedTimerStart !== st.currentSessionStart) {
             trackedTimerStart = st.currentSessionStart;
             lastCheckTime = st.currentSessionStart;
           }
-          // Calculate elapsed since last checkpoint
-          if (lastCheckTime && timerOn) {
-            elapsed = Math.round(now - lastCheckTime);
-          }
+          if (lastCheckTime && timerOn) elapsed = Math.round(now - lastCheckTime);
           lastCheckTime = now;
         }
-        var newCompleted = task.completed ? false : true;
+        var newCompleted = !task.completed;
         await api('PATCH', 'tasks/' + sessionKey + '/' + tid + '/toggle', { completed: newCompleted, timeSpent: newCompleted ? elapsed : 0 });
         await loadData();
-      });
-    });
+        return;
+      }
 
-    // Open task detail on text click
-    document.querySelectorAll('.pt-task-open').forEach(function(span) {
-      span.addEventListener('click', function() {
-        var tid = +span.closest('.pt-task').dataset.taskId;
+      // Открыть детали задачи
+      var openSpan = e.target.closest('.pt-task-open');
+      if (openSpan) {
+        var tid = +openSpan.closest('.pt-task').dataset.taskId;
         openDetail(tid);
-      });
-    });
+        return;
+      }
 
-    document.querySelectorAll('.pt-task-del').forEach(function(btn) {
-      btn.addEventListener('click', async function() {
-        var taskEl = btn.closest('.pt-task');
+      // Удалить задачу
+      var delBtn = e.target.closest('.pt-task-del');
+      if (delBtn) {
+        var taskEl = delBtn.closest('.pt-task');
         var tid = +taskEl.dataset.taskId;
         taskEl.classList.add('removing');
         taskEl.addEventListener('animationend', async function() {
           await api('DELETE', 'tasks/' + sessionKey + '/' + tid);
           await loadData();
         }, { once: true });
-      });
+        return;
+      }
     });
   }
+  initDelegation();
 
   addBtn.addEventListener('click', function(e) {
     e.stopPropagation();

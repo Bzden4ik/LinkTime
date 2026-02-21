@@ -2259,6 +2259,11 @@ min-width: 44px;
 .pt-orphan-list { display: flex; flex-direction: column; gap: 1px; }
 .pt-project, .pt-task { }
 .pt-project.animate-in, .pt-task.animate-in { animation: ptEntryIn 0.2s ease both; }
+.pt-project.removing, .pt-task.removing { animation: ptRemoveOut 0.18s ease forwards; }
+@keyframes ptRemoveOut {
+  from { opacity: 1; transform: translateX(0); max-height: 60px; }
+  to   { opacity: 0; transform: translateX(-8px); max-height: 0; padding-top: 0; padding-bottom: 0; margin: 0; }
+}
 @keyframes ptEntryIn {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
