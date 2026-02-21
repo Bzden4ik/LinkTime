@@ -119,10 +119,13 @@ document.getElementById('connectKey').addEventListener('click', connectWithKey);
 document.getElementById('migrateBtn').addEventListener('click', migrateDataToServer);
 
     // Автозапуск и Авто-Обновление (только для Electron)
-    if (window.__electronApp) {
+    // Проверяем window.electronAPI, а не window.__electronApp:
+    // __electronApp ставится асинхронно после DOMContentLoaded и здесь ещё false
+    if (window.electronAPI) {
         document.getElementById('autostartCheckbox').addEventListener('change', saveAutostartSetting);
         document.getElementById('autoUpdateCheckbox').addEventListener('change', saveAutoUpdateSetting);
         document.getElementById('checkUpdateBtn').addEventListener('click', () => {
+            console.log('[UPDATE-UI] Check button clicked, electronAPI:', !!window.electronAPI);
             window.electronAPI.checkUpdates();
             showToast('Проверка обновлений...', 'info');
         });
@@ -766,7 +769,7 @@ document.getElementById('settingsModal').classList.add('active');
 renderAppLists();
 
     // Показываем секцию автозапуска только в Electron
-    if (window.__electronApp) {
+    if (window.electronAPI) {
         document.getElementById('autostartSection').style.display = 'block';
         loadAutostartSetting();
         loadAutoUpdateSetting();

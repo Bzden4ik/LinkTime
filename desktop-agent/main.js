@@ -801,13 +801,23 @@ function checkForUpdates(silent = false) {
   });
 }
 
-ipcMain.on('check-updates', () => checkForUpdates(false));
+ipcMain.on('check-updates', () => {
+  console.log('[UPDATE] Manual check triggered');
+  checkForUpdates(false);
+});
 
 ipcMain.on('install-update', (event, url) => {
   const downloadUrl = url || pendingUpdateUrl;
   if (!downloadUrl) return;
+
+  // Сначала сообщаем рендереру — показать оверлей
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-downloading');
+  }
+
   const dest = path.join(os.tmpdir(), 'LinkTime-update.exe');
   const file = require('fs').createWriteStream(dest);
+
   const download = (dlUrl, redirectCount = 0) => {
     if (redirectCount > 5) return;
     const mod = dlUrl.startsWith('https') ? https : require('http');
@@ -815,12 +825,30 @@ ipcMain.on('install-update', (event, url) => {
       if (res.statusCode === 302 || res.statusCode === 301) {
         return download(res.headers.location, redirectCount + 1);
       }
+
+      // Прогресс скачивания
+      const total = parseInt(res.headers['content-length'] || '0', 10);
+      let received = 0;
+      res.on('data', chunk => {
+        received += chunk.length;
+        if (total > 0 && mainWindow && !mainWindow.isDestroyed()) {
+          const pct = Math.round(received / total * 100);
+          mainWindow.webContents.send('update-progress', { pct });
+        }
+      });
+
       res.pipe(file);
       file.on('finish', () => {
         file.close(() => {
-          require('child_process').spawn(dest, [], { detached: true, stdio: 'ignore' }).unref();
-          app.isQuitting = true;
-          app.quit();
+          // Даём рендереру 1.5 сек показать 100% перед закрытием
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-progress', { pct: 100 });
+          }
+          setTimeout(() => {
+            require('child_process').spawn(dest, [], { detached: true, stdio: 'ignore' }).unref();
+            app.isQuitting = true;
+            app.quit();
+          }, 1500);
         });
       });
     }).on('error', e => console.error('[UPDATE] Download error:', e.message));

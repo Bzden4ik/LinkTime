@@ -1482,12 +1482,14 @@
   document.head.appendChild(style);
 
   window.electronAPI.onUpdateInfo((e, data) => {
+    console.log('[UPDATE-UI] onUpdateInfo received:', data);
     if (data.upToDate) showToast('✅ Новых обновлений нет. У вас актуальная версия.', 'success', 5000);
     else if (data.error === 'timeout') showToast('⏱️ Ошибка: время ожидания истекло. Проверьте интернет.', 'error', 5000);
     else if (data.error) showToast('❌ Ошибка проверки: ' + data.error, 'error', 5000);
   });
 
   window.electronAPI.onUpdateAvailable((e, data) => {
+    console.log('[UPDATE-UI] onUpdateAvailable received:', data);
     window._pendingUpdateUrl = data.url;
     const installBtn = document.getElementById('installUpdateBtn');
     if (installBtn) { installBtn.style.display = ''; installBtn.textContent = `⬆️ Обновить до ${data.version}`; }
@@ -1525,6 +1527,73 @@
     banner.classList.add('hiding');
     setTimeout(() => { banner.style.display = 'none'; banner.classList.remove('hiding'); }, 400);
   }
+
+  window.showUpdateOverlay = function(onShown) {
+    let overlay = document.getElementById('updateOverlay');
+    if (overlay) { if (onShown) onShown(); return; }
+    overlay = document.createElement('div');
+    overlay.id = 'updateOverlay';
+    overlay.innerHTML = `
+      <div class="uov-box">
+        <div class="uov-spinner"></div>
+        <div class="uov-title">Устанавливается обновление...</div>
+        <div class="uov-sub">Приложение закроется и перезапустится автоматически</div>
+        <div class="uov-progress-wrap"><div class="uov-progress-bar" id="uovBar" style="width:0%"></div></div>
+        <div class="uov-pct" id="uovPct">0%</div>
+      </div>`;
+    document.body.appendChild(overlay);
+    // Ждём два кадра — браузер успевает отрисовать оверлей
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (onShown) onShown(); }));
+  };
+
+  // Подписываемся на прогресс от main.js
+  window.electronAPI.onUpdateProgress((data) => {
+    const bar = document.getElementById('uovBar');
+    const pct = document.getElementById('uovPct');
+    if (bar) bar.style.width = data.pct + '%';
+    if (pct) pct.textContent = data.pct + '%';
+  });
+
+  // Переопределяем installUpdate — сначала показываем оверлей, потом отправляем IPC
+  const _origInstall = window.electronAPI.installUpdate.bind(window.electronAPI);
+  window.electronAPI.installUpdate = (url) => {
+    window.showUpdateOverlay(() => _origInstall(url));
+  };
+
+  const styleOv = document.createElement('style');
+  styleOv.textContent = `
+    #updateOverlay {
+      position: fixed; inset: 0; z-index: 99999;
+      background: rgba(11,13,20,0.97);
+      display: flex; align-items: center; justify-content: center;
+      animation: uovFadeIn .25s ease;
+    }
+    @keyframes uovFadeIn { from{opacity:0} to{opacity:1} }
+    .uov-box {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 14px; max-width: 320px; text-align: center;
+    }
+    .uov-spinner {
+      width: 52px; height: 52px; border-radius: 50%;
+      border: 3px solid rgba(99,102,241,0.2);
+      border-top-color: #6366f1;
+      animation: uovSpin 0.9s linear infinite;
+    }
+    @keyframes uovSpin { to { transform: rotate(360deg); } }
+    .uov-title { color: #fff; font-size: 1rem; font-weight: 600; }
+    .uov-sub { color: rgba(255,255,255,0.45); font-size: 0.78rem; line-height: 1.5; }
+    .uov-progress-wrap {
+      width: 240px; height: 3px; border-radius: 3px;
+      background: rgba(255,255,255,0.1); overflow: hidden;
+    }
+    .uov-progress-bar {
+      height: 100%; border-radius: 3px;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+      transition: width 0.4s ease;
+    }
+    .uov-pct { color: rgba(255,255,255,0.35); font-size: 0.75rem; }
+  `;
+  document.head.appendChild(styleOv);
 })();
 </script>
 </body>
