@@ -2257,7 +2257,8 @@ min-width: 44px;
   text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 10px 4px;
 }
 .pt-orphan-list { display: flex; flex-direction: column; gap: 1px; }
-.pt-project, .pt-task { animation: ptEntryIn 0.2s ease both; }
+.pt-project, .pt-task { }
+.pt-project.animate-in, .pt-task.animate-in { animation: ptEntryIn 0.2s ease both; }
 @keyframes ptEntryIn {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }

@@ -719,36 +719,158 @@
     '</div>';
   }
 
+  function buildProjectHTML(p, pTasks, doneCount) {
+    var isOpen = openProjects[p.id];
+    var tasksHtml = pTasks.map(function(t, ti) { return renderTask(t, ti); }).join('');
+    if (!pTasks.length) tasksHtml = '<div class="pt-add-inline pt-empty-hint" style="opacity:0.5;cursor:default;padding-left:30px;">Нет задач</div>';
+    return '<div class="pt-project' + (isOpen ? ' open' : '') + '" data-project-id="' + p.id + '">' +
+      '<div class="pt-project-head">' +
+        '<svg class="pt-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>' +
+        '<span class="pt-project-dot" style="background:' + p.color + '"></span>' +
+        '<span class="pt-project-name">' + esc(p.name) + '</span>' +
+        '<span class="pt-project-count">' + doneCount + '/' + pTasks.length + '</span>' +
+        '<div class="pt-project-actions">' +
+          '<button class="pt-project-action pt-add-task-in" title="Добавить задачу"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>' +
+          '<button class="pt-project-action danger pt-del-project" title="Удалить"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pt-tasks">' + tasksHtml + '</div>' +
+    '</div>';
+  }
+
   function render() {
-    tree.innerHTML = projects.map(function(p, pi) {
+    // === DIFF RENDER: обновляем только изменившиеся элементы ===
+    var existingProjectIds = Array.from(tree.querySelectorAll('.pt-project')).map(function(el) { return +el.dataset.projectId; });
+    var newProjectIds = projects.map(function(p) { return p.id; });
+
+    // Удаляем проекты которых больше нет
+    existingProjectIds.forEach(function(pid) {
+      if (newProjectIds.indexOf(pid) === -1) {
+        var el = tree.querySelector('.pt-project[data-project-id="' + pid + '"]');
+        if (el) el.remove();
+      }
+    });
+
+    // Обновляем/добавляем проекты
+    projects.forEach(function(p, pi) {
       var pTasks = tasks.filter(function(t) { return t.project_id === p.id; });
       var doneCount = pTasks.filter(function(t) { return t.completed; }).length;
-      var isOpen = openProjects[p.id];
-      var tasksHtml = pTasks.map(function(t, ti) { return renderTask(t, ti); }).join('');
-      if (!pTasks.length) tasksHtml = '<div class="pt-add-inline pt-empty-hint" style="opacity:0.5;cursor:default;padding-left:30px;">Нет задач</div>';
-      return '<div class="pt-project' + (isOpen ? ' open' : '') + '" data-project-id="' + p.id + '" style="animation-delay:' + (pi * 0.03) + 's">' +
-        '<div class="pt-project-head">' +
-          '<svg class="pt-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>' +
-          '<span class="pt-project-dot" style="background:' + p.color + '"></span>' +
-          '<span class="pt-project-name">' + esc(p.name) + '</span>' +
-          '<span class="pt-project-count">' + doneCount + '/' + pTasks.length + '</span>' +
-          '<div class="pt-project-actions">' +
-            '<button class="pt-project-action pt-add-task-in" title="Добавить задачу"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>' +
-            '<button class="pt-project-action danger pt-del-project" title="Удалить"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>' +
-          '</div>' +
-        '</div>' +
-        '<div class="pt-tasks">' + tasksHtml + '</div>' +
-      '</div>';
-    }).join('');
+      var existing = tree.querySelector('.pt-project[data-project-id="' + p.id + '"]');
 
+      if (!existing) {
+        // Новый проект — создаём и анимируем
+        var div = document.createElement('div');
+        div.innerHTML = buildProjectHTML(p, pTasks, doneCount);
+        var el = div.firstElementChild;
+        el.classList.add('animate-in');
+        tree.appendChild(el);
+      } else {
+        // Обновляем счётчик и цвет без пересоздания
+        var countEl = existing.querySelector('.pt-project-count');
+        if (countEl) countEl.textContent = doneCount + '/' + pTasks.length;
+        var dotEl = existing.querySelector('.pt-project-dot');
+        if (dotEl) dotEl.style.background = p.color;
+        var nameEl = existing.querySelector('.pt-project-name');
+        if (nameEl && nameEl.textContent !== p.name) nameEl.textContent = p.name;
+        // Открытость
+        if (openProjects[p.id]) existing.classList.add('open');
+        // Диффим задачи внутри проекта
+        diffTasks(existing.querySelector('.pt-tasks'), pTasks);
+      }
+    });
+
+    // Переупорядочиваем проекты если нужно (по порядку в массиве)
+    projects.forEach(function(p) {
+      var el = tree.querySelector('.pt-project[data-project-id="' + p.id + '"]');
+      if (el) tree.appendChild(el); // перемещает в конец если порядок изменился
+    });
+
+    // Orphan tasks
     var orphans = tasks.filter(function(t) { return !t.project_id; });
     if (orphans.length) {
       orphanSection.style.display = '';
-      orphanList.innerHTML = orphans.map(function(t, ti) { return renderTask(t, ti); }).join('');
+      diffTasks(orphanList, orphans);
     } else {
       orphanSection.style.display = 'none';
+      orphanList.innerHTML = '';
     }
+
     bindEvents();
+  }
+
+  function diffTasks(container, newTasks) {
+    var existingIds = Array.from(container.querySelectorAll('.pt-task')).map(function(el) { return +el.dataset.taskId; });
+    var newIds = newTasks.map(function(t) { return t.id; });
+
+    // Удаляем отсутствующие
+    existingIds.forEach(function(tid) {
+      if (newIds.indexOf(tid) === -1) {
+        var el = container.querySelector('.pt-task[data-task-id="' + tid + '"]');
+        if (el) el.remove();
+      }
+    });
+
+    // Убираем пустую подсказку если есть задачи
+    if (newTasks.length) {
+      var hint = container.querySelector('.pt-empty-hint');
+      if (hint) hint.remove();
+    }
+
+    // Обновляем/добавляем задачи
+    newTasks.forEach(function(t, i) {
+      var existing = container.querySelector('.pt-task[data-task-id="' + t.id + '"]');
+      if (!existing) {
+        var div = document.createElement('div');
+        div.innerHTML = renderTask(t, i);
+        var el = div.firstElementChild;
+        el.classList.add('animate-in');
+        container.appendChild(el);
+      } else {
+        // Обновляем состояние без пересоздания
+        existing.classList.toggle('done', !!t.completed);
+        var txt = existing.querySelector('.pt-task-text');
+        if (txt && txt.textContent !== t.text) txt.textContent = t.text;
+        // Обновляем время
+        var timeEl = existing.querySelector('.pt-task-time');
+        var newTime = t.time_spent ? fmtDur(t.time_spent) : '';
+        if (newTime && !timeEl) {
+          var span = document.createElement('span');
+          span.className = 'pt-task-time';
+          span.textContent = newTime;
+          existing.insertBefore(span, existing.querySelector('.pt-task-del'));
+        } else if (!newTime && timeEl) {
+          timeEl.remove();
+        } else if (timeEl && timeEl.textContent !== newTime) {
+          timeEl.textContent = newTime;
+        }
+        // Обновляем дату
+        var dateEl = existing.querySelector('.pt-task-date');
+        var newDate = t.due_date ? fmtDate(t.due_date) : '';
+        var isOverdue = !t.completed && t.due_date && t.due_date < new Date().toISOString().slice(0,10);
+        if (newDate && !dateEl) {
+          var dspan = document.createElement('span');
+          dspan.className = 'pt-task-date' + (isOverdue ? ' overdue' : '');
+          dspan.textContent = newDate;
+          existing.insertBefore(dspan, existing.querySelector('.pt-task-del'));
+        } else if (!newDate && dateEl) {
+          dateEl.remove();
+        } else if (dateEl) {
+          dateEl.textContent = newDate;
+          dateEl.classList.toggle('overdue', !!isOverdue);
+        }
+      }
+    });
+
+    // Переупорядочиваем
+    newTasks.forEach(function(t) {
+      var el = container.querySelector('.pt-task[data-task-id="' + t.id + '"]');
+      if (el) container.appendChild(el);
+    });
+
+    // Добавляем пустую подсказку если задач нет
+    if (!newTasks.length && !container.querySelector('.pt-empty-hint')) {
+      container.innerHTML = '<div class="pt-add-inline pt-empty-hint" style="opacity:0.5;cursor:default;padding-left:30px;">Нет задач</div>';
+    }
   }
 
   function bindEvents() {
