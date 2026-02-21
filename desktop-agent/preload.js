@@ -24,6 +24,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onStatusUpdate: (callback) => ipcRenderer.on('status-update', (_e, data) => callback(data)),
     onConnectionStatus: (callback) => ipcRenderer.on('connection-status', (_e, data) => callback(data)),
     onConfigSaved: (callback) => ipcRenderer.on('config-saved', () => callback()),
+    // Window controls
+    minimize: () => ipcRenderer.send('window-minimize'),
+    maximize: () => ipcRenderer.send('window-maximize'),
+    closeWindow: () => ipcRenderer.send('window-close'),
+    onMaximizeChange: (cb) => {
+        ipcRenderer.on('maximize-change', (_e, isMax) => cb(isMax));
+    },
 });
 
 console.log('[Preload] Electron API exposed');

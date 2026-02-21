@@ -20,6 +20,7 @@ let ws = null;
 let reconnectInterval = null;
 let heartbeatInterval = null;
 const WS_URL = 'wss://linktime.go-tit.ru';
+const API_BASE = (location.protocol === 'file:') ? 'https://linktime.go-tit.ru' : '';
 
 // XSS защита
 function escapeHTML(str) {
@@ -117,9 +118,17 @@ document.getElementById('enterKey').addEventListener('click', showKeyInput);
 document.getElementById('connectKey').addEventListener('click', connectWithKey);
 document.getElementById('migrateBtn').addEventListener('click', migrateDataToServer);
 
-    // Автозапуск (только для Electron)
+    // Автозапуск и Авто-Обновление (только для Electron)
     if (window.__electronApp) {
         document.getElementById('autostartCheckbox').addEventListener('change', saveAutostartSetting);
+        document.getElementById('autoUpdateCheckbox').addEventListener('change', saveAutoUpdateSetting);
+        document.getElementById('checkUpdateBtn').addEventListener('click', () => {
+            window.electronAPI.checkUpdates();
+            showToast('Проверка обновлений...', 'info');
+        });
+        document.getElementById('installUpdateBtn').addEventListener('click', () => {
+            if (window._pendingUpdateUrl) window.electronAPI.installUpdate(window._pendingUpdateUrl);
+        });
     }
 
 // Календарь
@@ -760,6 +769,7 @@ renderAppLists();
     if (window.__electronApp) {
         document.getElementById('autostartSection').style.display = 'block';
         loadAutostartSetting();
+        loadAutoUpdateSetting();
     } else {
         document.getElementById('autostartSection').style.display = 'none';
     }
@@ -998,6 +1008,11 @@ case 'kicked_from_team':
 userTeam = null;
 renderTeam();
 showToast('Вы были исключены из команды');
+break;
+case 'team_disbanded':
+userTeam = null;
+renderTeam();
+showToast('Команда расформирована');
 break;
 case 'team_timer_update':
 handleTeamTimerUpdate(message);
@@ -1399,14 +1414,14 @@ if (data.sessions) {
 
 // === УВЕДОМЛЕНИЯ ===
 
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', duration = 3000) {
 const toast = document.getElementById('toast');
 toast.textContent = message;
 toast.className = `toast ${type} show`;
 
 setTimeout(() => {
 toast.classList.remove('show');
-}, 3000);
+}, duration);
 }
 
 // Экспорт функций для глобального доступа (для onclick в HTML)
@@ -1446,24 +1461,36 @@ renderListItems('white');
 renderListItems('black');
 }
 
-// === АВТОЗАПУСК (только Electron) ===
+// === АВТОЗАПУСК И АВТО-ОБНОВЛЕНИЕ (только Electron) ===
 function loadAutostartSetting() {
     const autostart = localStorage.getItem('autostart');
     const checkbox = document.getElementById('autostartCheckbox');
-    if (checkbox) {
-        checkbox.checked = autostart === 'true';
-    }
+    if (checkbox) checkbox.checked = autostart === 'true';
 }
 
 function saveAutostartSetting() {
     const checkbox = document.getElementById('autostartCheckbox');
     if (!checkbox) return;
-    
     const autostart = checkbox.checked;
-    localStorage.setItem('autostart', autostart);
-    
-    // Electron main.js синхронизирует эту настройку автоматически
-    showToast(autostart ? 'Автозапуск включен' : 'Автозапуск выключен', 'success');
+    localStorage.setItem('autostart', String(autostart));
+    showToast(autostart ? 'Автозапуск включён' : 'Автозапуск выключен', 'success');
+}
+
+function loadAutoUpdateSetting() {
+    const val = localStorage.getItem('autoUpdate');
+    const checkbox = document.getElementById('autoUpdateCheckbox');
+    if (checkbox) checkbox.checked = val !== 'false'; // по умолчанию включено
+    // Если есть ожидающее обновление — показываем кнопку
+    const installBtn = document.getElementById('installUpdateBtn');
+    if (installBtn && window._pendingUpdateUrl) installBtn.style.display = '';
+}
+
+function saveAutoUpdateSetting() {
+    const checkbox = document.getElementById('autoUpdateCheckbox');
+    if (!checkbox) return;
+    const autoUpdate = checkbox.checked;
+    localStorage.setItem('autoUpdate', String(autoUpdate));
+    showToast(autoUpdate ? 'Авто-Обновление включено' : 'Авто-Обновление выключено', 'success');
 }
 
 function renderListItems(type) {
@@ -1685,7 +1712,7 @@ async function kickMember(targetUserId) {
     async function onYes() {
       close(true);
       try {
-        const res = await fetch('/api/team/kick', {
+        const res = await fetch(API_BASE+'/api/team/kick', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionKey: state.sessionKey, targetUserId })

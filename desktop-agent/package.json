@@ -4,7 +4,7 @@
   "description": "LinkTime Desktop Activity Tracker",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "cross-env NODE_ENV=development electron .",
     "build-win": "electron-builder --win",
     "build-mac": "electron-builder --mac",
     "build-linux": "electron-builder --linux"
@@ -16,6 +16,7 @@
     "ws": "^8.14.2"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "electron": "^40.4.1",
     "electron-builder": "^26.7.0"
   },

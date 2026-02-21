@@ -130,15 +130,32 @@ width: 1300,
 height: 850,
 minWidth: 800,
 minHeight: 600,
+frame: false,
 webPreferences: {
 nodeIntegration: false,
 contextIsolation: true,
+preload: path.join(__dirname, 'preload.js'),
 backgroundThrottling: false
 },
 icon: path.join(__dirname, 'icon.png'),
 skipTaskbar: false,
 title: 'LinkTime'
 });
+
+if (!process.env.NODE_ENV || process.env.NODE_ENV === 'production') {
+Menu.setApplicationMenu(null);
+}
+
+ipcMain.on('window-minimize', () => mainWindow && mainWindow.minimize());
+ipcMain.on('window-maximize', () => mainWindow && (mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()));
+ipcMain.on('window-close',    () => { if (mainWindow) { app.isQuitting ? mainWindow.close() : mainWindow.hide(); } });
+
+mainWindow.on('maximize',   () => mainWindow.webContents.send('maximize-change', true));
+mainWindow.on('unmaximize', () => mainWindow.webContents.send('maximize-change', false));
+
+if (process.env.NODE_ENV === 'development') {
+  mainWindow.webContents.openDevTools();
+}
 
 mainWindow.loadFile(path.join(__dirname, 'webapp', 'index.html'));
 
@@ -257,7 +274,19 @@ config.blackList = JSON.parse(webBlackList);
             if (newAutostart !== config.autostart) {
                 console.log(`Autostart setting synced from web: ${newAutostart}`);
                 config.autostart = newAutostart;
-                saveConfig(); // saveConfig уже вызывает applyAutostartSetting()
+                saveConfig();
+            }
+        }
+        // Синхронизируем настройку авто-обновления из веб-страницы
+        const webAutoUpdate = await mainWindow.webContents.executeJavaScript(
+            "localStorage.getItem('autoUpdate')"
+        );
+        if (webAutoUpdate !== null) {
+            const newAutoUpdate = webAutoUpdate !== 'false';
+            if (newAutoUpdate !== config.autoUpdate) {
+                console.log(`AutoUpdate setting synced from web: ${newAutoUpdate}`);
+                config.autoUpdate = newAutoUpdate;
+                saveConfig();
             }
         }
 } catch (error) {
@@ -706,11 +735,109 @@ event.reply('connection-status', { connected: false });
 }
 });
 
+// ===== AUTO-UPDATE =====
+const https = require('https');
+const os = require('os');
+let pendingUpdateUrl = null;
+
+function compareVersions(a, b) {
+  const pa = a.replace(/^v/, '').split('.').map(Number);
+  const pb = b.replace(/^v/, '').split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+  }
+  return 0;
+}
+
+function checkForUpdates(silent = false) {
+  const options = {
+    hostname: 'api.github.com',
+    path: '/repos/Bzden4ik/LinkTime/releases/latest',
+    headers: { 'User-Agent': 'LinkTime-Desktop' }
+  };
+  const req = https.get(options, (res) => {
+    let data = '';
+    res.on('data', chunk => data += chunk);
+    res.on('end', () => {
+      try {
+        const release = JSON.parse(data);
+        const latestTag = release.tag_name;
+        if (!latestTag) throw new Error('No tag_name in response');
+        const current = app.getVersion();
+        console.log(`[UPDATE] Current: ${current}, Latest: ${latestTag}`);
+        if (compareVersions(latestTag, current) > 0) {
+          const asset = (release.assets || []).find(a => a.name.endsWith('.exe'));
+          const url = asset ? asset.browser_download_url
+            : `https://github.com/Bzden4ik/LinkTime/releases/download/${latestTag}/LinkTime.Setup.${latestTag}.exe`;
+          pendingUpdateUrl = url;
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-available', { version: latestTag, url });
+          }
+        } else {
+          if (!silent && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-info', { upToDate: true });
+          }
+        }
+      } catch (e) {
+        console.error('[UPDATE] Parse error:', e.message);
+        if (!silent && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('update-info', { error: e.message });
+        }
+      }
+    });
+  });
+  req.on('error', e => {
+    console.error('[UPDATE] Check error:', e.message);
+    if (!silent && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-info', { error: e.message });
+    }
+  });
+  req.setTimeout(10000, () => {
+    req.destroy();
+    if (!silent && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-info', { error: 'timeout' });
+    }
+  });
+}
+
+ipcMain.on('check-updates', () => checkForUpdates(false));
+
+ipcMain.on('install-update', (event, url) => {
+  const downloadUrl = url || pendingUpdateUrl;
+  if (!downloadUrl) return;
+  const dest = path.join(os.tmpdir(), 'LinkTime-update.exe');
+  const file = require('fs').createWriteStream(dest);
+  const download = (dlUrl, redirectCount = 0) => {
+    if (redirectCount > 5) return;
+    const mod = dlUrl.startsWith('https') ? https : require('http');
+    mod.get(dlUrl, { headers: { 'User-Agent': 'LinkTime-Desktop' } }, (res) => {
+      if (res.statusCode === 302 || res.statusCode === 301) {
+        return download(res.headers.location, redirectCount + 1);
+      }
+      res.pipe(file);
+      file.on('finish', () => {
+        file.close(() => {
+          require('child_process').spawn(dest, [], { detached: true, stdio: 'ignore' }).unref();
+          app.isQuitting = true;
+          app.quit();
+        });
+      });
+    }).on('error', e => console.error('[UPDATE] Download error:', e.message));
+  };
+  download(downloadUrl);
+});
+
 // Инициализация приложения
 app.whenReady().then(() => {
 loadConfig();
 createTray();
 createWindow();
+
+// Автопроверка обновлений при старте
+if (config.autoUpdate !== false) {
+  setTimeout(() => checkForUpdates(true), 5000);
+}
 
 // Если есть сохранённый ключ — инжектим его в веб-страницу при загрузке
 if (config.sessionKey) {
