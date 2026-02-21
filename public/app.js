@@ -81,13 +81,6 @@ document.getElementById('startBtn').addEventListener('click', startTimer);
 document.getElementById('pauseBtn').addEventListener('click', () => pauseTimer(false));
 document.getElementById('stopBtn').addEventListener('click', stopTimer);
 
-// Задачи
-document.getElementById('addTaskBtn').addEventListener('click', showTaskInput);
-document.getElementById('saveTaskBtn').addEventListener('click', saveTask);
-document.getElementById('cancelTaskBtn').addEventListener('click', hideTaskInput);
-document.getElementById('taskText').addEventListener('keypress', (e) => {
-if (e.key === 'Enter') saveTask();
-});
 
 // Доска задач (новая полноценная)
 document.getElementById('boardBtn').addEventListener('click', openBoardOverlay);
@@ -494,68 +487,10 @@ const seconds = totalSeconds % 60;
 return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// === ЗАДАЧИ ===
 
-function showTaskInput() {
-document.getElementById('taskInput').style.display = 'block';
-document.getElementById('taskText').focus();
-}
-
-function hideTaskInput() {
-document.getElementById('taskInput').style.display = 'none';
-document.getElementById('taskText').value = '';
-}
-
-function saveTask() {
-const taskText = document.getElementById('taskText').value.trim();
-if (taskText) {
-const task = {
-id: Date.now(),
-text: taskText,
-completed: false,
-date: state.selectedDate
-};
-
-const tasks = getTasks();
-tasks.push(task);
-saveTasks(tasks);
-
-hideTaskInput();
-renderTasks();
-updateSelectedDateStats();
-showToast('Задача добавлена!', 'success');
-}
-}
-
-function toggleTask(taskId) {
-const tasks = getTasks();
-const task = tasks.find(t => t.id === Number(taskId));
-if (task) {
-task.completed = !task.completed;
-if (task.completed) {
-task.completedAt = Date.now();
-if (state.timerRunning && state.currentSessionStart) {
-let displayMs = Date.now() - state.currentSessionStart - state.totalPausedTime;
-if (state.timerPaused && state.currentPauseStart) {
-displayMs -= (Date.now() - state.currentPauseStart);
-}
-displayMs = Math.max(0, displayMs);
-task.timeSpent = displayMs - state.lastTaskMarkedMs;
-state.lastTaskMarkedMs = displayMs;
-} else {
-task.timeSpent = 0;
-}
-showToast('Задача выполнена! 🎉', 'success');
-} else {
-// Снимаем отметку — убираем время
-task.completedAt = null;
-task.timeSpent = null;
-}
-saveTasks(tasks);
-renderTasks();
-updateSelectedDateStats();
-}
-}
+// Заглушки — старые задачи перенесены в проекты (pt-tree)
+function renderTasks() {}
+function updateTasksTitle() {}
 
 // Получить общее рабочее время за дату (мс)
 function getTotalWorkTimeForDate(dateStr) {
@@ -571,67 +506,6 @@ return data.totalWorkTime + Math.max(0, currentWork);
 return data.totalWorkTime;
 }
 
-function deleteTask(taskId) {
-const id = Number(taskId);
-const btn = document.querySelector(`[data-task-id="${id}"] .delete-btn`);
-if (!btn) return;
-
-if (btn.dataset.confirming === '1') {
-    // Второй клик — удаляем
-    const tasks = getTasks().filter(t => t.id !== id);
-    saveTasks(tasks);
-    renderTasks();
-    updateSelectedDateStats();
-    showToast('Задача удалена', 'info');
-} else {
-    // Первый клик — просим подтверждения
-    btn.dataset.confirming = '1';
-    btn.textContent = 'Точно?';
-    btn.style.background = 'rgba(239,68,68,0.3)';
-    setTimeout(() => {
-        if (btn && btn.dataset.confirming === '1') {
-            btn.dataset.confirming = '';
-            btn.textContent = 'Удалить';
-            btn.style.background = '';
-        }
-    }, 3000);
-}
-}
-
-function renderTasks() {
-const tasks = getTasks().filter(t => t.date === state.selectedDate);
-const tasksList = document.getElementById('tasksList');
-
-if (tasks.length === 0) {
-tasksList.innerHTML = '<li style="text-align: center; color: rgba(255, 255, 255, 0.5); padding: 20px;">Нет задач на эту дату</li>';
-return;
-}
-
-tasksList.innerHTML = tasks.map(task => `
-       <li class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
-           <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask(${task.id})">
-           <div class="task-content">
-               <span class="task-text">${escapeHTML(task.text)}</span>
-               ${task.completed && task.timeSpent ? `<span class="task-time">⏱ ${formatTime(task.timeSpent)}</span>` : ''}
-           </div>
-           <button class="delete-btn" onclick="deleteTask(${task.id})">Удалить</button>
-       </li>
-   `).join('');
-}
-
-function updateTasksTitle() {
-const dateObj = new Date(state.selectedDate + 'T00:00:00');
-const today = new Date().toISOString().split('T')[0];
-
-let titleText;
-if (state.selectedDate === today) {
-titleText = 'Задачи на сегодня';
-} else {
-titleText = 'Задачи на ' + dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-}
-
-document.getElementById('tasksTitle').textContent = titleText;
-}
 
 // === КАЛЕНДАРЬ ===
 

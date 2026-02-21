@@ -185,23 +185,51 @@
   <div class="pt-orphan-list" id="ptOrphanList"></div>
 </div>
 
-<div class="tt-section-divider"></div>
+<!-- Task detail panel (slide-in overlay) -->
+<div class="pt-detail" id="ptDetail" style="display:none">
+  <div class="pt-detail-header">
+    <button class="pt-detail-back" id="ptDetailBack">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M5 12l7 7M5 12l7-7"/></svg>
+    </button>
+    <span class="pt-detail-title" id="ptDetailTitle">Задача</span>
+    <span class="pt-detail-time-badge" id="ptDetailTimeBadge" title="Время на задачу"></span>
+  </div>
 
-<!-- Original tasks -->
-<div class="tasks-header">
-<h2 id="tasksTitle">Задачи на сегодня</h2>
-<div class="tasks-header-btns">
-<button class="btn btn-add" id="addTaskBtn">+ Добавить</button>
+  <div class="pt-detail-body">
+    <!-- Task name (editable) -->
+    <input class="pt-detail-name" id="ptDetailName" type="text" placeholder="Название задачи..." />
+
+    <!-- Description -->
+    <textarea class="pt-detail-desc" id="ptDetailDesc" placeholder="Добавить описание..." rows="3"></textarea>
+
+    <!-- Date & Time range -->
+    <div class="pt-detail-row">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <input class="pt-detail-date" id="ptDetailDate" type="date" />
+      <input class="pt-detail-time" id="ptDetailTimeStart" type="time" placeholder="Начало" />
+      <span class="pt-detail-time-sep">—</span>
+      <input class="pt-detail-time" id="ptDetailTimeEnd" type="time" placeholder="Конец" />
+    </div>
+
+    <!-- Media attachments -->
+    <div class="pt-detail-media-section">
+      <div class="pt-detail-media-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        <span>Вложения</span>
+        <label class="pt-detail-media-add" id="ptDetailMediaAdd">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <input type="file" id="ptDetailFileInput" accept="image/*,video/*" multiple style="display:none" />
+        </label>
+      </div>
+      <div class="pt-detail-media-list" id="ptDetailMediaList"></div>
+    </div>
+  </div>
+
+  <div class="pt-detail-footer">
+    <button class="pt-detail-save" id="ptDetailSave">Сохранить</button>
+  </div>
 </div>
-</div>
-<div class="task-input" id="taskInput" style="display: none;">
-<input type="text" id="taskText" placeholder="Введите задачу...">
-<div class="task-input-controls">
-<button class="btn btn-small" id="saveTaskBtn">Сохранить</button>
-<button class="btn btn-small btn-cancel" id="cancelTaskBtn">Отмена</button>
-</div>
-</div>
-<ul class="tasks-list" id="tasksList"></ul>
+
 </section>
 
 <!-- Календарь -->
@@ -635,10 +663,39 @@
 
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+  // Track last completion time for elapsed calc
+  var lastCheckTime = null;
+
+  function fmtDur(ms) {
+    if (!ms || ms <= 0) return '';
+    var s = Math.floor(ms / 1000);
+    if (s < 60) return s + 'с';
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + 'м ' + (s % 60) + 'с';
+    var h = Math.floor(m / 60);
+    return h + 'ч ' + (m % 60) + 'м';
+  }
+
+  function fmtDate(d) {
+    if (!d) return '';
+    var today = new Date().toISOString().slice(0,10);
+    if (d === today) return 'Сегодня';
+    var parts = d.split('-');
+    var months = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+    return +parts[2] + ' ' + months[+parts[1]-1];
+  }
+
   function renderTask(t, i) {
+    var timeHtml = t.time_spent ? '<span class="pt-task-time">' + fmtDur(t.time_spent) + '</span>' : '';
+    var dateHtml = '';
+    if (t.due_date) {
+      var isOverdue = !t.completed && t.due_date < new Date().toISOString().slice(0,10);
+      dateHtml = '<span class="pt-task-date' + (isOverdue ? ' overdue' : '') + '">' + fmtDate(t.due_date) + '</span>';
+    }
     return '<div class="pt-task' + (t.completed ? ' done' : '') + '" data-task-id="' + t.id + '" style="animation-delay:' + (i * 0.02) + 's">' +
       '<button class="pt-task-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button>' +
-      '<span class="pt-task-text">' + esc(t.text) + '</span>' +
+      '<span class="pt-task-text pt-task-open">' + esc(t.text) + '</span>' +
+      dateHtml + timeHtml +
       '<button class="pt-task-del" title="Удалить"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>' +
     '</div>';
   }
@@ -710,8 +767,27 @@
         var tid = +taskEl.dataset.taskId;
         var task = tasks.find(function(t) { return t.id === tid; });
         if (!task) return;
-        await api('PATCH', 'tasks/' + sessionKey + '/' + tid + '/toggle', { completed: !task.completed });
+        var elapsed = 0;
+        if (!task.completed) {
+          // Calculate time since last check or timer start
+          var now = Date.now();
+          if (lastCheckTime) {
+            elapsed = now - lastCheckTime;
+          } else if (window.state && window.state.timerRunning && window.state.currentSessionStart) {
+            elapsed = now - window.state.currentSessionStart;
+          }
+          lastCheckTime = now;
+        }
+        await api('PATCH', 'tasks/' + sessionKey + '/' + tid + '/toggle', { completed: !task.completed, timeSpent: elapsed });
         await loadData();
+      });
+    });
+
+    // Open task detail on text click
+    document.querySelectorAll('.pt-task-open').forEach(function(span) {
+      span.addEventListener('click', function() {
+        var tid = +span.closest('.pt-task').dataset.taskId;
+        openDetail(tid);
       });
     });
 
@@ -787,6 +863,120 @@
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') addDropdown.classList.remove('open');
   });
+
+  // === DETAIL PANEL ===
+  var detailPanel = document.getElementById('ptDetail');
+  var detailBack = document.getElementById('ptDetailBack');
+  var detailName = document.getElementById('ptDetailName');
+  var detailDesc = document.getElementById('ptDetailDesc');
+  var detailDate = document.getElementById('ptDetailDate');
+  var detailTimeStart = document.getElementById('ptDetailTimeStart');
+  var detailTimeEnd = document.getElementById('ptDetailTimeEnd');
+  var detailTimeBadge = document.getElementById('ptDetailTimeBadge');
+  var detailMediaList = document.getElementById('ptDetailMediaList');
+  var detailFileInput = document.getElementById('ptDetailFileInput');
+  var detailSave = document.getElementById('ptDetailSave');
+  var currentDetailId = null;
+  var detailMedia = [];
+
+  async function openDetail(taskId) {
+    currentDetailId = taskId;
+    var task = tasks.find(function(t) { return t.id === taskId; });
+    if (!task) return;
+    // Try to load full data from server
+    try {
+      var full = await api('GET', 'tasks/' + sessionKey + '/' + taskId);
+      if (full && full.id) task = full;
+    } catch(e) {}
+    detailName.value = task.text || '';
+    detailDesc.value = task.description || '';
+    detailDate.value = task.due_date || '';
+    detailTimeStart.value = task.time_start || '';
+    detailTimeEnd.value = task.time_end || '';
+    detailTimeBadge.textContent = task.time_spent ? fmtDur(task.time_spent) : '';
+    detailMedia = task.media ? (typeof task.media === 'string' ? JSON.parse(task.media) : task.media) : [];
+    renderMedia();
+    detailPanel.style.display = 'flex';
+  }
+
+  function closeDetail() {
+    detailPanel.style.display = 'none';
+    currentDetailId = null;
+    detailMedia = [];
+  }
+
+  detailBack.addEventListener('click', closeDetail);
+
+  detailSave.addEventListener('click', async function() {
+    if (!currentDetailId) return;
+    // Save name if changed
+    var task = tasks.find(function(t) { return t.id === currentDetailId; });
+    var newName = detailName.value.trim();
+    if (task && newName && newName !== task.text) {
+      await api('PUT', 'tasks/' + sessionKey + '/' + currentDetailId, { text: newName, projectId: task.project_id });
+    }
+    // Save details
+    await api('PATCH', 'tasks/' + sessionKey + '/' + currentDetailId + '/details', {
+      description: detailDesc.value.trim(),
+      dueDate: detailDate.value || null,
+      timeStart: detailTimeStart.value || null,
+      timeEnd: detailTimeEnd.value || null,
+      media: detailMedia.length ? detailMedia : null
+    });
+    closeDetail();
+    await loadData();
+  });
+
+  // Media: file input handler
+  detailFileInput.addEventListener('change', function() {
+    var files = detailFileInput.files;
+    for (var i = 0; i < files.length; i++) {
+      (function(file) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          detailMedia.push({
+            name: file.name,
+            type: file.type.startsWith('video') ? 'video' : 'image',
+            data: e.target.result
+          });
+          renderMedia();
+        };
+        reader.readAsDataURL(file);
+      })(files[i]);
+    }
+    detailFileInput.value = '';
+  });
+
+  function renderMedia() {
+    if (!detailMedia.length) {
+      detailMediaList.innerHTML = '<span style="font-size:0.72rem;color:var(--text-muted)">Нет вложений</span>';
+      return;
+    }
+    detailMediaList.innerHTML = detailMedia.map(function(m, i) {
+      var content = m.type === 'video'
+        ? '<video src="' + m.data + '" muted></video>'
+        : '<img src="' + m.data + '" alt="' + esc(m.name) + '" />';
+      return '<div class="pt-detail-media-item">' + content +
+        '<button class="pt-detail-media-del" data-idx="' + i + '">&times;</button></div>';
+    }).join('');
+    detailMediaList.querySelectorAll('.pt-detail-media-del').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        detailMedia.splice(+btn.dataset.idx, 1);
+        renderMedia();
+      });
+    });
+  }
+
+  // Reset lastCheckTime when timer starts (listen to state changes)
+  var origTimerStart = null;
+  setInterval(function() {
+    if (window.state && window.state.timerRunning && window.state.currentSessionStart) {
+      if (origTimerStart !== window.state.currentSessionStart) {
+        origTimerStart = window.state.currentSessionStart;
+        lastCheckTime = window.state.currentSessionStart;
+      }
+    }
+  }, 500);
 
   loadData();
 })();

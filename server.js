@@ -142,6 +142,19 @@ try {
     console.log('[DB] Migration: projects & project_tasks tables ready');
 } catch (e) {}
 
+// Миграция: новые поля для project_tasks
+const ptMigrations = [
+    ['description', 'TEXT DEFAULT NULL'],
+    ['due_date', 'TEXT DEFAULT NULL'],
+    ['time_start', 'TEXT DEFAULT NULL'],
+    ['time_end', 'TEXT DEFAULT NULL'],
+    ['time_spent', 'INTEGER DEFAULT 0'],
+    ['media', 'TEXT DEFAULT NULL'],
+];
+for (const [col, def] of ptMigrations) {
+    try { db.exec(`ALTER TABLE project_tasks ADD COLUMN ${col} ${def}`); } catch (e) {}
+}
+
 console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
 
 // Prepared statements для производительности
@@ -216,9 +229,11 @@ const stmts = {
     getTasksNoProject: db.prepare('SELECT * FROM project_tasks WHERE project_id IS NULL AND session_key = ? ORDER BY completed, sort_order, created_at DESC'),
     createProjectTask: db.prepare('INSERT INTO project_tasks (session_key, project_id, text) VALUES (?, ?, ?)'),
     updateProjectTask: db.prepare('UPDATE project_tasks SET text = ?, project_id = ? WHERE id = ? AND session_key = ?'),
-    toggleProjectTask: db.prepare('UPDATE project_tasks SET completed = ?, completed_at = ? WHERE id = ? AND session_key = ?'),
+    toggleProjectTask: db.prepare('UPDATE project_tasks SET completed = ?, completed_at = ?, time_spent = ? WHERE id = ? AND session_key = ?'),
     deleteProjectTask: db.prepare('DELETE FROM project_tasks WHERE id = ? AND session_key = ?'),
     moveTaskToProject: db.prepare('UPDATE project_tasks SET project_id = ? WHERE id = ? AND session_key = ?'),
+    updateTaskDetails: db.prepare('UPDATE project_tasks SET description = ?, due_date = ?, time_start = ?, time_end = ?, media = ? WHERE id = ? AND session_key = ?'),
+    getTaskById: db.prepare('SELECT * FROM project_tasks WHERE id = ? AND session_key = ?'),
 };
 
 // === ХЕЛПЕРЫ ДЛЯ БД ===
@@ -578,8 +593,8 @@ app.put('/api/tasks/:sessionKey/:id', (req, res) => {
 });
 
 app.patch('/api/tasks/:sessionKey/:id/toggle', (req, res) => {
-    const { completed } = req.body;
-    stmts.toggleProjectTask.run(completed ? 1 : 0, completed ? Date.now() : null, +req.params.id, req.params.sessionKey);
+    const { completed, timeSpent } = req.body;
+    stmts.toggleProjectTask.run(completed ? 1 : 0, completed ? Date.now() : null, timeSpent || 0, +req.params.id, req.params.sessionKey);
     res.json({ ok: true });
 });
 
@@ -591,6 +606,22 @@ app.delete('/api/tasks/:sessionKey/:id', (req, res) => {
 app.patch('/api/tasks/:sessionKey/:id/move', (req, res) => {
     const { projectId } = req.body;
     stmts.moveTaskToProject.run(projectId || null, +req.params.id, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+app.get('/api/tasks/:sessionKey/:id', (req, res) => {
+    const task = stmts.getTaskById.get(+req.params.id, req.params.sessionKey);
+    if (!task) return res.status(404).json({ error: 'Not found' });
+    res.json(task);
+});
+
+app.patch('/api/tasks/:sessionKey/:id/details', (req, res) => {
+    const { description, dueDate, timeStart, timeEnd, media } = req.body;
+    stmts.updateTaskDetails.run(
+        description || null, dueDate || null, timeStart || null, timeEnd || null,
+        media ? JSON.stringify(media) : null,
+        +req.params.id, req.params.sessionKey
+    );
     res.json({ ok: true });
 });
 
