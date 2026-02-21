@@ -665,6 +665,7 @@
 
   // Track last completion time for elapsed calc
   var lastCheckTime = null;
+  var trackedTimerStart = null; // tracks which timer session we're in
 
   function fmtDur(ms) {
     if (!ms || ms <= 0) return '';
@@ -769,12 +770,22 @@
         if (!task) return;
         var elapsed = 0;
         if (!task.completed) {
-          // Calculate time since last check or timer start
           var now = Date.now();
-          if (lastCheckTime) {
+          var st = window.state;
+          var timerOn = st && st.timerRunning && st.currentSessionStart;
+          // If timer not running, no time to track
+          if (!timerOn) {
+            lastCheckTime = null;
+            trackedTimerStart = null;
+          }
+          // New timer session — set anchor to timer start moment
+          if (timerOn && trackedTimerStart !== st.currentSessionStart) {
+            trackedTimerStart = st.currentSessionStart;
+            lastCheckTime = st.currentSessionStart;
+          }
+          // Calculate elapsed since last checkpoint
+          if (lastCheckTime && timerOn) {
             elapsed = now - lastCheckTime;
-          } else if (window.state && window.state.timerRunning && window.state.currentSessionStart) {
-            elapsed = now - window.state.currentSessionStart;
           }
           lastCheckTime = now;
         }
@@ -967,22 +978,15 @@
     });
   }
 
-  // Reset lastCheckTime when timer starts/stops
-  var origTimerStart = null;
+  // Reset lastCheckTime when timer stops
   var wasRunning = false;
   setInterval(function() {
     if (!window.state) return;
     var running = window.state.timerRunning;
-    var start = window.state.currentSessionStart;
-    // Timer just started or restarted — reset lastCheckTime to NOW
-    if (running && start && origTimerStart !== start) {
-      origTimerStart = start;
-      lastCheckTime = Date.now();
-    }
-    // Timer stopped — clear lastCheckTime
+    // Timer stopped — clear everything
     if (wasRunning && !running) {
       lastCheckTime = null;
-      origTimerStart = null;
+      trackedTimerStart = null;
     }
     wasRunning = running;
   }, 300);
