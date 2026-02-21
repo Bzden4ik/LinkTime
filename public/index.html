@@ -349,15 +349,25 @@
   <div class="board-container">
     <div class="board-header">
       <div class="board-header-left">
-        <div class="board-logo">⬛</div>
+        <div class="board-logo">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="6" height="18" rx="1"/><rect x="9" y="3" width="6" height="12" rx="1"/><rect x="16" y="3" width="6" height="15" rx="1"/></svg>
+        </div>
         <div>
           <h2 class="board-title">Доска задач</h2>
           <p class="board-subtitle" id="boardSubtitle">Сегодня</p>
         </div>
       </div>
       <div class="board-header-right">
-        <button class="board-add-btn" id="boardAddBtn">+ Новая задача</button>
-        <button class="board-close-btn" id="boardCloseBtn">✕</button>
+        <div class="board-stats">
+          <span class="board-stat" id="boardStatTotal">0 задач</span>
+        </div>
+        <button class="board-add-btn" id="boardAddBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Новая задача
+        </button>
+        <button class="board-close-btn" id="boardCloseBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
     </div>
 
