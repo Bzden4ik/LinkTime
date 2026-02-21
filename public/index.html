@@ -3,36 +3,108 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LinkTime - Таймер работы</title>
+<title>LinkTime</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+<!-- ===== LOADING SCREEN ===== -->
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-content">
+    <div class="loading-logo">
+      <svg class="loading-logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/>
+        <path d="M16 8v8l5.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="loading-text">LinkTime</div>
+    <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+  </div>
+</div>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <svg class="sidebar-logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/>
+      <path d="M16 8v8l5.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <span class="sidebar-logo-text">LinkTime</span>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="sidebar-nav-group">
+      <span class="sidebar-nav-label">Основное</span>
+      <button class="sidebar-nav-item active" data-sidebar-tab="timer">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>Дашборд</span>
+      </button>
+      <button class="sidebar-nav-item" data-sidebar-tab="tasks">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        <span>Задачи</span>
+      </button>
+      <button class="sidebar-nav-item" data-sidebar-tab="calendar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span>Календарь</span>
+      </button>
+      <button class="sidebar-nav-item" id="boardBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="6" height="18" rx="1"/><rect x="9" y="3" width="6" height="12" rx="1"/><rect x="16" y="3" width="6" height="15" rx="1"/></svg>
+        <span>Доска</span>
+      </button>
+    </div>
+
+    <div class="sidebar-nav-group">
+      <span class="sidebar-nav-label">Команда</span>
+      <div class="sidebar-team" id="teamSlots"></div>
+    </div>
+  </nav>
+
+  <div class="sidebar-bottom">
+    <button class="sidebar-nav-item" id="burgerSettings">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span>Настройки</span>
+    </button>
+    <button class="sidebar-nav-item sidebar-bell" id="burgerBell">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+      <span>Уведомления</span>
+      <span class="bell-badge" id="bellBadge" style="display:none"></span>
+    </button>
+    <div class="notifications-panel" id="notificationsPanel" style="display:none"></div>
+  </div>
+</aside>
+
+<!-- ===== MAIN WRAPPER ===== -->
+<div class="app-wrapper">
+
 <div class="container">
 <header>
-<h1>LinkTime</h1>
+<h1>Дашборд</h1>
 <div class="header-right">
-  <!-- Команда -->
-  <div class="team-slots" id="teamSlots"></div>
-  <!-- Бургер-меню -->
-  <div class="burger-wrap" id="burgerWrap">
+  <!-- Поиск (декоративный) -->
+  <div class="header-search">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <span>Поиск...</span>
+    <kbd>⌘F</kbd>
+  </div>
+  <!-- Синхр -->
+  <div class="header-sync">
+    <span class="sync-label">Sync</span>
+    <div class="sync-dot" id="syncDot"></div>
+  </div>
+  <!-- Бургер (скрыт для desktop, для мобильной) -->
+  <div class="burger-wrap" id="burgerWrap" style="display:none">
     <button class="burger-btn" id="burgerBtn">
       <span></span><span></span><span></span>
       <div class="burger-badge" id="burgerBadge" style="display:none"></div>
     </button>
     <div class="burger-dropdown" id="burgerDropdown">
-      <button class="burger-item" id="burgerSettings">⚙️ Настройки</button>
-      <button class="burger-item" id="burgerShareTime">📊 Поделиться временем с командой</button>
+      <button class="burger-item" id="burgerShareTime">📊 Поделиться временем</button>
       <button class="burger-item" onclick="exportCSV()">📥 Экспорт CSV</button>
       <button class="burger-item" onclick="exportJSON()">💾 Экспорт JSON</button>
       <button class="burger-item" onclick="importJSON()">📤 Импорт JSON</button>
-      <button class="burger-item burger-bell" id="burgerBell">
-        🔔 Уведомления
-        <span class="bell-badge" id="bellBadge" style="display:none"></span>
-      </button>
-      <div class="notifications-panel" id="notificationsPanel" style="display:none"></div>
     </div>
   </div>
-  <!-- Аватар (профиль) -->
+  <!-- Аватар -->
   <button class="avatar-btn" id="avatarBtn" title="Профиль">
     <span class="avatar-letter" id="avatarLetter">?</span>
   </button>
@@ -51,16 +123,16 @@
 </div>
 <div class="session-info">
 <div class="info-item">
-<span class="label" id="workTimeLabel">Рабочее время:</span>
+<span class="label" id="workTimeLabel">Рабочее время</span>
 <span class="value" id="totalWorkTime">00:00:00</span>
 </div>
 <div class="info-item">
-<span class="label">Сессий:</span>
+<span class="label">Сессий</span>
 <span class="value" id="sessionCount">0</span>
 </div>
 <div class="info-item">
-<span class="label">Задач выполнено:</span>
-<span class="value" id="tasksCompleted">0 из 0</span>
+<span class="label">Задач</span>
+<span class="value" id="tasksCompleted">0 / 0</span>
 </div>
 </div>
 </section>
@@ -70,7 +142,6 @@
 <div class="tasks-header">
 <h2 id="tasksTitle">Задачи на сегодня</h2>
 <div class="tasks-header-btns">
-<button class="btn btn-board" id="boardBtn">⬛ Доска</button>
 <button class="btn btn-add" id="addTaskBtn">+ Добавить</button>
 </div>
 </div>
@@ -94,6 +165,7 @@
 <div class="calendar" id="calendar"></div>
 </section>
 </main>
+</div>
 </div>
 
 <!-- Модальное окно настроек -->
@@ -405,5 +477,60 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="app.js"></script>
+<script>
+// === SIDEBAR NAVIGATION ===
+(function initSidebar() {
+  const sidebarItems = document.querySelectorAll('[data-sidebar-tab]');
+  const sections = document.querySelectorAll('[data-tab-content]');
+  const headerTitle = document.querySelector('header h1');
+  const tabNames = { timer: 'Дашборд', tasks: 'Задачи', calendar: 'Календарь' };
+
+  function switchSidebarTab(tabName) {
+    sidebarItems.forEach(item => {
+      item.classList.toggle('active', item.dataset.sidebarTab === tabName);
+    });
+    sections.forEach(sec => {
+      sec.style.display = sec.dataset.tabContent === tabName ? '' : 'none';
+    });
+    if (tabName === 'timer') {
+      sections.forEach(sec => sec.style.display = '');
+    }
+    if (headerTitle && tabNames[tabName]) {
+      headerTitle.textContent = tabNames[tabName];
+    }
+  }
+
+  sidebarItems.forEach(item => {
+    item.addEventListener('click', () => switchSidebarTab(item.dataset.sidebarTab));
+  });
+
+  // Mobile sidebar toggle via burger
+  const burgerBtn = document.getElementById('burgerBtn');
+  const sidebar = document.getElementById('sidebar');
+  if (burgerBtn && sidebar) {
+    burgerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sidebar.classList.toggle('open');
+    });
+    document.addEventListener('click', (e) => {
+      if (sidebar.classList.contains('open') && !sidebar.contains(e.target)) {
+        sidebar.classList.remove('open');
+      }
+    });
+  }
+})();
+
+// === LOADING SCREEN ===
+(function initLoading() {
+  const loader = document.getElementById('loadingScreen');
+  if (!loader) return;
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      loader.classList.add('fade-out');
+      setTimeout(() => loader.remove(), 400);
+    }, 1200);
+  });
+})();
+</script>
 </body>
 </html>
