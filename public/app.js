@@ -1666,17 +1666,40 @@ function renderTeam() {
 }
 
 async function kickMember(targetUserId) {
-  if (!confirm('Выгнать участника из команды?')) return;
-  try {
-    const res = await fetch('/api/team/kick', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionKey: state.sessionKey, targetUserId })
-    });
-    const data = await res.json();
-    if (!res.ok) { showToast(data.error || 'Ошибка'); return; }
-    await loadTeam();
-  } catch (e) { showToast('Ошибка сети'); }
+  const members = userTeam && userTeam.members || [];
+  const target = members.find(m => m.user_id === targetUserId);
+  const name = target ? target.username : targetUserId;
+
+  const modal = document.getElementById('kickConfirmModal');
+  document.getElementById('kickConfirmName').textContent = name;
+  modal.classList.add('active');
+
+  return new Promise(resolve => {
+    function close(confirmed) {
+      modal.classList.remove('active');
+      document.getElementById('kickConfirmYes').removeEventListener('click', onYes);
+      document.getElementById('kickConfirmNo').removeEventListener('click', onNo);
+      document.getElementById('kickConfirmClose').removeEventListener('click', onNo);
+      resolve(confirmed);
+    }
+    async function onYes() {
+      close(true);
+      try {
+        const res = await fetch('/api/team/kick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionKey: state.sessionKey, targetUserId })
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || 'Ошибка'); return; }
+        await loadTeam();
+      } catch (e) { showToast('Ошибка сети'); }
+    }
+    function onNo() { close(false); }
+    document.getElementById('kickConfirmYes').addEventListener('click', onYes);
+    document.getElementById('kickConfirmNo').addEventListener('click', onNo);
+    document.getElementById('kickConfirmClose').addEventListener('click', onNo);
+  });
 }
 
 function formatWorkTimeForMember(timer) {

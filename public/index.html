@@ -561,6 +561,25 @@
 @keyframes boardFadeIn{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
 </style>
 
+<!-- Модальное окно: подтверждение выгона -->
+<div class="modal" id="kickConfirmModal">
+<div class="modal-content" style="max-width:360px">
+  <div class="modal-header">
+    <h2>Исключить участника</h2>
+    <button class="close-btn" id="kickConfirmClose">×</button>
+  </div>
+  <div class="modal-body">
+    <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:20px">
+      Вы уверены, что хотите исключить <strong id="kickConfirmName"></strong> из команды?
+    </p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-cancel" id="kickConfirmNo">Отмена</button>
+      <button class="btn" id="kickConfirmYes" style="background:var(--danger,#ef4444);color:#fff;border-color:transparent">Исключить</button>
+    </div>
+  </div>
+</div>
+</div>
+
 <!-- ===== MEDIA LIGHTBOX ===== -->
 <div id="mediaLightbox" style="display:none">
   <div class="mlb-overlay" id="mlbOverlay"></div>
