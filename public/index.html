@@ -967,16 +967,25 @@
     });
   }
 
-  // Reset lastCheckTime when timer starts (listen to state changes)
+  // Reset lastCheckTime when timer starts/stops
   var origTimerStart = null;
+  var wasRunning = false;
   setInterval(function() {
-    if (window.state && window.state.timerRunning && window.state.currentSessionStart) {
-      if (origTimerStart !== window.state.currentSessionStart) {
-        origTimerStart = window.state.currentSessionStart;
-        lastCheckTime = window.state.currentSessionStart;
-      }
+    if (!window.state) return;
+    var running = window.state.timerRunning;
+    var start = window.state.currentSessionStart;
+    // Timer just started or restarted — reset lastCheckTime to NOW
+    if (running && start && origTimerStart !== start) {
+      origTimerStart = start;
+      lastCheckTime = Date.now();
     }
-  }, 500);
+    // Timer stopped — clear lastCheckTime
+    if (wasRunning && !running) {
+      lastCheckTime = null;
+      origTimerStart = null;
+    }
+    wasRunning = running;
+  }, 300);
 
   loadData();
 })();
