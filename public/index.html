@@ -763,6 +763,7 @@
         div.innerHTML = buildProjectHTML(p, pTasks, doneCount);
         var el = div.firstElementChild;
         el.classList.add('animate-in');
+        el.addEventListener('animationend', function() { el.classList.remove('animate-in'); }, { once: true });
         tree.appendChild(el);
       } else {
         // Обновляем счётчик и цвет без пересоздания
@@ -779,11 +780,15 @@
       }
     });
 
-    // Переупорядочиваем проекты если нужно (по порядку в массиве)
-    projects.forEach(function(p) {
-      var el = tree.querySelector('.pt-project[data-project-id="' + p.id + '"]');
-      if (el) tree.appendChild(el);
-    });
+    // Переупорядочиваем проекты только если порядок изменился
+    var children = Array.from(tree.querySelectorAll('.pt-project'));
+    var needsReorder = projects.some(function(p, i) { return !children[i] || +children[i].dataset.projectId !== p.id; });
+    if (needsReorder) {
+      projects.forEach(function(p) {
+        var el = tree.querySelector('.pt-project[data-project-id="' + p.id + '"]');
+        if (el) tree.appendChild(el);
+      });
+    }
 
     // Orphan tasks
     var orphans = tasks.filter(function(t) { return !t.project_id; });
@@ -822,6 +827,7 @@
         div.innerHTML = renderTask(t, i);
         var el = div.firstElementChild;
         el.classList.add('animate-in');
+        el.addEventListener('animationend', function() { el.classList.remove('animate-in'); }, { once: true });
         container.appendChild(el);
       } else {
         // Обновляем состояние без пересоздания
@@ -859,11 +865,15 @@
       }
     });
 
-    // Переупорядочиваем
-    newTasks.forEach(function(t) {
-      var el = container.querySelector('.pt-task[data-task-id="' + t.id + '"]');
-      if (el) container.appendChild(el);
-    });
+    // Переупорядочиваем задачи только если порядок изменился
+    var taskChildren = Array.from(container.querySelectorAll('.pt-task'));
+    var taskNeedsReorder = newTasks.some(function(t, i) { return !taskChildren[i] || +taskChildren[i].dataset.taskId !== t.id; });
+    if (taskNeedsReorder) {
+      newTasks.forEach(function(t) {
+        var el = container.querySelector('.pt-task[data-task-id="' + t.id + '"]');
+        if (el) container.appendChild(el);
+      });
+    }
 
     // Добавляем пустую подсказку если задач нет
     if (!newTasks.length && !container.querySelector('.pt-empty-hint')) {
