@@ -771,7 +771,7 @@
         var elapsed = 0;
         if (!task.completed) {
           var now = Date.now();
-          var st = window.state;
+          var st = (typeof state !== 'undefined') ? state : window.state;
           var timerOn = st && st.timerRunning && st.currentSessionStart;
           // If timer not running, no time to track
           if (!timerOn) {
@@ -785,11 +785,12 @@
           }
           // Calculate elapsed since last checkpoint
           if (lastCheckTime && timerOn) {
-            elapsed = now - lastCheckTime;
+            elapsed = Math.round(now - lastCheckTime);
           }
           lastCheckTime = now;
         }
-        await api('PATCH', 'tasks/' + sessionKey + '/' + tid + '/toggle', { completed: !task.completed, timeSpent: elapsed });
+        var newCompleted = task.completed ? false : true;
+        await api('PATCH', 'tasks/' + sessionKey + '/' + tid + '/toggle', { completed: newCompleted, timeSpent: newCompleted ? elapsed : 0 });
         await loadData();
       });
     });
@@ -981,8 +982,9 @@
   // Reset lastCheckTime when timer stops
   var wasRunning = false;
   setInterval(function() {
-    if (!window.state) return;
-    var running = window.state.timerRunning;
+    var st2 = (typeof state !== 'undefined') ? state : window.state;
+    if (!st2) return;
+    var running = st2.timerRunning;
     // Timer stopped — clear everything
     if (wasRunning && !running) {
       lastCheckTime = null;
