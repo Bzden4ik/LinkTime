@@ -13,6 +13,9 @@ lastTaskMarkedMs: 0
 };
 
 let timerInterval = null;
+let userProfile = null; // { userId, username, email }
+let userTeam = null; // { team, members: [] }
+let teamTimers = {}; // { userId: { action, sessionStart, totalPausedTime, ... } }
 let ws = null;
 let reconnectInterval = null;
 let heartbeatInterval = null;
@@ -1402,8 +1405,6 @@ toast.classList.remove('show');
 }
 
 // Экспорт функций для глобального доступа (для onclick в HTML)
-window.toggleTask = toggleTask;
-window.deleteTask = deleteTask;
 window.exportCSV = exportCSV;
 window.exportJSON = exportJSON;
 window.importJSON = importJSON;
@@ -1531,10 +1532,7 @@ migrateBtn.textContent = 'Перенести данные из браузера 
 }
 
 // === ПРОФИЛЬ И КОМАНДЫ ===
-
-let userProfile = null; // { userId, username, email }
-let userTeam = null; // { team, members: [] }
-let teamTimers = {}; // { userId: { action, sessionStart, totalPausedTime, ... } }
+// userProfile, userTeam, teamTimers — объявлены вверху файла
 
 function getApiBase() {
   return WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
