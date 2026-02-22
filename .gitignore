@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Database
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment
+.env
+.env.local
+.env.production
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# Build artifacts (desktop-agent)
+desktop-agent/dist/
+desktop-agent/node_modules/
+dist/
+out/
+
+# Temp
+tmp/
+temp/
+C:/Users/*/LinkTime-Tests/
+
+# Notes
+ВАЖНО.md
+Problem.md
