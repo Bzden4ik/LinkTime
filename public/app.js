@@ -19,7 +19,7 @@ let teamTimers = {}; // { userId: { action, sessionStart, totalPausedTime, ... }
 let ws = null;
 let reconnectInterval = null;
 let heartbeatInterval = null;
-const WS_URL = 'wss://linktime.go-tit.ru';
+const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
 
 // XSS защита
 function escapeHTML(str) {
@@ -72,9 +72,12 @@ connectWebSocket();
 initUserProfile();
 }
 
-// Генерация уникального ключа сессии
+// Генерация криптобезопасного ключа сессии (128 бит энтропии)
 function generateSessionKey() {
-return 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+const bytes = new Uint8Array(16);
+crypto.getRandomValues(bytes);
+const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+return 'sk_' + hex;
 }
 
 // Настройка обработчиков событий
@@ -685,13 +688,14 @@ function exportCSV() {
             .join('; ');
 
         for (const s of daySessions) {
-            const start = new Date(s.startTime);
-            const end = s.endTime ? new Date(s.endTime) : new Date();
-            const dur = Math.round((end - start - (s.totalPausedTime || 0)) / 60000);
+            const start = new Date(s.start);
+            const end = s.end ? new Date(s.end) : new Date();
+            const totalPaused = (s.pauses || []).reduce((sum, p) => sum + (p.duration || 0), 0);
+            const dur = Math.round((end - start - totalPaused) / 60000);
             rows.push([
                 date,
                 start.toLocaleTimeString('ru'),
-                s.endTime ? end.toLocaleTimeString('ru') : '',
+                s.end ? end.toLocaleTimeString('ru') : '',
                 dur,
                 tasks
             ]);
@@ -731,8 +735,8 @@ function importJSON() {
                 if (data.sessions) {
                     for (const key of Object.keys(data.sessions)) {
                         const existing = cache.sessions[key] || [];
-                        const byStart = new Map(existing.map(s => [s.startTime, s]));
-                        for (const s of data.sessions[key]) byStart.set(s.startTime, s);
+                        const byStart = new Map(existing.map(s => [s.start, s]));
+                        for (const s of data.sessions[key]) byStart.set(s.start, s);
                         cache.sessions[key] = Array.from(byStart.values());
                         localStorage.setItem(key, JSON.stringify(cache.sessions[key]));
                     }
@@ -954,7 +958,8 @@ setTimeout(() => syncData(), 500);
 };
 
 ws.onmessage = (event) => {
-const message = JSON.parse(event.data);
+let message;
+try { message = JSON.parse(event.data); } catch { return; }
 
 switch (message.type) {
 case 'init':
@@ -1390,11 +1395,11 @@ if (data.sessions) {
     for (const key of Object.keys(remote)) {
         const localArr = local[key] || [];
         const remoteArr = remote[key] || [];
-        // Объединяем по startTime, remote побеждает при конфликте
-        const byStart = new Map(localArr.map(s => [s.startTime, s]));
-        for (const s of remoteArr) byStart.set(s.startTime, s);
+        // Объединяем по start, remote побеждает при конфликте
+        const byStart = new Map(localArr.map(s => [s.start, s]));
+        for (const s of remoteArr) byStart.set(s.start, s);
         merged[key] = Array.from(byStart.values())
-            .sort((a, b) => a.startTime - b.startTime);
+            .sort((a, b) => a.start - b.start);
     }
     cache.sessions = merged;
     updateSelectedDateStats();

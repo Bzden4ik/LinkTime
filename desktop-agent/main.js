@@ -10,7 +10,7 @@ app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder');
 
 // Конфигурация
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
-const WS_URL = 'wss://linktime.go-tit.ru';
+const WS_URL = process.env.LINKTIME_WS_URL || 'wss://linktime.go-tit.ru';
 
 // Состояние приложения
 let mainWindow = null;
