@@ -3,6 +3,8 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const Database = require('better-sqlite3');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 // === КОНФИГУРАЦИЯ ===
 const PORT = process.env.PORT || 3002;
@@ -155,6 +157,20 @@ for (const [col, def] of ptMigrations) {
     try { db.exec(`ALTER TABLE project_tasks ADD COLUMN ${col} ${def}`); } catch (e) {}
 }
 
+// Индексы для ускорения запросов
+const indexes = [
+    'CREATE INDEX IF NOT EXISTS idx_project_tasks_session_key ON project_tasks(session_key)',
+    'CREATE INDEX IF NOT EXISTS idx_project_tasks_project_id ON project_tasks(project_id)',
+    'CREATE INDEX IF NOT EXISTS idx_projects_session_key ON projects(session_key)',
+    'CREATE INDEX IF NOT EXISTS idx_invitations_to_user ON invitations(to_user_id, status)',
+    'CREATE INDEX IF NOT EXISTS idx_invitations_from_user ON invitations(from_user_id)',
+    'CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)',
+    'CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members(team_id)',
+];
+for (const sql of indexes) {
+    try { db.exec(sql); } catch (e) {}
+}
+
 console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
 
 // Prepared statements для производительности
@@ -303,6 +319,32 @@ function ensureUser(sessionKey) {
 
 // === EXPRESS СЕРВЕР ===
 const app = express();
+
+// Security headers
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'", "wss:", "ws:"],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            frameSrc: ["'self'"],
+        },
+    },
+}));
+
+// Rate limiting для API
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, try again later' },
+});
+app.use('/api/', apiLimiter);
 
 // CORS
 app.use((req, res, next) => {
@@ -557,13 +599,6 @@ app.post('/api/team/sharing', (req, res) => {
     res.json({ ok: true });
 });
 
-// === API: Получить профиль пользователя по sessionKey ===
-app.get('/api/user/:sessionKey', (req, res) => {
-    const user = stmts.getUserBySession.get(req.params.sessionKey);
-    if (!user) return res.status(404).json({ error: 'Not found' });
-    res.json({ username: user.username, user_id: user.user_id });
-});
-
 // === API: Получить личную доску ===
 app.get('/api/board/personal/:sessionKey', (req, res) => {
     const { sessionKey } = req.params;
@@ -759,6 +794,16 @@ function handleBoardJoin(ws, data) {
 function handleBoardUpdate(ws, data) {
     const teamId = ws._boardTeamId;
     if (!teamId) return;
+
+    // Проверяем что пользователь ещё в команде (мог быть кикнут после board_join)
+    const userId = ws._boardUserId;
+    if (userId) {
+        const membership = stmts.checkTeamMember.get(userId);
+        if (!membership || membership.team_id !== teamId) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Not a team member' }));
+            return;
+        }
+    }
 
     const now = Date.now();
     const json = JSON.stringify(data.data);
