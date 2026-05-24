@@ -1,13 +1,17 @@
 {
   "name": "linktime-desktop-agent",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "LinkTime Desktop Activity Tracker",
   "main": "main.js",
   "scripts": {
-    "start": "cross-env NODE_ENV=development electron .",
-    "build-win": "electron-builder --win",
-    "build-mac": "electron-builder --mac",
-    "build-linux": "electron-builder --linux"
+    "start":      "electron .",
+    "dev":        "cross-env NODE_ENV=development electron . --dev",
+    "dev-local":  "cross-env NODE_ENV=development LINKTIME_WS=ws://localhost:3002 electron . --dev",
+    "build":      "electron-builder --win",
+    "build-win":  "electron-builder --win",
+    "build-mac":  "electron-builder --mac",
+    "build-linux":"electron-builder --linux",
+    "release":    "electron-builder --win --publish always"
   },
   "author": "LinkTime",
   "license": "MIT",
@@ -23,6 +27,14 @@
   "build": {
     "appId": "com.linktime.agent",
     "productName": "LinkTime",
+    "copyright": "Copyright © 2026 LinkTime",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Bzden4ik",
+        "repo": "LinkTime"
+      }
+    ],
     "files": [
       "main.js",
       "preload.js",
@@ -32,20 +44,33 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
       ],
-      "icon": "icon.ico"
+      "icon": "icon.ico",
+      "artifactName": "LinkTime.Setup.v${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LinkTime",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeaderIcon": "icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
     },
     "mac": {
-      "target": [
-        "dmg"
-      ],
+      "target": ["dmg"],
       "icon": "icon.icns"
     },
     "linux": {
-      "target": [
-        "AppImage"
-      ],
+      "target": ["AppImage"],
       "icon": "icon.png"
     }
   }

@@ -3,182 +3,416 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LinkTime Agent - Настройки</title>
+<title>LinkTime Agent — Настройки</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,200..800,0..100&family=Geist:wght@300..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet">
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --ink-0: #15120f;
+  --ink-1: #1c1814;
+  --ink-2: #221d18;
+  --ink-3: #2a241e;
+  --txt-strong: #ece7da;
+  --txt-base: #c4bfb3;
+  --txt-dim: #8c8678;
+  --txt-mute: #5a554c;
+  --signal: #ff7038;
+  --signal-soft: rgba(255,112,56,0.14);
+  --work: #7fb069;
+  --work-soft: rgba(127,176,105,0.18);
+  --rust: #c25a32;
+  --rust-soft: rgba(194,90,50,0.18);
+  --line: rgba(236,231,218,0.075);
+  --line-strong: rgba(236,231,218,0.14);
+  --line-bright: rgba(236,231,218,0.24);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-display: 'Fraunces','Times New Roman',serif;
+  --font-body: 'Geist','Inter',system-ui,sans-serif;
+  --font-mono: 'JetBrains Mono',ui-monospace,monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
 body {
-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-padding: 20px;
-color: #333;
+  font-family: var(--font-body);
+  background: var(--ink-0);
+  color: var(--txt-base);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+  padding: 22px;
+  overflow-y: auto;
 }
-.container {
-max-width: 500px;
-margin: 0 auto;
-background: white;
-border-radius: 15px;
-padding: 25px;
-box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+
+.shell {
+  max-width: 460px;
+  margin: 0 auto;
 }
-h1 { font-size: 22px; margin-bottom: 6px; color: #667eea; }
-.subtitle { color: #999; font-size: 13px; margin-bottom: 20px; }
-.status-indicator {
-padding: 12px; background: #f5f5f5; border-radius: 10px;
-margin-bottom: 20px; display: flex; align-items: center; gap: 10px;
+
+header.win-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
 }
+
+.win-logo {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--ink-2);
+  border: 1px solid var(--line-strong);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--signal);
+}
+
+.win-title {
+  flex: 1;
+}
+.win-title h1 {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 400;
+  font-variation-settings: 'opsz' 80, 'SOFT' 25;
+  color: var(--txt-strong);
+  letter-spacing: -0.018em;
+  line-height: 1;
+}
+.win-subtitle {
+  font: 500 9.5px/1 var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--txt-mute);
+  margin-top: 6px;
+}
+
+/* Status card */
+.status-card {
+  background: var(--ink-1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .status-dot {
-width: 12px; height: 12px; border-radius: 50%; background: #ccc;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--txt-mute);
+  flex-shrink: 0;
+  transition: all 0.3s var(--ease);
 }
-.status-dot.working { background: #10b981; box-shadow: 0 0 10px rgba(16,185,129,0.5); }
-.status-dot.distracted { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
-.status-dot.idle { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.5); }
-.status-text { flex: 1; font-size: 13px; }
-.form-group { margin-bottom: 16px; }
-label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
-input {
-width: 100%; padding: 10px; border: 2px solid #e5e5e5;
-border-radius: 8px; font-size: 13px; transition: border 0.3s;
+.status-dot.working { background: var(--work); box-shadow: 0 0 0 3px var(--work-soft); }
+.status-dot.distracted { background: var(--rust); box-shadow: 0 0 0 3px var(--rust-soft); }
+.status-dot.idle { background: var(--txt-mute); }
+
+.status-text {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--txt-strong);
 }
-input:focus { outline: none; border-color: #667eea; }
+
+.status-detail {
+  font: 500 10.5px/1.4 var(--font-mono);
+  color: var(--txt-dim);
+  margin-top: 4px;
+}
+
+/* Connection sub-row */
+.conn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font: 500 10px/1 var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--txt-mute);
+}
+.conn-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--rust);
+}
+.conn-dot.connected { background: var(--work); box-shadow: 0 0 0 3px var(--work-soft); }
+.conn-status-text { color: var(--txt-dim); }
+
+/* Sections */
+.section { margin-bottom: 18px; }
+.section-head {
+  font: 500 10px/1 var(--font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--txt-mute);
+  margin-bottom: 8px;
+}
+.section-hint {
+  font-size: 11.5px;
+  color: var(--txt-dim);
+  margin-top: 6px;
+  line-height: 1.55;
+}
+
+input[type=text] {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--ink-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--txt-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
+}
+input[type=text]:focus {
+  outline: none;
+  border-color: var(--signal);
+  background: var(--ink-2);
+}
+
 textarea {
-width: 100%; padding: 10px; border: 2px solid #e5e5e5;
-border-radius: 8px; font-size: 12px; font-family: monospace;
-resize: vertical; min-height: 80px; transition: border 0.3s;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--ink-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--txt-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  resize: vertical;
+  min-height: 90px;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
 }
-textarea:focus { outline: none; border-color: #667eea; }
-.hint { font-size: 11px; color: #999; margin-top: 4px; }
-button {
-width: 100%; padding: 12px;
-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-color: white; border: none; border-radius: 8px;
-font-size: 15px; font-weight: 600; cursor: pointer; transition: transform 0.2s;
+textarea:focus {
+  outline: none;
+  border-color: var(--signal);
+  background: var(--ink-2);
 }
-button:hover { transform: translateY(-2px); }
-button:active { transform: translateY(0); }
+
+/* Checkbox toggle */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--txt-base);
+  padding: 6px 0;
+}
+.checkbox-label input[type=checkbox] {
+  appearance: none;
+  width: 38px; height: 22px;
+  background: var(--ink-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  position: relative;
+  cursor: pointer;
+  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+  flex-shrink: 0;
+}
+.checkbox-label input[type=checkbox]::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  background: var(--txt-dim);
+  border-radius: 50%;
+  transition: transform 120ms var(--ease), background 120ms var(--ease);
+}
+.checkbox-label input[type=checkbox]:checked {
+  background: var(--signal-soft);
+  border-color: var(--signal);
+}
+.checkbox-label input[type=checkbox]:checked::after {
+  transform: translateX(16px);
+  background: var(--signal);
+}
+
+/* Buttons */
+button.primary {
+  width: 100%;
+  padding: 10px 16px;
+  background: var(--signal);
+  color: var(--ink-0);
+  border: none;
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms var(--ease);
+}
+button.primary:hover { background: #ff8350; }
+
+button.ghost {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--ink-1);
+  color: var(--txt-base);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all 120ms var(--ease);
+}
+button.ghost:hover { background: var(--ink-2); color: var(--txt-strong); border-color: var(--line-bright); }
+
 .success-message {
-background: #10b981; color: white; padding: 10px;
-border-radius: 8px; margin-top: 12px; display: none; font-size: 13px;
+  display: none;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--work-soft);
+  border: 1px solid var(--work);
+  border-radius: 6px;
+  color: var(--work);
+  font-size: 12px;
+  font-weight: 500;
 }
 .success-message.show { display: block; }
-.connection-status {
-display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px;
-}
-.connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
-.connection-dot.connected { background: #10b981; }
-.section-title { font-size: 15px; font-weight: 700; color: #667eea; margin: 20px 0 10px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--line-bright); }
 </style>
 </head>
 <body>
-<div class="container">
-<h1>LinkTime Agent</h1>
-<p class="subtitle">Настройки мониторинга активности</p>
+<div class="shell">
 
-<div class="status-indicator" id="statusIndicator">
-<div class="status-dot" id="statusDot"></div>
-<div class="status-text" id="statusText">Ожидание подключения...</div>
-</div>
+  <header class="win-head">
+    <div class="win-logo">
+      <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/>
+        <path d="M16 8v8l5.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="win-title">
+      <h1>LinkTime Agent</h1>
+      <div class="win-subtitle">Мониторинг активности · v1.2</div>
+    </div>
+  </header>
 
-<form id="configForm">
-<div class="form-group">
-<label for="sessionKey">Ключ сессии</label>
-<input type="text" id="sessionKey" placeholder="session_xxxxx_xxxxx">
-<div class="hint">Автоматически синхронизируется из веб-страницы LinkTime</div>
-</div>
+  <div class="status-card">
+    <div class="status-row">
+      <div class="status-dot" id="statusDot"></div>
+      <div>
+        <div class="status-text" id="statusText">Ожидание подключения…</div>
+        <div class="status-detail" id="statusDetail"></div>
+      </div>
+    </div>
+    <div class="conn-row">
+      <div class="conn-dot" id="connectionDot"></div>
+      <span class="conn-status-text" id="connectionText">Не подключено к серверу</span>
+    </div>
+  </div>
 
-            <div class="form-group">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="autostart" style="width: auto; cursor: pointer;">
-                    <span>Запускать вместе с Windows</span>
-                </label>
-                <div class="hint">Приложение будет автоматически запускаться при входе в систему</div>
-            </div>
+  <form id="configForm">
 
-<div class="section-title">Рабочие приложения (белый список)</div>
-<div class="form-group">
-<textarea id="whiteList" rows="5"></textarea>
-<div class="hint">По одному на строку. Если заголовок окна содержит текст — считается работой.</div>
-</div>
+    <div class="section">
+      <div class="section-head">Ключ сессии</div>
+      <input type="text" id="sessionKey" placeholder="sk_… или session_…" />
+      <div class="section-hint">Автоматически синхронизируется из открытого окна LinkTime. Менять руками не обязательно.</div>
+    </div>
 
-<div class="section-title">Отвлекающие приложения (чёрный список)</div>
-<div class="form-group">
-<textarea id="blackList" rows="5"></textarea>
-<div class="hint">По одному на строку. Если заголовок окна содержит текст — считается отвлечением.</div>
-</div>
+    <div class="section">
+      <div class="section-head">Запуск</div>
+      <label class="checkbox-label">
+        <input type="checkbox" id="autostart">
+        <span>Запускать при входе в Windows</span>
+      </label>
+    </div>
 
-<button type="submit">Сохранить настройки</button>
-</form>
+    <div class="section">
+      <div class="section-head">🟢 Рабочие приложения</div>
+      <textarea id="whiteList" placeholder="По одному на строку…"></textarea>
+      <div class="section-hint">Подсказка: удобнее редактировать через окно LinkTime · Настройки · Приложения.</div>
+    </div>
 
-<div class="connection-status">
-<div class="connection-dot" id="connectionDot"></div>
-<span id="connectionText">Не подключено</span>
-</div>
+    <div class="section">
+      <div class="section-head">🔴 Отвлекающие приложения</div>
+      <textarea id="blackList" placeholder="По одному на строку…"></textarea>
+    </div>
 
-<div class="success-message" id="successMessage">
-✓ Настройки сохранены!
-</div>
+    <button type="submit" class="primary">Сохранить настройки</button>
+
+    <div class="success-message" id="successMessage">✓ Сохранено</div>
+  </form>
+
 </div>
 
 <script>
 const api = window.electronAPI;
 
 async function loadConfig() {
-    const config = await api.getConfig();
-    document.getElementById('sessionKey').value = config.sessionKey || '';
-    document.getElementById('autostart').checked = config.autostart || false;
-    document.getElementById('whiteList').value = (config.whiteList || []).join('\n');
-    document.getElementById('blackList').value = (config.blackList || []).join('\n');
-    if (config.sessionKey) api.testConnection();
+  const config = await api.getConfig();
+  document.getElementById('sessionKey').value = config.sessionKey || '';
+  document.getElementById('autostart').checked = !!config.autostart;
+  document.getElementById('whiteList').value = (config.whiteList || []).join('\n');
+  document.getElementById('blackList').value = (config.blackList || []).join('\n');
+  if (config.sessionKey) api.testConnection();
 }
-
 loadConfig();
 
 api.onStatusUpdate((data) => {
-    const statusDot = document.getElementById('statusDot');
-    const statusText = document.getElementById('statusText');
-    statusDot.className = `status-dot ${data.status}`;
-    let label = '';
-    switch (data.status) {
-        case 'working': label = '🟢 Работа'; break;
-        case 'distracted': label = '🟡 Отвлечение'; break;
-        case 'idle': label = '🔴 Неактивен'; break;
-    }
-    statusText.textContent = `${label}: ${data.windowTitle}`;
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  const detail = document.getElementById('statusDetail');
+  dot.className = 'status-dot ' + (data.status || '');
+  let label = '';
+  switch (data.status) {
+    case 'working': label = 'Работа'; break;
+    case 'distracted': label = 'Отвлечение'; break;
+    case 'idle': label = 'Не активен'; break;
+    default: label = 'Ожидание…';
+  }
+  text.textContent = label;
+  detail.textContent = data.windowTitle || '';
 });
 
 api.onConnectionStatus((data) => {
-    const dot = document.getElementById('connectionDot');
-    const text = document.getElementById('connectionText');
-    if (data.connected) {
-        dot.classList.add('connected');
-        text.textContent = 'Подключено к серверу';
-    } else {
-        dot.classList.remove('connected');
-        text.textContent = 'Не подключено';
-    }
+  const dot = document.getElementById('connectionDot');
+  const text = document.getElementById('connectionText');
+  if (data.connected) {
+    dot.classList.add('connected');
+    text.textContent = 'Подключено к серверу';
+  } else {
+    dot.classList.remove('connected');
+    text.textContent = 'Не подключено к серверу';
+  }
 });
 
 document.getElementById('configForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const sessionKey = document.getElementById('sessionKey').value.trim();
-    const autostart = document.getElementById('autostart').checked;
-    const whiteList = document.getElementById('whiteList').value.split('\n').map(s => s.trim()).filter(Boolean);
-    const blackList = document.getElementById('blackList').value.split('\n').map(s => s.trim()).filter(Boolean);
-    api.saveConfig({ sessionKey, autostart, whiteList, blackList });
+  e.preventDefault();
+  const sessionKey = document.getElementById('sessionKey').value.trim();
+  const autostart = document.getElementById('autostart').checked;
+  const whiteList = document.getElementById('whiteList').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const blackList = document.getElementById('blackList').value.split('\n').map(s => s.trim()).filter(Boolean);
+  api.saveConfig({ sessionKey, autostart, whiteList, blackList });
 });
 
 api.onConfigSaved(() => {
-    const msg = document.getElementById('successMessage');
-    msg.classList.add('show');
-    setTimeout(() => msg.classList.remove('show'), 3000);
-    setTimeout(() => api.testConnection(), 1000);
+  const msg = document.getElementById('successMessage');
+  msg.classList.add('show');
+  setTimeout(() => msg.classList.remove('show'), 3000);
+  setTimeout(() => api.testConnection(), 800);
 });
 
 setInterval(() => api.testConnection(), 5000);
-
-document.getElementById('closeSettings').addEventListener('click', () => {
-    window.close();
-});
-</script>
 </script>
 </body>
 </html>

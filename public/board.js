@@ -1,361 +1,9 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<title>LinkTime Board</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<style>
-:root{--bg-primary:#0f1117;--bg-secondary:#161921;--bg-card:#1a1d27;--bg-card-hover:#1f222e;--bg-elevated:#22252f;--border-primary:rgba(255,255,255,0.06);--border-hover:rgba(255,255,255,0.12);--text-primary:#f0f0f0;--text-secondary:rgba(255,255,255,0.55);--text-muted:rgba(255,255,255,0.3);--primary:#6366f1;--primary-dark:#4f46e5;--success:#22c55e;--warning:#f59e0b;--danger:#ef4444;--radius-sm:8px;--radius-md:12px;--transition-fast:0.15s ease}
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:var(--bg-primary);font-family:'Inter',sans-serif;color:var(--text-primary);user-select:none;-webkit-font-smoothing:antialiased}
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:4px}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.15)}
-#app{display:flex;width:100%;height:100%;position:relative;padding-top: 36px;}
+// =============================================================================
+// board.js — вынесенный из board.html inline-script, чтобы CSP
+// мог быть strict (без unsafe-inline).
+// Сгенерировано Phase 6.7 — board edition.
+// =============================================================================
 
-/* ─── TOOLBAR ─── */
-#toolbar{width:54px;height:100%;background:var(--bg-secondary);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:4px;flex-shrink:0;z-index:100}
-.t-sep{width:28px;height:1px;background:var(--border-primary);margin:6px 0;flex-shrink:0}
-.t-spacer{flex:1}
-.tb{width:38px;height:38px;border-radius:var(--radius-sm);border:none;background:transparent;color:var(--text-muted);font-size:1.05rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background var(--transition-fast),color var(--transition-fast),transform var(--transition-fast);position:relative;flex-shrink:0}
-.tb:hover{background:rgba(255,255,255,0.06);color:var(--text-primary);transform:scale(1.05)}
-.tb:active{transform:scale(0.95)}
-.tb.on{background:rgba(99,102,241,0.15);color:#818cf8;box-shadow:0 0 0 1px rgba(99,102,241,0.3)}
-.tb .tip{position:absolute;left:50px;top:50%;transform:translateY(-50%);background:var(--bg-card);border:1px solid var(--border-hover);color:var(--text-primary);font-size:.7rem;padding:5px 10px;border-radius:var(--radius-sm);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;z-index:9999;font-family:'Inter',sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.4)}
-.tb:hover .tip{opacity:1}
-
-/* ─── VIEWPORT ─── */
-#vp{flex:1;position:relative;overflow:hidden;cursor:default}
-#vp.tool-card{cursor:crosshair}
-#vp.tool-connect{cursor:crosshair}
-#vp.panning{cursor:grabbing!important}
-#canvas{position:absolute;transform-origin:0 0}
-
-/* ─── SVG overlay: full viewport, viewport-space coords via getBCR ─── */
-#csvg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;overflow:visible}
-#csvg .cg{pointer-events:none}
-#csvg .conn-hit{pointer-events:stroke;cursor:pointer}
-
-/* ─── CARDS ─── */
-.bc{position:absolute;border-radius:var(--radius-md);border:1.5px solid var(--border-primary);background:var(--bg-card);display:flex;flex-direction:column;transition:border-color .2s,box-shadow .3s,transform .2s;cursor:default;min-width:180px;min-height:100px;z-index:2}
-.bc:hover{border-color:var(--border-hover);box-shadow:0 0 0 1px rgba(99,102,241,0.06),0 8px 24px rgba(0,0,0,0.3)}
-.bc.sel{border-color:var(--my-sel-color,rgba(99,102,241,.7))!important;box-shadow:0 0 0 3px var(--my-sel-shadow,rgba(99,102,241,.18)),0 16px 48px rgba(0,0,0,.5)}
-.bc.rem-sel{border-width:2px!important;box-shadow:0 0 0 3px var(--rem-sel-shadow),0 8px 32px rgba(0,0,0,.4)}
-.bc.dep-blocked{border-color:rgba(239,68,68,.4)!important;box-shadow:0 0 12px rgba(239,68,68,0.1)}
-
-.bc-head{display:flex;align-items:flex-start;gap:6px;padding:10px 12px 6px;flex-shrink:0;position:relative}
-.bc-sdot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:4px;cursor:pointer;transition:transform .15s,box-shadow .15s}
-.bc-sdot:hover{transform:scale(1.5);box-shadow:0 0 8px currentColor}
-.bc-title{flex:1;background:transparent;border:none;outline:none;color:var(--text-primary);font-size:.84rem;font-weight:600;font-family:'Inter',sans-serif;resize:none;line-height:1.4;min-height:20px;overflow:hidden;cursor:text}
-.bc-icon{font-size:1.05rem;line-height:1;cursor:pointer;padding:2px 4px;border-radius:6px;transition:background .15s;flex-shrink:0;user-select:none}
-.bc-icon:hover{background:rgba(255,255,255,0.08)}
-.bc-icon.empty{font-size:.72rem;color:var(--text-muted);border:1px dashed rgba(255,255,255,0.12);padding:2px 5px;border-radius:6px}
-.bc-icon.empty:hover{color:var(--text-secondary);border-color:rgba(255,255,255,.25)}
-.bc-drag{color:rgba(255,255,255,.15);font-size:.72rem;cursor:grab;padding:2px 3px;border-radius:4px;margin-top:1px;flex-shrink:0;transition:color .15s}
-.bc-drag:hover{color:var(--text-secondary);background:rgba(255,255,255,.04)}
-.bc-drag:active{cursor:grabbing}
-
-.bc-desc{padding:0 12px 6px;flex-shrink:0}
-.bc-desc-ta{width:100%;background:transparent;border:none;outline:none;color:var(--text-secondary);font-size:.76rem;font-family:'Inter',sans-serif;resize:none;line-height:1.5;min-height:28px;overflow:hidden;cursor:text}
-.bc-desc-ta::placeholder{color:rgba(255,255,255,.15)}
-
-.bc-body{flex:1;position:relative;overflow:hidden;min-height:40px}
-
-/* ─── CONTENT BLOCKS ─── */
-.cb{position:absolute;cursor:grab;z-index:3;border-radius:6px;border:1.5px solid transparent;transition:border-color .15s}
-.cb.cb-text{z-index:4}
-.cb.cb-image{z-index:3}
-.cb:hover{border-color:rgba(99,102,241,.3)}
-.cb.cb-sel{border-color:rgba(99,102,241,.6);cursor:grab}
-.cb.cb-editing{cursor:text}
-.cb-inner{border-radius:4px;padding:4px 7px;font-size:.78rem;color:rgba(255,255,255,.85);line-height:1.5;outline:none;word-break:break-word;min-width:30px;min-height:18px;user-select:none}
-.cb-inner.editing{user-select:text;cursor:text;background:rgba(255,255,255,.06)}
-.cb-img-inner img{display:block;max-width:100%;border-radius:6px;pointer-events:none}
-.cb-resize-dot{position:absolute;bottom:-5px;right:-5px;width:10px;height:10px;border-radius:50%;background:var(--primary);border:2px solid var(--bg-primary);cursor:se-resize;display:none;z-index:10}
-.cb.cb-sel .cb-resize-dot{display:block}
-
-.bc-strip{height:3px;flex-shrink:0;border-radius:0 0 12px 12px}
-.bc-resize{position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:se-resize;opacity:0;transition:opacity .15s;z-index:5;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px}
-.bc:hover .bc-resize{opacity:.7}
-
-.bc-port{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--primary);border:2.5px solid var(--bg-primary);top:50%;transform:translateY(-50%) scale(0);transition:transform .15s;cursor:crosshair;z-index:20;box-shadow:0 0 10px rgba(99,102,241,.5)}
-.bc:hover .bc-port,.cmode .bc-port{transform:translateY(-50%) scale(1)}
-.bc-port.lp{left:-7px}
-.bc-port.rp{right:-7px}
-.bc-port:hover{transform:translateY(-50%) scale(1.4)!important;background:#a5b4fc}
-
-/* ─── INSPECTOR ─── */
-#insp{width:280px;height:100%;background:var(--bg-secondary);border-left:1px solid var(--border-primary);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .28s cubic-bezier(.22,1,.36,1);position:absolute;right:0;top:0;z-index:300;overflow-y:auto}
-#insp.open{transform:translateX(0)}
-.ih{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 14px;border-bottom:1px solid var(--border-primary);flex-shrink:0}
-.ih h3{font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em}
-.ix{width:28px;height:28px;border-radius:var(--radius-sm);border:none;background:rgba(255,255,255,.04);color:var(--text-muted);font-size:.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
-.ix:hover{background:rgba(255,255,255,.08);color:var(--text-primary)}
-.is{padding:14px 16px;border-bottom:1px solid var(--border-primary)}
-.il{font-size:.64rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
-.isb{display:flex;gap:5px}
-.isb-btn{flex:1;padding:7px 3px;border-radius:var(--radius-sm);border:1px solid var(--border-primary);background:rgba(255,255,255,.03);color:var(--text-muted);font-size:.67rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s;text-align:center}
-.isb-btn:hover{border-color:var(--border-hover);color:var(--text-secondary)}
-.isb-btn.a-todo{background:rgba(100,116,139,.15);border-color:rgba(100,116,139,.3);color:#94a3b8}
-.isb-btn.a-in_progress{background:rgba(99,102,241,.15);border-color:rgba(99,102,241,.3);color:#818cf8}
-.isb-btn.a-done{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.3);color:#34d399}
-.icolors{display:flex;flex-wrap:wrap;gap:6px}
-.icol{width:24px;height:24px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:all .2s;flex-shrink:0}
-.icol:hover{transform:scale(1.2);box-shadow:0 2px 8px rgba(0,0,0,0.3)}
-.icol.sel{border-color:#fff;transform:scale(1.12);box-shadow:0 0 0 3px rgba(255,255,255,0.1)}
-.irow{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-.inum{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text-primary);font-size:.76rem;font-family:'Inter',sans-serif;outline:none;transition:border-color var(--transition-fast),box-shadow var(--transition-fast)}
-.inum:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(99,102,241,.15)}
-.islider-row{display:flex;align-items:center;gap:8px}
-.islider{flex:1;accent-color:var(--primary);cursor:pointer}
-.islider-v{font-size:.72rem;color:var(--text-muted);min-width:22px;text-align:right}
-.ideps{display:flex;flex-direction:column;gap:5px;max-height:110px;overflow-y:auto}
-.idep{display:flex;align-items:center;gap:7px;padding:6px 8px;background:rgba(255,255,255,.03);border-radius:var(--radius-sm);border:1px solid var(--border-primary);transition:background var(--transition-fast)}
-.idep:hover{background:rgba(255,255,255,.05)}
-.idep-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.idep-name{flex:1;font-size:.71rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.idep-rm{width:18px;height:18px;border-radius:4px;border:none;background:transparent;color:var(--text-muted);font-size:.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.idep-rm:hover{background:rgba(239,68,68,.12);color:var(--danger)}
-.inodeps{font-size:.72rem;color:var(--text-muted);font-style:italic}
-.idelbtn{width:100%;padding:10px;border-radius:var(--radius-sm);border:1px solid rgba(239,68,68,.18);background:rgba(239,68,68,.06);color:var(--danger);font-size:.77rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s}
-.idelbtn:hover{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3)}
-.iupload-btn{width:100%;padding:10px;border-radius:var(--radius-sm);border:1px dashed rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:var(--text-muted);font-size:.74rem;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s;text-align:center}
-.iupload-btn:hover{border-color:rgba(99,102,241,.4);color:#818cf8;background:rgba(99,102,241,.05)}
-
-/* ─── EMOJI PICKER ─── */
-#epick{position:fixed;background:var(--bg-card);border:1px solid var(--border-hover);border-radius:var(--radius-md);padding:12px;width:260px;z-index:9999;display:none;box-shadow:0 20px 60px rgba(0,0,0,.6);backdrop-filter:blur(16px)}
-#epick .eps{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text-primary);font-size:.76rem;font-family:'Inter',sans-serif;outline:none;margin-bottom:8px;transition:border-color var(--transition-fast)}
-#epick .eps:focus{border-color:var(--primary)}
-#epick .epg{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-height:190px;overflow-y:auto}
-#epick .epg button{width:28px;height:28px;border:none;background:transparent;font-size:1rem;cursor:pointer;border-radius:6px;transition:background .1s,transform .1s}
-#epick .epg button:hover{background:rgba(255,255,255,.08);transform:scale(1.1)}
-#epick .epc{width:100%;margin-top:8px;padding:7px;border-radius:var(--radius-sm);border:1px solid var(--border-primary);background:rgba(255,255,255,.03);color:var(--text-muted);font-size:.7rem;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s}
-#epick .epc:hover{background:rgba(255,255,255,.06);color:var(--text-primary)}
-
-/* ─── STATUS BAR ─── */
-#sb{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:20px;padding:6px 16px;display:flex;align-items:center;gap:10px;font-size:.68rem;color:var(--text-muted);backdrop-filter:blur(12px);white-space:nowrap;z-index:10;box-shadow:0 4px 16px rgba(0,0,0,0.3)}
-#sb b{color:var(--text-secondary)}
-.sbsep{width:1px;height:10px;background:var(--border-primary)}
-
-/* ─── CONNECT HINT ─── */
-#chint{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.25);border-radius:var(--radius-md);padding:8px 18px;font-size:.73rem;color:#818cf8;display:none;pointer-events:none;z-index:10;box-shadow:0 4px 16px rgba(99,102,241,0.15)}
-
-/* ─── CONTEXT MENU ─── */
-#ctx{position:fixed;background:var(--bg-card);border:1px solid var(--border-hover);border-radius:var(--radius-md);padding:5px;min-width:170px;z-index:9000;display:none;backdrop-filter:blur(16px);box-shadow:0 16px 48px rgba(0,0,0,.5)}
-.ci{padding:8px 12px;border-radius:var(--radius-sm);font-size:.75rem;color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .12s,color .12s}
-.ci:hover{background:rgba(255,255,255,.06);color:var(--text-primary)}
-.ci.danger{color:rgba(239,68,68,.7)}
-.ci.danger:hover{background:rgba(239,68,68,.08);color:var(--danger)}
-.csep{height:1px;background:var(--border-primary);margin:3px 0}
-
-/* ─── TOAST ─── */
-#toast{position:fixed;bottom:56px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--bg-card);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:10px 20px;font-size:.75rem;font-weight:500;color:var(--text-primary);opacity:0;transition:all .25s ease;z-index:9999;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
-#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-#toast.ok{border-left:3px solid var(--success);color:#6ee7b7}
-#toast.err{border-left:3px solid var(--danger);color:#fca5a5}
-
-/* ─── ASSIGNEE ─── */
-/* ─── BOARD TABS ─── */
-#board-tabs{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:4px;background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:4px;z-index:200;backdrop-filter:blur(12px);box-shadow:0 4px 16px rgba(0,0,0,0.3)}
-.btab{padding:7px 18px;border-radius:var(--radius-sm);border:none;background:transparent;color:var(--text-muted);font-size:.74rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .18s;white-space:nowrap;display:flex;align-items:center;gap:6px}
-.btab:hover{color:var(--text-primary);background:rgba(255,255,255,0.05)}
-.btab.active{background:rgba(99,102,241,0.15);color:#a5b4fc;border:1px solid rgba(99,102,241,0.25)}
-
-/* ─── REMOTE CURSORS ─── */
-.rcursor{position:fixed;pointer-events:none;z-index:9000;transition:left .08s,top .08s;transform:translate(-2px,-2px)}
-.rcursor svg{display:block}
-.rcursor-label{position:absolute;left:14px;top:0;background:rgba(99,102,241,.85);color:#fff;font-size:.62rem;font-weight:600;font-family:'Inter',sans-serif;padding:2px 7px;border-radius:8px;white-space:nowrap;backdrop-filter:blur(6px)}
-
-/* ─── ASSIGNEE ─── */
-.bc-assignee{padding:0 12px 4px;display:flex;align-items:center;gap:5px;font-size:.7rem;color:rgba(99,102,241,.85);font-weight:600}
-.bc-assign-btn{margin:0 12px 8px;padding:6px 10px;border-radius:var(--radius-sm);border:1px solid rgba(99,102,241,.2);background:rgba(99,102,241,.06);color:rgba(99,102,241,.75);font-size:.7rem;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s;text-align:left}
-.bc-assign-btn:hover{background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.4);color:#a5b4fc}
-.bc-assign-btn.assigned{border-color:rgba(16,185,129,.25);background:rgba(16,185,129,.06);color:rgba(16,185,129,.85)}
-.bc-assign-btn.assigned:hover{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.25);color:#fca5a5}
-
-/* ─── ONLINE USERS ─── */
-#board-online{position:absolute;top:12px;right:14px;display:flex;gap:6px;align-items:center;z-index:200}
-.bonline-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff;cursor:default;position:relative;transition:border-color .15s,transform .15s}
-.bonline-dot:hover{transform:scale(1.08)}
-.bonline-dot .tip{position:absolute;bottom:-28px;left:50%;transform:translateX(-50%);background:var(--bg-card);border:1px solid var(--border-hover);color:var(--text-primary);font-size:.65rem;padding:4px 9px;border-radius:var(--radius-sm);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;box-shadow:0 4px 12px rgba(0,0,0,0.4)}
-.bonline-dot:hover .tip{opacity:1}
-#my-color-btn{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff;cursor:pointer;position:relative;transition:border-color .2s,transform .15s}
-#my-color-btn:hover{border-color:#fff;transform:scale(1.08)}
-#my-color-btn .tip{position:absolute;bottom:-28px;left:50%;transform:translateX(-50%);background:var(--bg-card);border:1px solid var(--border-hover);color:var(--text-primary);font-size:.65rem;padding:4px 9px;border-radius:var(--radius-sm);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.4)}
-#my-color-btn:hover .tip{opacity:1}
-#color-picker-popup{position:absolute;top:36px;right:0;background:var(--bg-card);border:1px solid var(--border-hover);border-radius:var(--radius-md);padding:12px;display:none;flex-direction:column;gap:8px;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,.5);width:165px}
-#color-picker-popup.open{display:flex}
-#color-picker-popup label{font-size:.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}
-#color-picker-popup input[type=color]{width:100%;height:32px;border:none;border-radius:var(--radius-sm);cursor:pointer;background:none;padding:0}
-.color-presets{display:flex;flex-wrap:wrap;gap:5px}
-.color-preset{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .15s,border-color .15s,box-shadow .15s}
-.color-preset:hover{transform:scale(1.2);border-color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
-
-
-#dropov{display:none} /* не используется */
-.bc.drag-over{border-color:rgba(99,102,241,.6)!important;box-shadow:0 0 0 3px rgba(99,102,241,.15),0 0 20px rgba(99,102,241,.1)!important;background:rgba(99,102,241,.05)!important}
-.bc.drag-over::after{content:'Отпустите для вставки';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#818cf8;font-weight:600;pointer-events:none;background:rgba(15,17,23,.8);border-radius:var(--radius-md);z-index:100;backdrop-filter:blur(4px)}
-</style>
-</head>
-<body>
-<div id="app">
-  <!-- TOOLBAR -->
-  <aside id="toolbar">
-    <button class="tb on" data-tool="select"><span class="tip">Выбор (V)</span>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 4l7 18 3-7 7-3L4 4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-    </button>
-    <button class="tb" data-tool="card"><span class="tip">Карточка (C)</span>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" stroke-width="1.8"/><line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-    </button>
-    <button class="tb" data-tool="connect"><span class="tip">Связь (L)</span>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="5" cy="12" r="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="19" cy="12" r="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M7.5 12 Q12 6 16.5 12" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
-    </button>
-    <div class="t-sep"></div>
-    <button class="tb" id="btn-zi"><span class="tip">Приблизить (+)</span>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="11" y1="8" x2="11" y2="14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-    </button>
-    <button class="tb" id="btn-zo"><span class="tip">Отдалить (-)</span>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-    </button>
-    <button class="tb" id="btn-zr"><span class="tip">100% (0)</span>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-    <div class="t-spacer"></div>
-    <div class="t-sep"></div>
-    <button class="tb" id="btn-back"><span class="tip">Закрыть</span>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M5 12l7 7M5 12l7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-  </aside>
-
-  <!-- VIEWPORT -->
-  <div id="vp">
-    <!-- Board tabs -->
-    <div id="board-tabs">
-      <button class="btab active" data-board="personal">🙋 Личный</button>
-      <button class="btab" data-board="team">👥 Командный</button>
-    </div>
-    <div id="board-online" style="display:none">
-  <div id="my-color-btn">
-    <span id="my-color-label">?</span>
-    <span class="tip">Мой цвет</span>
-    <div id="color-picker-popup">
-      <label>Выбери цвет</label>
-      <input type="color" id="colorPickerInput">
-      <div class="color-presets" id="colorPresets"></div>
-    </div>
-  </div>
-</div>
-    <!-- SVG overlay: full viewport size, z-index above canvas, coords via getBoundingClientRect -->
-    <svg id="csvg">
-      <defs>
-        <filter id="fg" x="-100%" y="-100%" width="300%" height="300%">
-          <feGaussianBlur stdDeviation="6" result="b"/>
-          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-        <filter id="fr" x="-100%" y="-100%" width="300%" height="300%">
-          <feGaussianBlur stdDeviation="5" result="b"/>
-          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-        <marker id="ab" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-          <path d="M0 0L10 3.5L0 7Z" fill="#818cf8" opacity=".95"/>
-        </marker>
-        <marker id="ar" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-          <path d="M0 0L10 3.5L0 7Z" fill="#ef4444" opacity=".95"/>
-        </marker>
-        <marker id="ag" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-          <path d="M0 0L10 3.5L0 7Z" fill="#34d399" opacity=".95"/>
-        </marker>
-      </defs>
-      <g id="conn-layer"></g>
-      <g id="temp-conn" style="display:none;pointer-events:none">
-        <path id="tp-glow" fill="none" stroke="#6366f1" stroke-width="14" stroke-opacity=".15" filter="url(#fg)"/>
-        <path id="tp-base" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-opacity=".9"/>
-        <path id="tp-dash" fill="none" stroke="rgba(255,255,255,.65)" stroke-width="1.5" stroke-dasharray="6 16">
-          <animate attributeName="stroke-dashoffset" from="22" to="0" dur="0.8s" repeatCount="indefinite"/>
-        </path>
-        </g>
-    </svg>
-
-    <!-- canvas: only cards here -->
-    <div id="canvas"></div>
-
-    <div id="chint">🔗 Кликните на карточку-цель · Esc — отмена</div>
-    <div id="sb">
-      <b id="sb-zoom">100%</b>
-      <div class="sbsep"></div>
-      <span id="sb-info">0 карточек</span>
-      <div class="sbsep"></div>
-      <span>Dbl-click → текст · Ctrl+drag → сетка · Клик по связи → удалить</span>
-    </div>
-  </div>
-
-  <!-- INSPECTOR -->
-  <aside id="insp">
-    <div class="ih"><h3>Карточка</h3><button class="ix" id="insp-x">✕</button></div>
-    <div class="is">
-      <div class="il">Статус</div>
-      <div class="isb">
-        <button class="isb-btn" data-s="todo">· Todo</button>
-        <button class="isb-btn" data-s="in_progress">▶ В работе</button>
-        <button class="isb-btn" data-s="done">✓ Готово</button>
-      </div>
-    </div>
-    <div class="is">
-      <div class="il">Иконка карточки</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <div id="insp-icon-prev" style="font-size:1.6rem;min-width:34px;text-align:center;line-height:1">—</div>
-        <button class="iupload-btn" style="flex:1" id="insp-icon-btn">🎨 Выбрать эмодзи</button>
-      </div>
-    </div>
-    <div class="is">
-      <div class="il">Цвет фона</div>
-      <div class="icolors" id="insp-bgs"></div>
-    </div>
-    <div class="is">
-      <div class="il">Полоска</div>
-      <div class="icolors" id="insp-strips"></div>
-    </div>
-    <div class="is">
-      <div class="il">Размер</div>
-      <div class="irow">
-        <input type="number" class="inum" id="iw" placeholder="Ш">
-        <input type="number" class="inum" id="ih" placeholder="В">
-      </div>
-    </div>
-    <div class="is">
-      <div class="il">Шрифт</div>
-      <div class="islider-row">
-        <input type="range" class="islider" id="ifs" min="10" max="26" value="13">
-        <span class="islider-v" id="ifs-v">13</span>
-      </div>
-    </div>
-    <div class="is">
-      <div class="il">Изображение в карточку</div>
-      <button class="iupload-btn" id="insp-img-btn">📎 Загрузить файл</button>
-      <input type="file" id="img-input" accept="image/*" style="display:none">
-      <div style="font-size:.62rem;color:rgba(255,255,255,.18);margin-top:5px">Или перетащите / Ctrl+V при выбранной карточке</div>
-    </div>
-    <div class="is">
-      <div class="il">Зависимости</div>
-      <div class="ideps" id="insp-deps"></div>
-    </div>
-    <div class="is"><button class="idelbtn" id="insp-del">🗑 Удалить карточку</button></div>
-  </aside>
-</div>
-
-<!-- EMOJI PICKER -->
-<div id="epick">
-  <input class="eps" id="ep-s" placeholder="Поиск...">
-  <div class="epg" id="ep-g"></div>
-  <button class="epc" id="ep-c">✕ Убрать иконку</button>
-</div>
-
-<div id="ctx"></div>
-<div id="toast"></div>
-<div id="dropov">📎 Отпустите для вставки изображения</div>
-
-<script>
 // ═══════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════
@@ -367,13 +15,13 @@ let SK = 'board2_' + SESSION_KEY + '_' + currentBoard;
 
 const EMOJIS=['😀','😂','🤔','😎','🤩','😍','🥳','😤','💡','🔥','⚡','✅','❌','⚠️','🎯','🚀','💎','🌟','🎉','🎨','🛠️','📋','📌','📎','🔗','💬','📊','📈','📉','🗂️','📁','🔒','🔓','🔑','👍','👎','👀','💪','🙌','🤝','✍️','🧠','⭐','🌈','🕐','📅','🗓️','🔔','💰','🏆','🥇','🎖️','📝','✏️','🖊️','📐','📏','🔍','💻','📱','🖥️','⌨️','💾','📡','🎵','🎤','📷','🎬','🌍','🧩','🎲','🏁'];
 const BGS=['rgba(20,23,38,.97)','rgba(26,18,44,.97)','rgba(16,32,26,.97)','rgba(36,18,18,.97)','rgba(34,26,12,.97)','rgba(14,26,42,.97)','rgba(40,18,34,.97)','rgba(18,32,38,.97)'];
-const STRIPS=['','#6366f1','#10b981','#ef4444','#f59e0b','#06b6d4','#ec4899','#8b5cf6','#f97316'];
+const STRIPS=['','#ff6b1f','#10b981','#ef4444','#f59e0b','#06b6d4','#ec4899','#8b5cf6','#f97316'];
 
 // ═══════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════
-const API_BASE = (location.protocol === 'file:') ? 'https://linktime.go-tit.ru' : location.origin;
-const WS_URL   = (location.protocol === 'file:') ? 'wss://linktime.go-tit.ru'  : (location.protocol==='https:'?'wss://':'ws://')+location.host;
+const WS_URL = (location.protocol==='https:'?'wss://':'ws://')+location.host;
+const API_BASE = location.origin;
 
 let S={
   cards:[], connections:[],
@@ -657,7 +305,7 @@ function boardSend(msg){
 }
 
 // ─── ЦВЕТ ПОЛЬЗОВАТЕЛЯ ───
-const PRESET_COLORS=['#6366f1','#ec4899','#10b981','#f59e0b','#06b6d4','#ef4444','#8b5cf6','#f97316','#14b8a6','#84cc16'];
+const PRESET_COLORS=['#ff6b1f','#ec4899','#10b981','#f59e0b','#06b6d4','#ef4444','#8b5cf6','#f97316','#14b8a6','#84cc16'];
 function hashColor(str){
   let h=5381;for(let i=0;i<str.length;i++)h=(h*33)^str.charCodeAt(i);
   return PRESET_COLORS[Math.abs(h)%PRESET_COLORS.length];
@@ -701,7 +349,7 @@ const remoteConnPreviews={};
 
 function getOrCreateRemoteConnSVG(uid, color){
   if(remoteConnPreviews[uid]) return remoteConnPreviews[uid];
-  const clr = color || '#6366f1';
+  const clr = color || '#ff6b1f';
   const mk=(w,op,dash)=>{const p=svgEl('path');p.setAttribute('fill','none');p.setAttribute('stroke',clr);p.setAttribute('stroke-width',w);p.setAttribute('stroke-opacity',op);if(dash)p.setAttribute('stroke-dasharray','4 22');return p;};
   const g=svgEl('g');
   const glow=mk(14,.12),base=mk(2.5,.95),dsh=mk(1.5,1,true);
@@ -830,7 +478,7 @@ function drawCard(card){
   el.id='c-'+card.id;
   el.style.cssText=`left:${card.x}px;top:${card.y}px;width:${card.w}px;height:${card.h}px;background:${card.bg||BGS[0]}`;
 
-  const sc={todo:'#64748b',in_progress:'#6366f1',done:'#10b981'};
+  const sc={todo:'#64748b',in_progress:'#ff6b1f',done:'#10b981'};
   const strip=STRIPS[card.strip||0];
   const iconHtml=card.icon
     ?`<div class="bc-icon" id="bicon-${card.id}">${card.icon}</div>`
@@ -1071,7 +719,7 @@ function drawConn(conn){
 
   const blocked=isDepsBlocked(conn.to);
   const done=t.status==='done';
-  const clr=blocked?'#ef4444':done?'#34d399':'#818cf8';
+  const clr=blocked?'#ef4444':done?'#34d399':'#ff8a4f';
   const fid=blocked?'fr':'fg';
   const aid=blocked?'ar':done?'ag':'ab';
 
@@ -1165,7 +813,7 @@ function selectCard(id){
   S.sel=id;S.selBlock=null;
   document.querySelectorAll('.bc').forEach(e=>e.classList.toggle('sel',e.id==='c-'+id));
   // Красим своё выделение в свой цвет
-  const clr=myColor||'#6366f1';
+  const clr=myColor||'#ff6b1f';
   document.documentElement.style.setProperty('--my-sel-color',clr);
   document.documentElement.style.setProperty('--my-sel-shadow',clr+'30');
   boardSend({type:'board_sel', cardId:id});
@@ -1294,7 +942,7 @@ function openEP(e,cardId){
   setTimeout(()=>document.getElementById('ep-s').focus(),20);
 }
 function renderEPGrid(list){
-  document.getElementById('ep-g').innerHTML=list.map(em=>`<button onclick="pickEmoji('${em}')">${em}</button>`).join('');
+  document.getElementById('ep-g').innerHTML=list.map(em=>`<button data-board-action="pick-emoji" data-emoji="${em}">${em}</button>`).join('');
 }
 function pickEmoji(em){if(epTarget)updateCard(epTarget,{icon:em});epick.style.display='none'}
 window.pickEmoji=pickEmoji;
@@ -1345,10 +993,10 @@ function refreshDeps(){
   const el=document.getElementById('insp-deps');
   const inc=S.connections.filter(c=>c.to===S.sel);
   if(!inc.length){el.innerHTML='<div class="inodeps">Нет зависимостей</div>';return}
-  const sc={todo:'#64748b',in_progress:'#6366f1',done:'#10b981'};
+  const sc={todo:'#64748b',in_progress:'#ff6b1f',done:'#10b981'};
   el.innerHTML=inc.map(cn=>{
     const s=getCard(cn.from);if(!s)return'';
-    return`<div class="idep"><div class="idep-dot" style="background:${sc[s.status||'todo']}"></div><div class="idep-name">${esc(s.title||'Без названия')}</div><button class="idep-rm" onclick="deleteConn('${cn.id}')">✕</button></div>`;
+    return`<div class="idep"><div class="idep-dot" style="background:${sc[s.status||'todo']}"></div><div class="idep-name">${esc(s.title||'Без названия')}</div><button class="idep-rm" data-board-action="delete-conn" data-conn-id="${cn.id}">✕</button></div>`;
   }).join('');
 }
 
@@ -1608,6 +1256,70 @@ function assignCard(cardId, username) {
 
 
 
-</script>
-</body>
-</html>
+
+// === Event delegation для inline onclick'ов (CSP-strict) ===
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-board-action]');
+    if (!btn) return;
+    var action = btn.getAttribute('data-board-action');
+    if (action === 'pick-emoji') {
+        var em = btn.getAttribute('data-emoji');
+        if (typeof pickEmoji === 'function' && em) pickEmoji(em);
+    } else if (action === 'delete-conn') {
+        var id = btn.getAttribute('data-conn-id');
+        if (typeof deleteConn === 'function' && id) deleteConn(id);
+    }
+});
+
+// === Esc внутри iframe — шлём parent'у postMessage чтобы закрыл оверлей ===
+// Без этого Esc в iframe не доходит до dashboard keyboard handler'а.
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        try {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage('close-board', '*');
+                e.preventDefault();
+            }
+        } catch (_) {}
+    }
+});
+
+// === Toast-helper для board (нет showToast в этом iframe) ====================
+function boardToast(text, kind) {
+    var existing = document.getElementById('boardToast');
+    if (existing) existing.remove();
+    var t = document.createElement('div');
+    t.id = 'boardToast';
+    t.textContent = text;
+    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);' +
+        'background:var(--bg-card);border:1px solid ' + (kind === 'error' ? 'var(--danger)' : 'var(--primary)') + ';' +
+        'color:var(--text-primary);padding:10px 18px;border-radius:6px;font:500 13px/1 \'Geist\',sans-serif;' +
+        'box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:99999;opacity:0;transition:opacity .2s,transform .2s;';
+    document.body.appendChild(t);
+    requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translateX(-50%) translateY(-4px)'; });
+    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 250); }, 2500);
+}
+
+// === Перехват кликов по tab "Командный" — UX-фидбек когда нет команды =======
+// Без этого юзер кликает и ничего видимого не происходит (доска пустая).
+(function patchTeamTab() {
+    var teamTab = document.querySelector('.btab[data-board="team"]');
+    if (!teamTab) return;
+    // Сохраняем оригинальный switchBoard как fallback
+    var orig = window.switchBoard || switchBoard;
+    teamTab.addEventListener('click', async function(e) {
+        // Сначала проверим — есть ли вообще у юзера команда (через API)
+        try {
+            var r = await fetch(API_BASE + '/api/team/' + SESSION_KEY);
+            var d = await r.json();
+            if (!d || !d.team) {
+                e.stopPropagation();
+                e.preventDefault();
+                boardToast('Сначала пригласите кого-то в команду — иконка «+» в сайдбаре', 'error');
+                return false;
+            }
+        } catch (_) {
+            // Если API не отвечает — позволяем пройти дальше (вдруг временный сбой)
+        }
+    }, true); // capture phase
+})();

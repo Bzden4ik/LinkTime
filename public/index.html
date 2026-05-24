@@ -2,8 +2,19 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LinkTime</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#15120f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LinkTime">
+<title>LinkTime — рабочий хронограф</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,200..800,0..100&family=Geist:wght@300..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -38,14 +49,6 @@
       <button class="sidebar-nav-item active" data-sidebar-tab="timer">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <span>Дашборд</span>
-      </button>
-      <button class="sidebar-nav-item" data-sidebar-tab="tasks">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        <span>Задачи</span>
-      </button>
-      <button class="sidebar-nav-item" data-sidebar-tab="calendar">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        <span>Календарь</span>
       </button>
       <button class="sidebar-nav-item" id="boardBtn">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="6" height="18" rx="1"/><rect x="9" y="3" width="6" height="12" rx="1"/><rect x="16" y="3" width="6" height="15" rx="1"/></svg>
@@ -112,46 +115,95 @@
     </button>
     <div class="burger-dropdown" id="burgerDropdown">
       <button class="burger-item" id="burgerShareTime">📊 Поделиться временем</button>
-      <button class="burger-item" onclick="exportCSV()">📥 Экспорт CSV</button>
-      <button class="burger-item" onclick="exportJSON()">💾 Экспорт JSON</button>
-      <button class="burger-item" onclick="importJSON()">📤 Импорт JSON</button>
+      <button class="burger-item" data-action="export-csv">📥 Экспорт CSV</button>
+      <button class="burger-item" data-action="export-json">💾 Экспорт JSON</button>
+      <button class="burger-item" data-action="import-json">📤 Импорт JSON</button>
     </div>
   </div>
   <!-- Аватар -->
   <button class="avatar-btn" id="avatarBtn" title="Профиль">
     <span class="avatar-letter" id="avatarLetter">?</span>
   </button>
+
+  <!-- Window controls (Electron only) -->
+  <div class="winctl" id="windowControls" style="display:none">
+    <button class="winctl-btn" id="winMinimize" title="Свернуть" aria-label="Свернуть">
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+    </button>
+    <button class="winctl-btn" id="winMaximize" title="Развернуть" aria-label="Развернуть">
+      <svg class="winctl-icon-max" width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.2" rx="0.5"/></svg>
+      <svg class="winctl-icon-restore" width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="2.5" y="3.5" width="6" height="6" stroke="currentColor" stroke-width="1.2" rx="0.5"/><path d="M4 3.5V2.5h6v6H9" stroke="currentColor" stroke-width="1.2"/></svg>
+    </button>
+    <button class="winctl-btn winctl-close" id="winClose" title="Закрыть" aria-label="Закрыть">
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
 </div>
 </header>
 
 <main>
-<!-- Таймер -->
-<section class="timer-section glass-card" data-tab-content="timer">
-<div class="timer-display" id="timerDisplay">00:00:00</div>
-<div class="activity-indicator" id="activityIndicator">⚪ Ожидание Desktop Agent...</div>
-<div class="timer-controls">
-<button class="btn btn-start" id="startBtn">Старт</button>
-<button class="btn btn-pause" id="pauseBtn" disabled>Пауза</button>
-<button class="btn btn-stop" id="stopBtn" disabled>Стоп</button>
-</div>
-<div class="session-info">
-<div class="info-item">
-<span class="label" id="workTimeLabel">Рабочее время</span>
-<span class="value" id="totalWorkTime">00:00:00</span>
-</div>
-<div class="info-item">
-<span class="label">Сессий</span>
-<span class="value" id="sessionCount">0</span>
-</div>
-<div class="info-item">
-<span class="label">Задач</span>
-<span class="value" id="tasksCompleted">0 / 0</span>
-</div>
-</div>
+<!-- ===== DASHBOARD: timer + stats ===== -->
+<section class="timer-section" data-tab-content="timer">
+
+  <!-- LEFT: hero timer card -->
+  <div class="timer-card" id="timerCard" data-state="idle">
+    <div class="timer-meta">
+      <div class="timer-meta-left">
+        <span class="timer-meta-dot"></span>
+        <span id="timerMetaLabel">Хронограф</span>
+      </div>
+      <div class="timer-meta-date" id="timerMetaDate">—</div>
+    </div>
+
+    <div class="timer-display" id="timerDisplay">00:00:00</div>
+
+    <div class="timer-status" id="timerStatus" data-status="idle">
+      <span class="timer-status-icon"></span>
+      <span class="timer-status-text" id="timerStatusText">Готов начать работу</span>
+      <span class="timer-status-detail" id="timerStatusDetail"></span>
+    </div>
+
+    <!-- ===== TODAY'S TIMELINE — 24h strip of real session data ===== -->
+    <div class="today-timeline" id="todayTimeline">
+      <div class="timeline-track" id="timelineTrack">
+        <div class="timeline-empty" id="timelineEmpty">Сегодня ещё нет работы</div>
+        <div class="timeline-now" id="timelineNow" style="display:none"></div>
+      </div>
+      <div class="timeline-axis" id="timelineAxis">
+        <span>00</span><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span><span>24</span>
+      </div>
+    </div>
+
+    <div class="timer-controls">
+      <button class="btn btn-start" id="startBtn">Старт</button>
+      <button class="btn btn-pause" id="pauseBtn" disabled>Пауза</button>
+      <button class="btn btn-stop" id="stopBtn" disabled>Стоп</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: stats grid -->
+  <div class="stats-panel">
+    <div class="stat-card span-2">
+      <span class="stat-label">Сегодня</span>
+      <span class="stat-value accent" id="totalWorkTime">00:00:00</span>
+      <span class="stat-meta" id="workTimeLabel">Активное время за день</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Сессий</span>
+      <span class="stat-value" id="sessionCount">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Задачи</span>
+      <span class="stat-value" id="tasksCompleted">0 / 0</span>
+    </div>
+  </div>
+
+  <!-- Legacy compat: hidden text indicator that app.js writes to -->
+  <div class="activity-indicator" id="activityIndicator" data-status="idle" aria-hidden="true">⚪ Ожидание Desktop Agent...</div>
 </section>
 
 <!-- Задачи -->
-<section class="tasks-section glass-card" data-tab-content="tasks">
+<section class="tasks-section glass-card" data-tab-content="timer">
 
 <!-- ===== PROJECT TREE ===== -->
 <div class="pt-header">
@@ -246,7 +298,7 @@
 </section>
 
 <!-- Календарь -->
-<section class="calendar-section glass-card" data-tab-content="calendar">
+<section class="calendar-section glass-card" data-tab-content="timer">
 <div class="calendar-header">
 <button class="btn btn-small" id="prevMonth">◀</button>
 <h2 id="currentMonth"></h2>
@@ -258,139 +310,323 @@
 </div>
 </div>
 
-<!-- Модальное окно настроек -->
+<!-- ============ SETTINGS MODAL — tabbed (apps / sync / data / advanced) ============ -->
 <div class="modal" id="settingsModal">
-<div class="modal-content">
-<div class="modal-header">
-<h2>Настройки</h2>
-<button class="close-btn" id="closeSettings">×</button>
-</div>
-<div class="modal-body">
-<div class="setting-group">
-<h3>📦 Данные</h3>
-<button class="btn" id="migrateBtn">Перенести данные из браузера в базу</button>
-</div>
-<div class="setting-group">
-<h3>Синхронизация устройств</h3>
-<button class="btn" id="generateQR">Подключить устройство (QR-код)</button>
-<button class="btn" id="showKey">Показать ключ доступа</button>
-<button class="btn btn-add" id="scanQR">Отсканировать QR-код</button>
-<button class="btn" id="enterKey">Ввести ключ доступа</button>
-</div>
-                
-                <div class="setting-group" id="autostartSection" style="display: none;">
-                    <h3>🚀 Автозапуск приложения</h3>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="autostartCheckbox">
-                        <span>Запускать вместе с Windows</span>
-                    </label>
-                    <p class="setting-hint">Приложение будет автоматически запускаться при входе в систему</p>
-                </div>
-<div class="setting-group" id="qrSection" style="display: none;">
-<div id="qrcode"></div>
-<p class="key-display" id="keyDisplay"></p>
-</div>
-<div class="setting-group" id="scanQRSection" style="display: none;">
-<p style="text-align: center; margin-bottom: 15px;">Наведите камеру на QR-код</p>
-<video id="qrVideo" style="width: 100%; border-radius: 14px; display: block;"></video>
-<canvas id="qrCanvas" style="display: none;"></canvas>
-</div>
-<div class="setting-group" id="keyInputSection" style="display: none;">
-<input type="text" id="keyInput" placeholder="Введите ключ доступа">
-<button class="btn" id="connectKey">Подключиться</button>
+  <div class="modal-content settings-modal">
+    <div class="modal-header">
+      <h2>Настройки</h2>
+      <button class="close-btn" id="closeSettings">×</button>
+    </div>
+
+    <div class="settings-tabs" role="tablist">
+      <button class="settings-tab active" data-settings-tab="apps">Приложения</button>
+      <button class="settings-tab" data-settings-tab="sync">Синхронизация</button>
+      <button class="settings-tab" data-settings-tab="data">Данные</button>
+      <button class="settings-tab" data-settings-tab="advanced">Дополнительно</button>
+    </div>
+
+    <div class="modal-body settings-body">
+
+      <!-- ============ APPS TAB ============ -->
+      <div class="settings-pane active" data-settings-pane="apps">
+        <div class="apps-status" id="appsStatus" data-online="false">
+          <span class="apps-status-dot"></span>
+          <span class="apps-status-text" id="appsStatusText">Desktop-агент не подключён — добавьте приложения вручную ниже.</span>
+        </div>
+
+        <div class="apps-section" id="appsLiveSection" style="display:none">
+          <div class="apps-section-head">
+            <span class="cap">Активные сейчас</span>
+            <span class="apps-count-mono" id="appsLiveCount">0</span>
+            <button class="apps-refresh" id="appsRefreshBtn" title="Запросить обновление">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            </button>
+          </div>
+          <p class="apps-section-hint">Кликни <strong>🟢 Работа</strong> или <strong>🔴 Отвлекает</strong> рядом с приложением — настройка применится сразу.</p>
+          <div class="apps-live-list" id="appsLiveList"></div>
+        </div>
+
+        <div class="apps-section">
+          <div class="apps-section-head">
+            <span class="cap">Найти приложение</span>
+          </div>
+          <div class="apps-find-row">
+            <button class="apps-find-btn" id="appsPickerOpen">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              Все процессы системы…
+            </button>
+            <button class="apps-find-btn" id="appsBrowseExe">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+              Выбрать .exe файл…
+            </button>
+          </div>
+          <p class="apps-section-hint">Открой список ВСЕХ запущенных процессов или укажи путь к exe вручную (например <code>F:\GRYPHLINK\Launcher.exe</code>).</p>
+        </div>
+
+        <div class="apps-section">
+          <div class="apps-section-head">
+            <span class="cap">Или введи текстом</span>
+          </div>
+          <div class="apps-manual-row">
+            <input type="text" id="appsManualInput" placeholder="Часть имени или заголовка окна…">
+            <button class="apps-action-btn work" data-manual-action="white">🟢 Работа</button>
+            <button class="apps-action-btn distract" data-manual-action="black">🔴 Отвлекает</button>
+          </div>
+          <p class="apps-section-hint">Подойдёт часть имени процесса или заголовка окна.</p>
+        </div>
+
+        <div class="apps-section apps-saved-grid">
+          <div class="apps-saved-col">
+            <div class="apps-section-head">
+              <span class="cap apps-cap-green">🟢 Работа</span>
+              <span class="apps-count-mono" id="appsWhiteCount">0</span>
+            </div>
+            <div class="list-items apps-saved-list" id="whiteListItems"></div>
+            <div class="apps-saved-empty" id="appsWhiteEmpty">Пусто. Добавьте сверху.</div>
+          </div>
+          <div class="apps-saved-col">
+            <div class="apps-section-head">
+              <span class="cap apps-cap-rust">🔴 Отвлекает</span>
+              <span class="apps-count-mono" id="appsBlackCount">0</span>
+            </div>
+            <div class="list-items apps-saved-list" id="blackListItems"></div>
+            <div class="apps-saved-empty" id="appsBlackEmpty">Пусто.</div>
+          </div>
+        </div>
+
+        <!-- Legacy compat: hidden inputs that legacy addListItem() targets -->
+        <input type="hidden" id="whiteListInput">
+        <input type="hidden" id="blackListInput">
+      </div>
+
+      <!-- ============ SYNC TAB ============ -->
+      <div class="settings-pane" data-settings-pane="sync">
+        <div class="setting-group">
+          <h3>Подключение устройств</h3>
+          <p class="setting-hint">Привяжите ещё одно устройство — данные синхронизируются мгновенно.</p>
+          <button class="btn" id="generateQR">Подключить устройство (QR-код)</button>
+          <button class="btn" id="showKey">Показать ключ доступа</button>
+          <button class="btn btn-add" id="scanQR">Отсканировать QR-код</button>
+          <button class="btn" id="enterKey">Ввести ключ доступа</button>
+        </div>
+        <div class="setting-group" id="qrSection" style="display: none;">
+          <div id="qrcode"></div>
+          <p class="key-display" id="keyDisplay"></p>
+        </div>
+        <div class="setting-group" id="scanQRSection" style="display: none;">
+          <p style="text-align: center; margin-bottom: 12px; color: var(--txt-dim);">Наведите камеру на QR-код</p>
+          <video id="qrVideo" style="width: 100%; border-radius: 12px; display: block;"></video>
+          <canvas id="qrCanvas" style="display: none;"></canvas>
+        </div>
+        <div class="setting-group" id="keyInputSection" style="display: none;">
+          <input type="text" id="keyInput" placeholder="Введите ключ доступа">
+          <button class="btn" id="connectKey">Подключиться</button>
+        </div>
+      </div>
+
+      <!-- ============ DATA TAB ============ -->
+      <div class="settings-pane" data-settings-pane="data">
+        <div class="setting-group">
+          <h3>Резервные копии</h3>
+          <p class="setting-hint">Перенесите старые данные из браузера в серверную БД и сохраните копии локально.</p>
+          <button class="btn" id="migrateBtn">Перенести данные из браузера в базу</button>
+          <button class="btn" data-action="export-csv">Экспорт в CSV</button>
+          <button class="btn" data-action="export-json">Экспорт в JSON</button>
+          <button class="btn" data-action="import-json">Импорт JSON</button>
+        </div>
+      </div>
+
+      <!-- ============ ADVANCED TAB ============ -->
+      <div class="settings-pane" data-settings-pane="advanced">
+        <div class="setting-group" id="autostartSection" style="display: none;">
+          <h3>Автозапуск</h3>
+          <label class="checkbox-label">
+            <input type="checkbox" id="autostartCheckbox">
+            <span>Запускать вместе с Windows</span>
+          </label>
+          <p class="setting-hint">Доступно только в Desktop-версии (Electron).</p>
+        </div>
+        <div class="setting-group">
+          <h3>О программе</h3>
+          <p class="setting-hint">LinkTime · хронограф рабочего времени с автоматическим определением активности через Desktop Agent.</p>
+        </div>
+
+        <div class="setting-group danger-zone">
+          <h3 class="danger-zone-title">Опасная зона</h3>
+          <p class="setting-hint">Удаляет все ваши данные — задачи, проекты, доски, аватар, участие в командах. Действие необратимое.</p>
+          <button class="btn btn-danger" data-action="delete-account">Удалить аккаунт целиком</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
 </div>
 
-<div class="setting-group">
-<h3>🟢 Рабочие приложения</h3>
-<p class="setting-hint">Приложения, в которых вы работаете</p>
-<div class="list-editor" id="whiteListEditor">
-<div class="list-items" id="whiteListItems"></div>
-<div class="list-add">
-<input type="text" id="whiteListInput" placeholder="Название приложения...">
-<button class="btn btn-add" onclick="addListItem('white')">+</button>
-</div>
-</div>
-</div>
-
-<div class="setting-group">
-<h3>🔴 Отвлекающие приложения</h3>
-<p class="setting-hint">Приложения, которые отвлекают от работы</p>
-<div class="list-editor" id="blackListEditor">
-<div class="list-items" id="blackListItems"></div>
-<div class="list-add">
-<input type="text" id="blackListInput" placeholder="Название приложения...">
-<button class="btn btn-add" onclick="addListItem('black')">+</button>
-</div>
-</div>
-</div>
-</div>
-</div>
+<!-- ============ PROCESS PICKER MODAL ============ -->
+<div class="modal" id="processPickerModal">
+  <div class="modal-content process-picker">
+    <div class="modal-header">
+      <h2>Все процессы системы</h2>
+      <button class="close-btn" id="processPickerClose">×</button>
+    </div>
+    <div class="process-picker-toolbar">
+      <input type="text" id="processPickerSearch" placeholder="Поиск по имени, заголовку, пути…" autocomplete="off">
+      <button class="process-picker-refresh" id="processPickerRefresh" title="Обновить список">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      </button>
+    </div>
+    <div class="process-picker-meta" id="processPickerMeta">Загружаю список процессов…</div>
+    <div class="process-picker-list" id="processPickerList"></div>
+  </div>
 </div>
 
 <!-- Toast notification -->
 <div class="toast" id="toast"></div>
 
-<!-- Модальное окно: профиль -->
+<!-- ============ PROFILE MODAL — hero avatar + inline-edit fields ============ -->
 <div class="modal" id="profileModal">
-<div class="modal-content">
-  <div class="modal-header">
-    <h2>Мой профиль</h2>
-    <button class="close-btn" id="closeProfile">×</button>
+  <div class="modal-content profile-modal">
+    <div class="modal-header">
+      <h2>Профиль</h2>
+      <button class="close-btn" id="closeProfile">×</button>
+    </div>
+
+    <div class="modal-body profile-body">
+
+      <!-- HERO: круглый аватар 96px с overlay "Изменить" на hover -->
+      <div class="profile-hero">
+        <div class="profile-avatar-big">
+          <div class="profile-avatar-img" id="profileAvatarPreview">
+            <span id="profileAvatarLetter">?</span>
+          </div>
+          <button type="button" class="profile-avatar-overlay" data-action="pick-avatar" title="Изменить аватар">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            <span>Изменить</span>
+          </button>
+          <button type="button" class="profile-avatar-remove" id="removeAvatar" title="Удалить аватар" style="display:none">×</button>
+          <input type="file" id="avatarInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+        </div>
+      </div>
+
+      <!-- ID pill с кнопкой "Копировать" -->
+      <div class="profile-id-pill">
+        <div class="profile-id-pill-row">
+          <div class="profile-id-pill-info">
+            <div class="profile-id-pill-label">ВАШ ID</div>
+            <div class="profile-id-pill-value" id="profileUserId">—</div>
+          </div>
+          <button type="button" class="profile-id-pill-copy" data-action="copy-user-id" title="Скопировать ID">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            <span>Копировать</span>
+          </button>
+        </div>
+        <p class="profile-id-pill-hint">Поделитесь этим кодом — по нему вас пригласят в команду.</p>
+      </div>
+
+      <!-- USERNAME — inline editable -->
+      <div class="profile-field" data-field="username">
+        <div class="profile-field-label">Имя</div>
+        <div class="profile-field-view">
+          <span class="profile-field-text" id="profileUsernameDisplay">—</span>
+          <button type="button" class="profile-field-edit-btn" data-action="edit-username" title="Изменить">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        </div>
+        <div class="profile-field-edit" hidden>
+          <input type="text" id="profileUsername" placeholder="username" maxlength="20" autocomplete="off">
+          <button type="button" class="btn-small btn-add" id="saveUsername">Сохранить</button>
+          <button type="button" class="btn-small btn-cancel" data-action="cancel-edit-username">Отмена</button>
+        </div>
+        <p class="profile-field-hint" id="usernameHint"></p>
+      </div>
+
+      <!-- EMAIL — inline editable -->
+      <div class="profile-field" data-field="email">
+        <div class="profile-field-label">Email <span class="profile-field-label-mini">для восстановления</span></div>
+        <div class="profile-field-view">
+          <span class="profile-field-text profile-field-text-empty" id="profileEmailDisplay">не указан</span>
+          <button type="button" class="profile-field-edit-btn" data-action="edit-email" title="Изменить">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        </div>
+        <div class="profile-field-edit" hidden>
+          <input type="email" id="profileEmail" placeholder="you@example.com" autocomplete="email">
+          <button type="button" class="btn-small btn-add" id="saveEmail">Сохранить</button>
+          <button type="button" class="btn-small btn-cancel" data-action="cancel-edit-email">Отмена</button>
+        </div>
+        <p class="profile-field-hint">Опционально. Если потеряете доступ — поможет восстановить профиль.</p>
+      </div>
+
+    </div>
   </div>
-  <div class="modal-body">
-    <div class="profile-avatar-section">
-      <div class="profile-avatar-preview" id="profileAvatarPreview">
-        <span id="profileAvatarLetter">?</span>
-      </div>
-      <label class="profile-avatar-upload">
-        <input type="file" id="avatarInput" accept="image/*" style="display:none">
-        <button class="btn btn-small" onclick="document.getElementById('avatarInput').click(); return false;">Выбрать фото</button>
-      </label>
-      <button class="btn btn-small btn-cancel" id="removeAvatar" style="display:none">Удалить</button>
-    </div>
-    <div class="profile-id-block">
-      <span class="profile-label">Ваш ID <small>(нельзя изменить)</small></span>
-      <div class="profile-id-value" id="profileUserId">—</div>
-    </div>
-    <div class="setting-group">
-      <h3>Имя пользователя</h3>
-      <div class="profile-field-row">
-        <input type="text" id="profileUsername" placeholder="username" maxlength="20">
-        <button class="btn btn-small btn-add" id="saveUsername">Сохранить</button>
-      </div>
-      <p class="setting-hint" id="usernameHint"></p>
-    </div>
-    <div class="setting-group">
-      <h3>Email <span style="font-size:0.8em;opacity:0.6">(необязательно)</span></h3>
-      <div class="profile-field-row">
-        <input type="email" id="profileEmail" placeholder="you@example.com">
-        <button class="btn btn-small btn-add" id="saveEmail">Сохранить</button>
-      </div>
-      <p class="setting-hint">При указании почты восстановить профиль можно без участия администрации.</p>
-    </div>
-  </div>
-</div>
 </div>
 
-<!-- Модальное окно: пригласить -->
+<!-- ============ INVITE MODAL — share-id + live lookup + preview ============ -->
 <div class="modal" id="inviteModal">
-<div class="modal-content">
-  <div class="modal-header">
-    <h2>Пригласить в команду</h2>
-    <button class="close-btn" id="closeInvite">×</button>
-  </div>
-  <div class="modal-body">
-    <div class="setting-group">
-      <h3>Найти пользователя</h3>
-      <p class="setting-hint">Введите ID (6 символов) или имя пользователя</p>
-      <div class="profile-field-row">
-        <input type="text" id="inviteQuery" placeholder="ID или username">
-        <button class="btn btn-small btn-add" id="sendInviteBtn">Пригласить</button>
+  <div class="modal-content invite-modal">
+    <div class="modal-header">
+      <h2>Пригласить в команду</h2>
+      <button class="close-btn" id="closeInvite">×</button>
+    </div>
+
+    <div class="modal-body invite-body">
+
+      <!-- ШЕРИНГ МОЕГО ID — основной способ -->
+      <div class="invite-share">
+        <div class="invite-share-label">Поделитесь своим ID — пусть пригласят вас</div>
+        <div class="invite-share-row">
+          <div class="invite-share-id" id="inviteShareId">—</div>
+          <button type="button" class="invite-share-copy" data-action="copy-share-id">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            <span>Копировать</span>
+          </button>
+        </div>
       </div>
-      <p class="setting-hint" id="inviteHint"></p>
+
+      <div class="invite-divider"><span>ИЛИ</span></div>
+
+      <!-- ПОИСК С PREVIEW -->
+      <div class="invite-lookup">
+        <label class="invite-lookup-label">Найти и пригласить</label>
+        <div class="invite-lookup-input-wrap">
+          <input type="text" id="inviteQuery" placeholder="ID (6 символов) или @username" autocomplete="off" spellcheck="false">
+          <div class="invite-lookup-spinner" id="inviteLookupSpinner" hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12a9 9 0 11-6.219-8.56"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- PREVIEW карточка найденного пользователя -->
+        <div class="invite-preview" id="invitePreview" hidden>
+          <div class="invite-preview-avatar" id="invitePreviewAvatar">?</div>
+          <div class="invite-preview-info">
+            <div class="invite-preview-name" id="invitePreviewName">—</div>
+            <div class="invite-preview-id" id="invitePreviewIdText">—</div>
+          </div>
+          <div class="invite-preview-check">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+        </div>
+
+        <p class="invite-hint" id="inviteHint"></p>
+
+        <button type="button" class="btn invite-send-btn" id="sendInviteBtn" disabled>
+          Отправить приглашение
+        </button>
+      </div>
+
     </div>
   </div>
-</div>
 </div>
 
 <!-- Модальное окно: подтверждение шеринга времени -->
@@ -420,17 +656,17 @@
 
 <!-- Mobile bottom navigation -->
 <nav class="mobile-nav" id="mobileNav">
-<button class="mobile-nav-item active" data-tab="timer">
-<span class="mobile-nav-icon">⏱</span>
-<span class="mobile-nav-label">Таймер</span>
+<button class="mobile-nav-item active" data-tab="timer" aria-label="Дашборд">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+<span class="mobile-nav-label">Дашборд</span>
 </button>
-<button class="mobile-nav-item" data-tab="tasks">
-<span class="mobile-nav-icon">📋</span>
-<span class="mobile-nav-label">Задачи</span>
+<button class="mobile-nav-item" id="mobileBoardBtn" aria-label="Доска">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="6" height="18" rx="1"/><rect x="9" y="3" width="6" height="12" rx="1"/><rect x="16" y="3" width="6" height="15" rx="1"/></svg>
+<span class="mobile-nav-label">Доска</span>
 </button>
-<button class="mobile-nav-item" data-tab="calendar">
-<span class="mobile-nav-icon">📅</span>
-<span class="mobile-nav-label">Календарь</span>
+<button class="mobile-nav-item" id="mobileSettingsBtn" aria-label="Настройки">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+<span class="mobile-nav-label">Настройки</span>
 </button>
 </nav>
 
@@ -547,8 +783,8 @@
           <label>Цвет метки</label>
           <div class="color-picker" id="cardColorPicker">
             <button class="color-dot active" data-color="" style="background:rgba(255,255,255,0.15);border:2px dashed rgba(255,255,255,0.3)" title="Без цвета">✕</button>
-            <button class="color-dot" data-color="#6366f1" style="background:#6366f1"></button>
-            <button class="color-dot" data-color="#8b5cf6" style="background:#8b5cf6"></button>
+            <button class="color-dot" data-color="#ff6b1f" style="background:#ff6b1f"></button>
+            <button class="color-dot" data-color="#7fb069" style="background:#7fb069"></button>
             <button class="color-dot" data-color="#ec4899" style="background:#ec4899"></button>
             <button class="color-dot" data-color="#ef4444" style="background:#ef4444"></button>
             <button class="color-dot" data-color="#f97316" style="background:#f97316"></button>
@@ -568,7 +804,30 @@
 
 <!-- ===== BOARD IFRAME OVERLAY ===== -->
 <div id="board-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:#0b0d14;animation:boardFadeIn .3s ease">
-  <iframe id="board-iframe" style="width:100%;height:100%;border:none" src="about:blank"></iframe>
+  <!-- Minimal titlebar — показывается только в Electron когда открыта доска -->
+  <div class="board-titlebar" id="boardTitlebar">
+    <button class="board-titlebar-back" id="boardTitlebarBack" title="Назад на дашборд">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M5 12l7 7M5 12l7-7"/></svg>
+    </button>
+    <div class="board-titlebar-logo">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="6" height="18" rx="1"/><rect x="9" y="3" width="6" height="12" rx="1"/><rect x="16" y="3" width="6" height="15" rx="1"/></svg>
+      <span>Доска</span>
+    </div>
+    <div class="board-titlebar-drag"></div>
+    <div class="board-titlebar-controls">
+      <button class="winctl-btn" id="boardWinMin" title="Свернуть" aria-label="Свернуть">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </button>
+      <button class="winctl-btn" id="boardWinMax" title="Развернуть" aria-label="Развернуть">
+        <svg class="winctl-icon-max" width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.2" rx="0.5"/></svg>
+        <svg class="winctl-icon-restore" width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="2.5" y="3.5" width="6" height="6" stroke="currentColor" stroke-width="1.2" rx="0.5"/><path d="M4 3.5V2.5h6v6H9" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button class="winctl-btn winctl-close" id="boardWinClose" title="Закрыть приложение" aria-label="Закрыть">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <iframe id="board-iframe" style="border:none" src="about:blank"></iframe>
 </div>
 <style>
 @keyframes boardFadeIn{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
@@ -614,789 +873,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="app.js"></script>
-<script>
-// === SIDEBAR NAVIGATION ===
-(function initSidebar() {
-  const sidebarItems = document.querySelectorAll('[data-sidebar-tab]');
-  const sections = document.querySelectorAll('[data-tab-content]');
-  const headerTitle = document.querySelector('header h1');
-  const tabNames = { timer: 'Дашборд', tasks: 'Задачи', calendar: 'Календарь' };
-
-  function switchSidebarTab(tabName) {
-    sidebarItems.forEach(item => {
-      item.classList.toggle('active', item.dataset.sidebarTab === tabName);
-    });
-    sections.forEach(sec => {
-      sec.style.display = sec.dataset.tabContent === tabName ? '' : 'none';
-    });
-    if (tabName === 'timer') {
-      sections.forEach(sec => sec.style.display = '');
-    }
-    if (headerTitle && tabNames[tabName]) {
-      headerTitle.textContent = tabNames[tabName];
-    }
-  }
-
-  sidebarItems.forEach(item => {
-    item.addEventListener('click', () => switchSidebarTab(item.dataset.sidebarTab));
-  });
-
-  // Mobile sidebar toggle via burger
-  const burgerBtn = document.getElementById('burgerBtn');
-  const sidebar = document.getElementById('sidebar');
-  if (burgerBtn && sidebar) {
-    burgerBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      sidebar.classList.toggle('open');
-    });
-    document.addEventListener('click', (e) => {
-      if (sidebar.classList.contains('open') && !sidebar.contains(e.target)) {
-        sidebar.classList.remove('open');
-      }
-    });
-  }
-})();
-
-// === LOADING SCREEN ===
-(function initLoading() {
-  const loader = document.getElementById('loadingScreen');
-  if (!loader) return;
-  window.addEventListener('load', () => {
-    setTimeout(() => {
-      loader.classList.add('fade-out');
-      setTimeout(() => loader.remove(), 400);
-    }, 1200);
-  });
-})();
-
-// === PROJECT TREE ===
-(function initProjectTree() {
-  const tree = document.getElementById('ptTree');
-  if (!tree) return;
-
-  const addBtn = document.getElementById('ptAddBtn');
-  const addDropdown = document.getElementById('ptAddDropdown');
-  const addProjectOpt = document.getElementById('ptAddProject');
-  const addTaskOpt = document.getElementById('ptAddTask');
-  const createBox = document.getElementById('ptCreate');
-  const createInput = document.getElementById('ptCreateInput');
-  const createSave = document.getElementById('ptCreateSave');
-  const createCancel = document.getElementById('ptCreateCancel');
-  const orphanSection = document.getElementById('ptOrphanSection');
-  const orphanList = document.getElementById('ptOrphanList');
-
-  const sessionKey = localStorage.getItem('sessionKey') || 'default';
-  let projects = [];
-  let tasks = [];
-  let createMode = null;
-  let createProjectId = null;
-  let openProjects = JSON.parse(localStorage.getItem('pt_open') || '{}');
-  const colors = ['#6366f1','#ec4899','#f59e0b','#10b981','#06b6d4','#8b5cf6','#ef4444','#f97316'];
-
-  async function api(method, path, body) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
-    if (body) opts.body = JSON.stringify(body);
-    const res = await fetch('/api/' + path, opts);
-    return res.json();
-  }
-
-  async function loadData() {
-    try {
-      const data = await api('GET', 'projects/' + sessionKey);
-      projects = data.projects || [];
-      tasks = data.tasks || [];
-      window._ptData = { projects, tasks };
-    } catch (e) {
-      projects = []; tasks = [];
-      window._ptData = { projects: [], tasks: [] };
-    }
-    render();
-  }
-
-  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-
-  // Track last completion time for elapsed calc
-  var lastCheckTime = null;
-  var trackedTimerStart = null; // tracks which timer session we're in
-
-  function fmtDur(ms) {
-    if (!ms || ms <= 0) return '';
-    var s = Math.floor(ms / 1000);
-    if (s < 60) return s + 'с';
-    var m = Math.floor(s / 60);
-    if (m < 60) return m + 'м ' + (s % 60) + 'с';
-    var h = Math.floor(m / 60);
-    return h + 'ч ' + (m % 60) + 'м';
-  }
-
-  function fmtDate(d) {
-    if (!d) return '';
-    var today = new Date().toISOString().slice(0,10);
-    if (d === today) return 'Сегодня';
-    var parts = d.split('-');
-    var months = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
-    return +parts[2] + ' ' + months[+parts[1]-1];
-  }
-
-  function renderTask(t, i) {
-    var timeHtml = t.time_spent ? '<span class="pt-task-time">' + fmtDur(t.time_spent) + '</span>' : '';
-    var dateHtml = '';
-    if (t.due_date) {
-      var isOverdue = !t.completed && t.due_date < new Date().toISOString().slice(0,10);
-      dateHtml = '<span class="pt-task-date' + (isOverdue ? ' overdue' : '') + '">' + fmtDate(t.due_date) + '</span>';
-    }
-    return '<div class="pt-task' + (t.completed ? ' done' : '') + '" data-task-id="' + t.id + '">' +
-      '<button class="pt-task-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></button>' +
-      '<span class="pt-task-text pt-task-open">' + esc(t.text) + '</span>' +
-      dateHtml + timeHtml +
-      '<button class="pt-task-del" title="Удалить"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>' +
-    '</div>';
-  }
-
-  function buildProjectHTML(p, pTasks, doneCount) {
-    var isOpen = openProjects[p.id];
-    var tasksHtml = pTasks.map(function(t, ti) { return renderTask(t, ti); }).join('');
-    if (!pTasks.length) tasksHtml = '<div class="pt-add-inline pt-empty-hint" style="opacity:0.5;cursor:default;padding-left:30px;">Нет задач</div>';
-    return '<div class="pt-project' + (isOpen ? ' open' : '') + '" data-project-id="' + p.id + '">' +
-      '<div class="pt-project-head">' +
-        '<svg class="pt-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>' +
-        '<span class="pt-project-dot" style="background:' + p.color + '"></span>' +
-        '<span class="pt-project-name">' + esc(p.name) + '</span>' +
-        '<span class="pt-project-count">' + doneCount + '/' + pTasks.length + '</span>' +
-        '<div class="pt-project-actions">' +
-          '<button class="pt-project-action pt-add-task-in" title="Добавить задачу"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>' +
-          '<button class="pt-project-action danger pt-del-project" title="Удалить"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>' +
-        '</div>' +
-      '</div>' +
-      '<div class="pt-tasks">' + tasksHtml + '</div>' +
-    '</div>';
-  }
-
-  function render() {
-    // === DIFF RENDER: обновляем только изменившиеся элементы ===
-    var existingProjectIds = Array.from(tree.querySelectorAll('.pt-project')).map(function(el) { return +el.dataset.projectId; });
-    var newProjectIds = projects.map(function(p) { return p.id; });
-
-    // Удаляем проекты которых больше нет
-    existingProjectIds.forEach(function(pid) {
-      if (newProjectIds.indexOf(pid) === -1) {
-        var el = tree.querySelector('.pt-project[data-project-id="' + pid + '"]');
-        if (el) el.remove();
-      }
-    });
-
-    // Обновляем/добавляем проекты
-    projects.forEach(function(p, pi) {
-      var pTasks = tasks.filter(function(t) { return t.project_id === p.id; });
-      var doneCount = pTasks.filter(function(t) { return t.completed; }).length;
-      var existing = tree.querySelector('.pt-project[data-project-id="' + p.id + '"]');
-
-      if (!existing) {
-        // Новый проект — создаём и анимируем
-        var div = document.createElement('div');
-        div.innerHTML = buildProjectHTML(p, pTasks, doneCount);
-        var el = div.firstElementChild;
-        el.classList.add('animate-in');
-        el.addEventListener('animationend', function() { el.classList.remove('animate-in'); }, { once: true });
-        tree.appendChild(el);
-      } else {
-        // Обновляем счётчик и цвет без пересоздания
-        var countEl = existing.querySelector('.pt-project-count');
-        if (countEl) countEl.textContent = doneCount + '/' + pTasks.length;
-        var dotEl = existing.querySelector('.pt-project-dot');
-        if (dotEl) dotEl.style.background = p.color;
-        var nameEl = existing.querySelector('.pt-project-name');
-        if (nameEl && nameEl.textContent !== p.name) nameEl.textContent = p.name;
-        // Открытость
-        if (openProjects[p.id]) existing.classList.add('open');
-        // Диффим задачи внутри проекта
-        diffTasks(existing.querySelector('.pt-tasks'), pTasks);
-      }
-    });
-
-    // Переупорядочиваем проекты только если порядок изменился
-    var children = Array.from(tree.querySelectorAll('.pt-project'));
-    var needsReorder = projects.some(function(p, i) { return !children[i] || +children[i].dataset.projectId !== p.id; });
-    if (needsReorder) {
-      projects.forEach(function(p) {
-        var el = tree.querySelector('.pt-project[data-project-id="' + p.id + '"]');
-        if (el) tree.appendChild(el);
-      });
-    }
-
-    // Orphan tasks
-    var orphans = tasks.filter(function(t) { return !t.project_id; });
-    if (orphans.length) {
-      orphanSection.style.display = '';
-      diffTasks(orphanList, orphans);
-    } else {
-      orphanSection.style.display = 'none';
-      orphanList.innerHTML = '';
-    }
-  }
-
-  function diffTasks(container, newTasks) {
-    var existingIds = Array.from(container.querySelectorAll('.pt-task')).map(function(el) { return +el.dataset.taskId; });
-    var newIds = newTasks.map(function(t) { return t.id; });
-
-    // Удаляем отсутствующие
-    existingIds.forEach(function(tid) {
-      if (newIds.indexOf(tid) === -1) {
-        var el = container.querySelector('.pt-task[data-task-id="' + tid + '"]');
-        if (el) el.remove();
-      }
-    });
-
-    // Убираем пустую подсказку если есть задачи
-    if (newTasks.length) {
-      var hint = container.querySelector('.pt-empty-hint');
-      if (hint) hint.remove();
-    }
-
-    // Обновляем/добавляем задачи
-    newTasks.forEach(function(t, i) {
-      var existing = container.querySelector('.pt-task[data-task-id="' + t.id + '"]');
-      if (!existing) {
-        var div = document.createElement('div');
-        div.innerHTML = renderTask(t, i);
-        var el = div.firstElementChild;
-        el.classList.add('animate-in');
-        el.addEventListener('animationend', function() { el.classList.remove('animate-in'); }, { once: true });
-        container.appendChild(el);
-      } else {
-        // Обновляем состояние без пересоздания
-        existing.classList.toggle('done', !!t.completed);
-        var txt = existing.querySelector('.pt-task-text');
-        if (txt && txt.textContent !== t.text) txt.textContent = t.text;
-        // Обновляем время
-        var timeEl = existing.querySelector('.pt-task-time');
-        var newTime = t.time_spent ? fmtDur(t.time_spent) : '';
-        if (newTime && !timeEl) {
-          var span = document.createElement('span');
-          span.className = 'pt-task-time';
-          span.textContent = newTime;
-          existing.insertBefore(span, existing.querySelector('.pt-task-del'));
-        } else if (!newTime && timeEl) {
-          timeEl.remove();
-        } else if (timeEl && timeEl.textContent !== newTime) {
-          timeEl.textContent = newTime;
-        }
-        // Обновляем дату
-        var dateEl = existing.querySelector('.pt-task-date');
-        var newDate = t.due_date ? fmtDate(t.due_date) : '';
-        var isOverdue = !t.completed && t.due_date && t.due_date < new Date().toISOString().slice(0,10);
-        if (newDate && !dateEl) {
-          var dspan = document.createElement('span');
-          dspan.className = 'pt-task-date' + (isOverdue ? ' overdue' : '');
-          dspan.textContent = newDate;
-          existing.insertBefore(dspan, existing.querySelector('.pt-task-del'));
-        } else if (!newDate && dateEl) {
-          dateEl.remove();
-        } else if (dateEl) {
-          dateEl.textContent = newDate;
-          dateEl.classList.toggle('overdue', !!isOverdue);
-        }
-      }
-    });
-
-    // Переупорядочиваем задачи только если порядок изменился
-    var taskChildren = Array.from(container.querySelectorAll('.pt-task'));
-    var taskNeedsReorder = newTasks.some(function(t, i) { return !taskChildren[i] || +taskChildren[i].dataset.taskId !== t.id; });
-    if (taskNeedsReorder) {
-      newTasks.forEach(function(t) {
-        var el = container.querySelector('.pt-task[data-task-id="' + t.id + '"]');
-        if (el) container.appendChild(el);
-      });
-    }
-
-    // Добавляем пустую подсказку если задач нет
-    if (!newTasks.length && !container.querySelector('.pt-empty-hint')) {
-      container.innerHTML = '<div class="pt-add-inline pt-empty-hint" style="opacity:0.5;cursor:default;padding-left:30px;">Нет задач</div>';
-    }
-  }
-
-  function bindEvents() {}
-
-  // === EVENT DELEGATION (один раз навсегда) ===
-  function initDelegation() {
-    // Клик по шапке проекта (раскрыть/свернуть)
-    tree.addEventListener('click', async function(e) {
-      var head = e.target.closest('.pt-project-head');
-      if (head && !e.target.closest('.pt-project-action')) {
-        var proj = head.closest('.pt-project');
-        var pid = +proj.dataset.projectId;
-        proj.classList.toggle('open');
-        openProjects[pid] = proj.classList.contains('open');
-        localStorage.setItem('pt_open', JSON.stringify(openProjects));
-        return;
-      }
-
-      // Добавить задачу в проект
-      var addTaskBtn = e.target.closest('.pt-add-task-in');
-      if (addTaskBtn) {
-        e.stopPropagation();
-        var pid = +addTaskBtn.closest('.pt-project').dataset.projectId;
-        showCreate('task-in-project', pid);
-        return;
-      }
-
-      // Удалить проект
-      var delProjBtn = e.target.closest('.pt-del-project');
-      if (delProjBtn) {
-        e.stopPropagation();
-        var proj = delProjBtn.closest('.pt-project');
-        var pid = +proj.dataset.projectId;
-        proj.classList.add('removing');
-        proj.addEventListener('animationend', async function() {
-          await api('DELETE', 'projects/' + sessionKey + '/' + pid);
-          await loadData();
-        }, { once: true });
-        return;
-      }
-    });
-
-    // Делегация на весь документ для задач (в проектах и orphan)
-    document.addEventListener('click', async function(e) {
-      // Чекбокс задачи
-      var checkBtn = e.target.closest('.pt-task-check');
-      if (checkBtn) {
-        var taskEl = checkBtn.closest('.pt-task');
-        var tid = +taskEl.dataset.taskId;
-        var task = tasks.find(function(t) { return t.id === tid; });
-        if (!task) return;
-        var elapsed = 0;
-        if (!task.completed) {
-          var now = Date.now();
-          var st = (typeof state !== 'undefined') ? state : window.state;
-          var timerOn = st && st.timerRunning && st.currentSessionStart;
-          if (!timerOn) { lastCheckTime = null; trackedTimerStart = null; }
-          if (timerOn && trackedTimerStart !== st.currentSessionStart) {
-            trackedTimerStart = st.currentSessionStart;
-            lastCheckTime = st.currentSessionStart;
-          }
-          if (lastCheckTime && timerOn) elapsed = Math.round(now - lastCheckTime);
-          lastCheckTime = now;
-        }
-        var newCompleted = !task.completed;
-        await api('PATCH', 'tasks/' + sessionKey + '/' + tid + '/toggle', { completed: newCompleted, timeSpent: newCompleted ? elapsed : 0 });
-        await loadData();
-        return;
-      }
-
-      // Открыть детали задачи
-      var openSpan = e.target.closest('.pt-task-open');
-      if (openSpan) {
-        var tid = +openSpan.closest('.pt-task').dataset.taskId;
-        openDetail(tid);
-        return;
-      }
-
-      // Удалить задачу
-      var delBtn = e.target.closest('.pt-task-del');
-      if (delBtn) {
-        var taskEl = delBtn.closest('.pt-task');
-        var tid = +taskEl.dataset.taskId;
-        taskEl.classList.add('removing');
-        taskEl.addEventListener('animationend', async function() {
-          await api('DELETE', 'tasks/' + sessionKey + '/' + tid);
-          await loadData();
-        }, { once: true });
-        return;
-      }
-    });
-  }
-  initDelegation();
-
-  addBtn.addEventListener('click', function(e) {
-    e.stopPropagation();
-    addDropdown.classList.toggle('open');
-  });
-
-  addProjectOpt.addEventListener('click', function() {
-    addDropdown.classList.remove('open');
-    showCreate('project');
-  });
-
-  addTaskOpt.addEventListener('click', function() {
-    addDropdown.classList.remove('open');
-    showCreate('task');
-  });
-
-  function showCreate(mode, projectId) {
-    createMode = mode;
-    createProjectId = projectId || null;
-    createBox.style.display = 'flex';
-    createInput.placeholder = mode === 'project' ? 'Название проекта...' : 'Название задачи...';
-    createInput.value = '';
-    createInput.focus();
-  }
-
-  function hideCreate() {
-    createBox.style.display = 'none';
-    createMode = null;
-    createProjectId = null;
-  }
-
-  async function doCreate() {
-    var val = createInput.value.trim();
-    if (!val) return;
-    if (createMode === 'project') {
-      var color = colors[projects.length % colors.length];
-      await api('POST', 'projects/' + sessionKey, { name: val, color: color });
-    } else {
-      await api('POST', 'tasks/' + sessionKey, { text: val, projectId: createProjectId });
-      if (createProjectId) openProjects[createProjectId] = true;
-    }
-    hideCreate();
-    await loadData();
-  }
-
-  createSave.addEventListener('click', doCreate);
-  createCancel.addEventListener('click', hideCreate);
-  createInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') doCreate();
-    if (e.key === 'Escape') hideCreate();
-  });
-
-  document.addEventListener('click', function(e) {
-    if (!addBtn.contains(e.target) && !addDropdown.contains(e.target)) {
-      addDropdown.classList.remove('open');
-    }
-  });
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') addDropdown.classList.remove('open');
-  });
-
-  // === DETAIL PANEL ===
-  var detailPanel = document.getElementById('ptDetail');
-  var detailBack = document.getElementById('ptDetailBack');
-  var detailName = document.getElementById('ptDetailName');
-  var detailDesc = document.getElementById('ptDetailDesc');
-  var detailDate = document.getElementById('ptDetailDate');
-  var detailTimeStart = document.getElementById('ptDetailTimeStart');
-  var detailTimeEnd = document.getElementById('ptDetailTimeEnd');
-  var detailTimeBadge = document.getElementById('ptDetailTimeBadge');
-  var detailMediaList = document.getElementById('ptDetailMediaList');
-  var detailFileInput = document.getElementById('ptDetailFileInput');
-  var detailSave = document.getElementById('ptDetailSave');
-  var currentDetailId = null;
-  var detailMedia = [];
-
-  async function openDetail(taskId) {
-    currentDetailId = taskId;
-    var task = tasks.find(function(t) { return t.id === taskId; });
-    if (!task) return;
-    // Try to load full data from server
-    try {
-      var full = await api('GET', 'tasks/' + sessionKey + '/' + taskId);
-      if (full && full.id) task = full;
-    } catch(e) {}
-    detailName.value = task.text || '';
-    detailDesc.value = task.description || '';
-    detailDate.value = task.due_date || '';
-    detailTimeStart.value = task.time_start || '';
-    detailTimeEnd.value = task.time_end || '';
-    detailTimeBadge.textContent = task.time_spent ? fmtDur(task.time_spent) : '';
-    detailMedia = task.media ? (typeof task.media === 'string' ? JSON.parse(task.media) : task.media) : [];
-    renderMedia();
-    detailPanel.style.display = 'flex';
-  }
-
-  function closeDetail() {
-    detailPanel.style.display = 'none';
-    currentDetailId = null;
-    detailMedia = [];
-  }
-
-  detailBack.addEventListener('click', closeDetail);
-
-  detailSave.addEventListener('click', async function() {
-    if (!currentDetailId) return;
-    // Save name if changed
-    var task = tasks.find(function(t) { return t.id === currentDetailId; });
-    var newName = detailName.value.trim();
-    if (task && newName && newName !== task.text) {
-      await api('PUT', 'tasks/' + sessionKey + '/' + currentDetailId, { text: newName, projectId: task.project_id });
-    }
-    // Save details
-    await api('PATCH', 'tasks/' + sessionKey + '/' + currentDetailId + '/details', {
-      description: detailDesc.value.trim(),
-      dueDate: detailDate.value || null,
-      timeStart: detailTimeStart.value || null,
-      timeEnd: detailTimeEnd.value || null,
-      media: detailMedia.length ? detailMedia : null
-    });
-    closeDetail();
-    await loadData();
-  });
-
-  // Media: file input handler
-  detailFileInput.addEventListener('change', function() {
-    var files = detailFileInput.files;
-    for (var i = 0; i < files.length; i++) {
-      (function(file) {
-        var reader = new FileReader();
-        reader.onload = function(e) {
-          detailMedia.push({
-            name: file.name,
-            type: file.type.startsWith('video') ? 'video' : 'image',
-            data: e.target.result
-          });
-          renderMedia();
-        };
-        reader.readAsDataURL(file);
-      })(files[i]);
-    }
-    detailFileInput.value = '';
-  });
-
-  function renderMedia() {
-    if (!detailMedia.length) {
-      detailMediaList.innerHTML = '<span style="font-size:0.72rem;color:var(--text-muted)">Нет вложений</span>';
-      return;
-    }
-    detailMediaList.innerHTML = detailMedia.map(function(m, i) {
-      var content = m.type === 'video'
-        ? '<video src="' + m.data + '" muted></video>'
-        : '<img src="' + m.data + '" alt="' + esc(m.name) + '" />';
-      return '<div class="pt-detail-media-item" data-idx="' + i + '">' + content +
-        '<button class="pt-detail-media-del" data-idx="' + i + '">&times;</button></div>';
-    }).join('');
-    detailMediaList.querySelectorAll('.pt-detail-media-item').forEach(function(item) {
-      item.addEventListener('click', function(e) {
-        if (e.target.closest('.pt-detail-media-del')) return;
-        openLightbox(detailMedia, +item.dataset.idx);
-      });
-    });
-    detailMediaList.querySelectorAll('.pt-detail-media-del').forEach(function(btn) {
-      btn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        detailMedia.splice(+btn.dataset.idx, 1);
-        renderMedia();
-      });
-    });
-  }
-
-  // Reset lastCheckTime when timer stops
-  var wasRunning = false;
-  setInterval(function() {
-    var st2 = (typeof state !== 'undefined') ? state : window.state;
-    if (!st2) return;
-    var running = st2.timerRunning;
-    // Timer stopped — clear everything
-    if (wasRunning && !running) {
-      lastCheckTime = null;
-      trackedTimerStart = null;
-    }
-    wasRunning = running;
-  }, 300);
-
-  loadData();
-})();
-
-// ===== MEDIA LIGHTBOX =====
-(function initLightbox() {
-  var lb = document.getElementById('mediaLightbox');
-  var lbMedia = document.getElementById('mlbMedia');
-  var lbCounter = document.getElementById('mlbCounter');
-  var lbClose = document.getElementById('mlbClose');
-  var lbPrev = document.getElementById('mlbPrev');
-  var lbNext = document.getElementById('mlbNext');
-  var lbOverlay = document.getElementById('mlbOverlay');
-  var items = [], cur = 0;
-
-  window.openLightbox = function(mediaArr, idx) {
-    items = mediaArr; cur = idx;
-    lb.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    show();
-  };
-
-  function show() {
-    var m = items[cur];
-    lbMedia.innerHTML = m.type === 'video'
-      ? '<video src="' + m.data + '" controls autoplay></video>'
-      : '<img src="' + m.data + '" />';
-    lbCounter.textContent = items.length > 1 ? (cur + 1) + ' / ' + items.length : '';
-    lbPrev.style.display = cur > 0 ? '' : 'none';
-    lbNext.style.display = cur < items.length - 1 ? '' : 'none';
-  }
-
-  function close() {
-    lb.style.display = 'none';
-    document.body.style.overflow = '';
-    lbMedia.innerHTML = '';
-    items = []; cur = 0;
-  }
-
-  lbClose.addEventListener('click', close);
-  lbOverlay.addEventListener('click', close);
-  lbPrev.addEventListener('click', function() { if (cur > 0) { cur--; show(); } });
-  lbNext.addEventListener('click', function() { if (cur < items.length - 1) { cur++; show(); } });
-  document.addEventListener('keydown', function(e) {
-    if (lb.style.display === 'none') return;
-    if (e.key === 'Escape') close();
-    if (e.key === 'ArrowLeft' && cur > 0) { cur--; show(); }
-    if (e.key === 'ArrowRight' && cur < items.length - 1) { cur++; show(); }
-  });
-})();
-// ===== SEARCH =====
-(function initSearch() {
-  const overlay   = document.getElementById('searchOverlay');
-  const backdrop  = document.getElementById('searchBackdrop');
-  const input     = document.getElementById('searchInput');
-  const results   = document.getElementById('searchResults');
-  const trigger   = document.getElementById('headerSearch');
-  let activeIdx   = -1;
-
-  function open() {
-    overlay.style.display = 'flex';
-    input.value = '';
-    results.innerHTML = '';
-    activeIdx = -1;
-    setTimeout(() => input.focus(), 30);
-  }
-  function close() {
-    overlay.style.display = 'none';
-    input.value = '';
-    results.innerHTML = '';
-  }
-
-  trigger.addEventListener('click', open);
-  backdrop.addEventListener('click', close);
-  document.addEventListener('keydown', function(e) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'f') { e.preventDefault(); open(); return; }
-    if (overlay.style.display === 'none') return;
-    if (e.key === 'Escape') { close(); return; }
-    const items = results.querySelectorAll('.search-item');
-    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); highlight(items); }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); highlight(items); }
-    if (e.key === 'Enter' && activeIdx >= 0 && items[activeIdx]) items[activeIdx].click();
-  });
-
-  function highlight(items) {
-    items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
-    if (items[activeIdx]) items[activeIdx].scrollIntoView({ block: 'nearest' });
-  }
-
-  function hl(text, q) {
-    if (!q) return escapeHTML(text);
-    const idx = text.toLowerCase().indexOf(q.toLowerCase());
-    if (idx === -1) return escapeHTML(text);
-    return escapeHTML(text.slice(0, idx)) + '<mark>' + escapeHTML(text.slice(idx, idx + q.length)) + '</mark>' + escapeHTML(text.slice(idx + q.length));
-  }
-  function escapeHTML(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-
-  input.addEventListener('input', function() {
-    const q = input.value.trim();
-    activeIdx = -1;
-    if (!q) { results.innerHTML = ''; return; }
-    render(q);
-  });
-
-  function render(q) {
-    const ql = q.toLowerCase();
-    let html = '';
-    let total = 0;
-
-    // --- Проекты ---
-    const ptData = window._ptData || { projects: [], tasks: [] };
-    const matchProjects = ptData.projects.filter(p => p.name.toLowerCase().includes(ql));
-    if (matchProjects.length) {
-      html += '<div class="search-group-label">Проекты</div>';
-      matchProjects.forEach(p => {
-        total++;
-        const taskCount = ptData.tasks.filter(t => t.project_id === p.id).length;
-        html += `<div class="search-item" data-action="project" data-id="${p.id}">
-          <div class="search-item-icon" style="background:${p.color}22;color:${p.color}">${p.icon || '📁'}</div>
-          <div class="search-item-body">
-            <div class="search-item-title">${hl(p.name, q)}</div>
-            <div class="search-item-sub">${taskCount} задач</div>
-          </div>
-          <span class="search-item-badge">Проект</span>
-        </div>`;
-      });
-    }
-
-    // --- Задачи ---
-    const matchTasks = ptData.tasks.filter(t => t.text.toLowerCase().includes(ql));
-    if (matchTasks.length) {
-      html += '<div class="search-group-label">Задачи</div>';
-      matchTasks.slice(0, 12).forEach(t => {
-        total++;
-        const proj = ptData.projects.find(p => p.id === t.project_id);
-        const sub = proj ? proj.name : 'Без проекта';
-        const done = t.completed ? 'opacity:0.5;text-decoration:line-through' : '';
-        html += `<div class="search-item" data-action="task" data-id="${t.id}" data-project-id="${t.project_id || ''}">
-          <div class="search-item-icon">${t.completed ? '✅' : '⬜'}</div>
-          <div class="search-item-body" style="${done}">
-            <div class="search-item-title">${hl(t.text, q)}</div>
-            <div class="search-item-sub">${escapeHTML(sub)}</div>
-          </div>
-          <span class="search-item-badge">${t.completed ? 'Готово' : 'Задача'}</span>
-        </div>`;
-      });
-    }
-
-    // --- Команда ---
-    const team = window.userTeam;
-    if (team && team.members) {
-      const matchMembers = team.members.filter(m => m.username.toLowerCase().includes(ql) || (m.user_id && m.user_id.toLowerCase().includes(ql)));
-      if (matchMembers.length) {
-        html += '<div class="search-group-label">Команда</div>';
-        matchMembers.forEach(m => {
-          total++;
-          const letter = m.username[0].toUpperCase();
-          html += `<div class="search-item" data-action="member" data-user-id="${m.user_id}">
-            <div class="search-item-icon" style="background:rgba(99,102,241,0.15);color:#818cf8;font-weight:700">${letter}</div>
-            <div class="search-item-body">
-              <div class="search-item-title">${hl(m.username, q)}</div>
-              <div class="search-item-sub">ID: ${m.user_id}${m.role === 'owner' ? ' · 👑 Глава' : ''}</div>
-            </div>
-            <span class="search-item-badge">Участник</span>
-          </div>`;
-        });
-      }
-    }
-
-    if (!total) {
-      html = `<div class="search-empty">Ничего не найдено по запросу «${escapeHTML(q)}»</div>`;
-    }
-    results.innerHTML = html;
-
-    // Навешиваем клики
-    results.querySelectorAll('.search-item').forEach(item => {
-      item.addEventListener('click', () => handleAction(item));
-    });
-  }
-
-  function handleAction(item) {
-    const action = item.dataset.action;
-    close();
-    if (action === 'project') {
-      // Переключаемся на вкладку задач и раскрываем проект
-      document.querySelector('[data-sidebar-tab="tasks"]')?.click();
-      const pid = +item.dataset.id;
-      setTimeout(() => {
-        const el = document.querySelector('.pt-project[data-project-id="' + pid + '"]');
-        if (el) { el.classList.add('open'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-      }, 100);
-    } else if (action === 'task') {
-      document.querySelector('[data-sidebar-tab="tasks"]')?.click();
-      const pid = item.dataset.projectId;
-      const tid = +item.dataset.id;
-      setTimeout(() => {
-        if (pid) {
-          const proj = document.querySelector('.pt-project[data-project-id="' + pid + '"]');
-          if (proj) proj.classList.add('open');
-        }
-        const el = document.querySelector('.pt-task[data-task-id="' + tid + '"]');
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
-    }
-    // member — просто закрываем, можно расширить
-  }
-})();
-</script>
+<script src="dashboard-init.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, powerMonitor } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, powerMonitor, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const WebSocket = require('ws');
@@ -10,7 +10,20 @@ app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder');
 
 // Конфигурация
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
-const WS_URL = 'wss://linktime.go-tit.ru';
+// WS_URL: всегда production по умолчанию.
+// Локальная разработка — только через явный LINKTIME_WS env или --ws= флаг.
+// NODE_ENV больше НЕ влияет на выбор сервера (раньше это был источник путаницы).
+const PRODUCTION_WS = 'wss://linktime.go-tit.ru';
+function resolveWsUrl() {
+    const envUrl = process.env.LINKTIME_WS;
+    if (envUrl) return envUrl;
+    const flagArg = process.argv.find(a => a.startsWith('--ws='));
+    if (flagArg) return flagArg.slice(5);
+    return PRODUCTION_WS;
+}
+const WS_URL = resolveWsUrl();
+console.log('[CONFIG] WS_URL =', WS_URL,
+    WS_URL === PRODUCTION_WS ? '(production)' : '(custom)');
 
 // Состояние приложения
 let mainWindow = null;
@@ -22,6 +35,7 @@ sessionKey: '',
 checkInterval: 5000,
 idleTimeout: 30000,
     autostart: false,
+    autoUpdate: true,
 whiteList: [
 'LinkTime',
 'Visual Studio Code',
@@ -65,6 +79,208 @@ let sessionKeySyncInterval = null;
 let idleCheckInterval = null;
 let isUserIdle = false;
 const IDLE_THRESHOLD = 30; // секунд бездействия до авто-паузы
+
+// === APPS TRACKER — rolling 10-min window of unique active apps ===
+const APPS_WINDOW_MS = 10 * 60 * 1000;
+const APPS_SNAPSHOT_INTERVAL = 15000;
+const appsTracker = new Map(); // key: lowercase process — value: {process, title, firstSeen, lastSeen, count, match}
+let appsSnapshotInterval = null;
+
+function classifyApp(process, title, exePath) {
+    // Matching is substring against any of: process name, window title, full exe path.
+    // Rule may also be an object {match, path?, label?} for richer entries.
+    const subject = ((process || '') + ' ' + (title || '') + ' ' + (exePath || '')).toLowerCase();
+
+    function ruleMatches(rule) {
+        if (!rule) return false;
+        // Plain string — legacy
+        if (typeof rule === 'string') {
+            return rule && subject.includes(rule.toLowerCase());
+        }
+        // Object form {match, path}
+        if (typeof rule === 'object') {
+            if (rule.path && exePath && exePath.toLowerCase() === String(rule.path).toLowerCase()) return true;
+            if (rule.match && subject.includes(String(rule.match).toLowerCase())) return true;
+        }
+        return false;
+    }
+
+    for (const r of config.whiteList || []) { if (ruleMatches(r)) return 'white'; }
+    for (const r of config.blackList || []) { if (ruleMatches(r)) return 'black'; }
+    return 'none';
+}
+
+function recordApp(processName, displayTitle, exePath) {
+    if (!processName) return;
+    const key = processName.toLowerCase();
+    const now = Date.now();
+    const match = classifyApp(processName, displayTitle, exePath);
+    if (appsTracker.has(key)) {
+        const e = appsTracker.get(key);
+        if (displayTitle) e.title = displayTitle;
+        if (exePath) e.path = exePath;
+        e.lastSeen = now;
+        e.count++;
+        e.match = match;
+    } else {
+        appsTracker.set(key, {
+            process: processName,
+            title: displayTitle || '',
+            path: exePath || null,
+            firstSeen: now,
+            lastSeen: now,
+            count: 1,
+            match
+        });
+    }
+}
+
+function evictStaleApps() {
+    const cutoff = Date.now() - APPS_WINDOW_MS;
+    for (const [k, v] of appsTracker) {
+        if (v.lastSeen < cutoff) appsTracker.delete(k);
+    }
+}
+
+function getAppsSnapshot() {
+    evictStaleApps();
+    const arr = [];
+    for (const [, v] of appsTracker) {
+        // Reclassify in case lists changed
+        v.match = classifyApp(v.process, v.title, v.path);
+        arr.push({ ...v });
+    }
+    arr.sort((a, b) => b.lastSeen - a.lastSeen);
+    return arr;
+}
+
+function sendAppsSnapshot() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!config.sessionKey) return;
+    wsSend({
+        type: 'apps_snapshot',
+        sessionKey: config.sessionKey,
+        apps: getAppsSnapshot()
+    });
+}
+
+function sendAppsLists() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!config.sessionKey) return;
+    wsSend({
+        type: 'apps_lists',
+        sessionKey: config.sessionKey,
+        whiteList: config.whiteList || [],
+        blackList: config.blackList || []
+    });
+}
+
+// === FULL PROCESS LIST — снимок всех процессов системы по запросу из UI ===
+// Используем PowerShell Get-Process: name, id, path, MainWindowTitle.
+// Файл с путём может быть null для системных/защищённых процессов.
+function listAllProcesses() {
+    return new Promise((resolve) => {
+        const ps = `
+            $ErrorActionPreference = 'SilentlyContinue'
+            $procs = Get-Process | ForEach-Object {
+                $path = $null
+                try { $path = $_.Path } catch {}
+                $title = ''
+                try { $title = $_.MainWindowTitle } catch {}
+                [PSCustomObject]@{
+                    name  = $_.ProcessName
+                    pid   = $_.Id
+                    path  = $path
+                    title = $title
+                }
+            }
+            $procs | ConvertTo-Json -Compress -Depth 2
+        `;
+        const child = spawn('powershell.exe', [
+            '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-Command', '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ' + ps
+        ]);
+        let out = '';
+        let err = '';
+        child.stdout.on('data', d => { out += d.toString('utf8'); });
+        child.stderr.on('data', d => { err += d.toString('utf8'); });
+        child.on('close', (code) => {
+            if (code !== 0 && !out) {
+                console.error('[PROCESSES] PowerShell exit', code, err);
+                return resolve([]);
+            }
+            try {
+                let parsed = JSON.parse(out);
+                if (!Array.isArray(parsed)) parsed = [parsed];
+                // Дедуп по name+path (несколько инстансов того же exe = одна запись)
+                const seen = new Map();
+                for (const p of parsed) {
+                    if (!p || !p.name) continue;
+                    const key = (p.name + '|' + (p.path || '')).toLowerCase();
+                    if (seen.has(key)) {
+                        const e = seen.get(key);
+                        e.instances++;
+                        if (p.title && !e.title) e.title = p.title;
+                    } else {
+                        seen.set(key, {
+                            name: p.name,
+                            path: p.path || null,
+                            title: p.title || '',
+                            instances: 1,
+                            match: classifyApp(p.name, p.title || '', p.path || '')
+                        });
+                    }
+                }
+                const arr = Array.from(seen.values()).sort((a, b) => {
+                    // Сначала те у кого есть title (то есть это видимые окна) — наверх
+                    const aHas = a.title ? 1 : 0;
+                    const bHas = b.title ? 1 : 0;
+                    if (aHas !== bHas) return bHas - aHas;
+                    return a.name.localeCompare(b.name);
+                });
+                resolve(arr);
+            } catch (e) {
+                console.error('[PROCESSES] Parse error', e.message);
+                resolve([]);
+            }
+        });
+        // 10s timeout
+        setTimeout(() => { try { child.kill(); } catch (_) {} }, 10000);
+    });
+}
+
+async function sendAllProcesses() {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !config.sessionKey) return;
+    const procs = await listAllProcesses();
+    wsSend({
+        type: 'all_processes',
+        sessionKey: config.sessionKey,
+        processes: procs
+    });
+}
+
+function handleWsMessage(message) {
+    if (!message || !message.type) return;
+    switch (message.type) {
+        case 'apps_lists_update': {
+            if (Array.isArray(message.whiteList)) config.whiteList = message.whiteList;
+            if (Array.isArray(message.blackList)) config.blackList = message.blackList;
+            saveConfig();
+            console.log(`[APPS] Lists updated from browser: ${config.whiteList.length} white / ${config.blackList.length} black`);
+            // Echo current lists so browser cache stays canonical
+            sendAppsLists();
+            // Send a fresh snapshot with reclassified matches
+            sendAppsSnapshot();
+            break;
+        }
+        case 'request_apps_snapshot':
+            sendAppsSnapshot();
+            break;
+        case 'request_all_processes':
+            sendAllProcesses().catch(e => console.error('[PROCESSES]', e));
+            break;
+    }
+}
 
 // Загрузка конфигурации
 function loadConfig() {
@@ -135,7 +351,9 @@ webPreferences: {
 nodeIntegration: false,
 contextIsolation: true,
 preload: path.join(__dirname, 'preload.js'),
-backgroundThrottling: false
+backgroundThrottling: false,
+// Pass server URL down to the renderer via preload
+additionalArguments: ['--linktime-ws=' + WS_URL]
 },
 icon: path.join(__dirname, 'icon.png'),
 skipTaskbar: false,
@@ -153,11 +371,54 @@ ipcMain.on('window-close',    () => { if (mainWindow) { app.isQuitting ? mainWin
 mainWindow.on('maximize',   () => mainWindow.webContents.send('maximize-change', true));
 mainWindow.on('unmaximize', () => mainWindow.webContents.send('maximize-change', false));
 
-if (process.env.NODE_ENV === 'development') {
-  mainWindow.webContents.openDevTools();
+// Открывать DevTools автоматом только в dev-режиме. В production молчит.
+if (process.env.NODE_ENV === 'development' || process.argv.includes('--dev')) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
 }
 
-mainWindow.loadFile(path.join(__dirname, 'webapp', 'index.html'));
+// F12 / Ctrl+Shift+I — открыть DevTools в любом режиме (для тестов production-сборки).
+// Меню в production отключено, поэтому нужен ручной accelerator.
+mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const f12 = input.key === 'F12';
+    const devCombo = input.key === 'I' && input.control && input.shift;
+    if (f12 || devCombo) {
+        mainWindow.webContents.isDevToolsOpened()
+            ? mainWindow.webContents.closeDevTools()
+            : mainWindow.webContents.openDevTools({ mode: 'detach' });
+        event.preventDefault();
+    }
+    // Ctrl+R — reload (вернуть стандартный браузерный шорткат)
+    if (input.key.toLowerCase() === 'r' && input.control) {
+        mainWindow.webContents.reload();
+        event.preventDefault();
+    }
+});
+
+// Prefer loading from the live server — single origin = no file:// quirks, no
+// CSP frame-ancestors mismatch when opening the board iframe.
+// Fall back to bundled local copy if the server is unreachable.
+const APP_URL = WS_URL.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+const LOCAL_FALLBACK = path.join(__dirname, 'webapp', 'index.html');
+let usingFallback = false;
+
+function loadLocalFallback(reason) {
+    if (usingFallback) return;
+    usingFallback = true;
+    console.warn(`[App] Loading local fallback (${reason})`);
+    mainWindow.loadFile(LOCAL_FALLBACK);
+}
+
+mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
+    // Only react to top-frame fails on our APP_URL
+    if (validatedURL && validatedURL.startsWith(APP_URL) && !usingFallback) {
+        loadLocalFallback(`${errorCode}: ${errorDescription}`);
+    }
+});
+
+mainWindow.loadURL(APP_URL).catch((err) => {
+    loadLocalFallback(err.message || 'loadURL rejected');
+});
 
 // Помечаем что это Electron — web-код не будет управлять авто-паузой
 mainWindow.webContents.on('did-finish-load', () => {
@@ -251,20 +512,10 @@ settingsWindow.webContents.send('config-data', config);
 }
 }
 
-// Синхронизируем списки приложений из веб-страницы
-const webWhiteList = await mainWindow.webContents.executeJavaScript(
-"localStorage.getItem('whiteList')"
-);
-const webBlackList = await mainWindow.webContents.executeJavaScript(
-"localStorage.getItem('blackList')"
-);
-if (webWhiteList) {
-config.whiteList = JSON.parse(webWhiteList);
-}
-if (webBlackList) {
-config.blackList = JSON.parse(webBlackList);
-}
-        
+// Списки приложений теперь синхронизируются через WebSocket (apps_lists_update),
+// а не через ежетриxсекундное чтение localStorage. См. handleWsMessage.
+
+
         // Синхронизируем настройку автозапуска из веб-страницы
         const webAutostart = await mainWindow.webContents.executeJavaScript(
             "localStorage.getItem('autostart')"
@@ -386,6 +637,12 @@ if (!ws || ws.readyState !== WebSocket.OPEN) return;
 wsSend({ type: 'join', sessionKey: config.sessionKey });
 wsSend({ type: 'agent_connected', sessionKey: config.sessionKey });
 
+// Push our current lists so the browser cache is correct
+sendAppsLists();
+// Start periodic snapshot broadcast
+if (appsSnapshotInterval) clearInterval(appsSnapshotInterval);
+appsSnapshotInterval = setInterval(sendAppsSnapshot, APPS_SNAPSHOT_INTERVAL);
+
 // Обновляем settings window если открыто
 if (settingsWindow && !settingsWindow.isDestroyed()) {
 settingsWindow.webContents.send('status-update', {
@@ -403,6 +660,7 @@ ws.on('message', (data) => {
 try {
 const message = JSON.parse(data);
 console.log('Agent received:', message.type);
+handleWsMessage(message);
 } catch (error) {
 console.error('Error parsing message:', error);
 }
@@ -415,6 +673,7 @@ console.error('Agent WebSocket error:', error);
 ws.on('close', () => {
 console.log('Agent WebSocket disconnected');
 stopActivityMonitoring();
+if (appsSnapshotInterval) { clearInterval(appsSnapshotInterval); appsSnapshotInterval = null; }
 
 setTimeout(() => {
 console.log('Agent reconnecting...');
@@ -607,6 +866,9 @@ async function checkActiveWindow() {
         const fullTitle = `${processName} - ${displayTitle}`;
         console.log(`[MONITOR] Active: "${fullTitle}"`);
 
+        // Record into rolling tracker for browser settings UI
+        recordApp(processName, displayTitle);
+
         const status = determineStatus(fullTitle);
         console.log(`[MONITOR] Status: ${status}`);
         updateStatus(status, displayTitle);
@@ -725,6 +987,25 @@ if (ws) ws.close();
 connectWebSocket();
 
 event.reply('config-saved');
+});
+
+// ===== IPC: запрос полного списка процессов из браузера через preload =====
+ipcMain.handle('list-all-processes', async () => {
+    try { return await listAllProcesses(); } catch (e) { return []; }
+});
+
+// ===== IPC: выбор .exe файла через нативный диалог Electron =====
+ipcMain.handle('pick-exe-file', async () => {
+    const result = await dialog.showOpenDialog(mainWindow || undefined, {
+        title: 'Выберите исполняемый файл приложения',
+        properties: ['openFile'],
+        filters: [
+            { name: 'Приложения', extensions: ['exe'] },
+            { name: 'Все файлы', extensions: ['*'] }
+        ]
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
 });
 
 ipcMain.on('test-connection', (event) => {

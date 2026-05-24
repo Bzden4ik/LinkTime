@@ -2,7 +2,70 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const crypto = require('crypto');
 const Database = require('better-sqlite3');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+
+// === LOGGER — minimal zero-dep, level-gated, JSON in production ============
+const LOG_LEVELS = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
+const LOG_LEVEL = LOG_LEVELS[(process.env.LOG_LEVEL || 'info').toLowerCase()] ?? LOG_LEVELS.info;
+const LOG_JSON = process.env.LOG_JSON === '1' || process.env.NODE_ENV === 'production';
+
+// REDACT — маскируем sessionKey'и в логах. Утечка через логи = silent disaster.
+// Паттерн: sk_<hex> (новый) или session_<id>_<ts> (legacy).
+const SK_RE = /\b(sk_[a-f0-9]{4})[a-f0-9]+\b|\b(session_[a-z0-9]{2,4})[a-z0-9]+(_\d{2,4})\d+\b/gi;
+function redactStr(s) {
+    if (typeof s !== 'string') return s;
+    return s.replace(SK_RE, (m, sk1, ses1, ses2) =>
+        sk1 ? sk1 + '***' :
+        ses1 ? ses1 + '***' + ses2 + '***' : m);
+}
+function redactDeep(v) {
+    if (typeof v === 'string') return redactStr(v);
+    if (!v || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map(redactDeep);
+    const out = {};
+    for (const [k, val] of Object.entries(v)) {
+        // Полностью скрываем поля с очевидным секретом
+        if (/^(session[_-]?key|sessionkey|token|password|secret)$/i.test(k)) {
+            out[k] = typeof val === 'string' ? '***' : val;
+        } else {
+            out[k] = redactDeep(val);
+        }
+    }
+    return out;
+}
+
+function makeLogger(scope) {
+    function emit(level, ...args) {
+        if (LOG_LEVELS[level] < LOG_LEVEL) return;
+        const ts = new Date().toISOString();
+        const redacted = args.map(a => {
+            if (a instanceof Error) return { name: a.name, message: redactStr(a.message), stack: redactStr(a.stack || '') };
+            return redactDeep(a);
+        });
+        if (LOG_JSON) {
+            try {
+                process.stdout.write(JSON.stringify({ ts, level, scope, msg: redacted }) + '\n');
+            } catch {
+                process.stdout.write(JSON.stringify({ ts, level, scope, msg: '[unserializable]' }) + '\n');
+            }
+        } else {
+            const out = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+            out(`[${ts.slice(11, 19)}] [${level.toUpperCase().padEnd(5)}] [${scope}]`, ...redacted);
+        }
+    }
+    return {
+        debug: (...a) => emit('debug', ...a),
+        info:  (...a) => emit('info', ...a),
+        warn:  (...a) => emit('warn', ...a),
+        error: (...a) => emit('error', ...a),
+    };
+}
+const log = makeLogger('server');
+const dbLog = makeLogger('db');
+const wsLog = makeLogger('ws');
 
 // === КОНФИГУРАЦИЯ ===
 const PORT = process.env.PORT || 3002;
@@ -81,79 +144,141 @@ db.exec(`
     );
 `);
 
-// Миграция: добавляем avatar если его нет
-try {
-    db.exec(`ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL`);
-    console.log('[DB] Migration: avatar column added');
-} catch (e) {
-    // Колонка уже существует, игнорируем
+// === VERSIONED MIGRATIONS =====================================================
+// Replaces the old try/catch ALTER TABLE pattern.
+// Each migration runs once, tracked in schema_versions table.
+db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_versions (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    );
+`);
+
+function columnExists(table, column) {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all();
+    return rows.some(r => r.name === column);
 }
 
-// Миграция: добавляем sharing_time если его нет
-try {
-    db.exec(`ALTER TABLE team_members ADD COLUMN sharing_time INTEGER DEFAULT 0`);
-    console.log('[DB] Migration: sharing_time column added');
-} catch (e) {
-    // Колонка уже существует, игнорируем
-}
-
-// Миграция: создаём team_boards если не существует
-try {
-    db.exec(`CREATE TABLE IF NOT EXISTS team_boards (
-        team_id INTEGER PRIMARY KEY,
-        data TEXT DEFAULT '{"cards":[],"connections":[]}',
-        updated_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
-    )`);
-} catch (e) {}
-
-// Миграция: создаём personal_boards если не существует
-try {
-    db.exec(`CREATE TABLE IF NOT EXISTS personal_boards (
-        session_key TEXT PRIMARY KEY,
-        data TEXT DEFAULT '{"cards":[],"connections":[]}',
-        updated_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
-    )`);
-} catch (e) {}
-
-// Миграция: таблицы проектов и задач проектов
-try {
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS projects (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_key TEXT NOT NULL,
-            name TEXT NOT NULL,
-            color TEXT DEFAULT '#6366f1',
-            icon TEXT DEFAULT '📁',
-            sort_order INTEGER DEFAULT 0,
-            created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
-        );
-        CREATE TABLE IF NOT EXISTS project_tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_key TEXT NOT NULL,
-            project_id INTEGER DEFAULT NULL,
-            text TEXT NOT NULL,
-            completed INTEGER DEFAULT 0,
-            sort_order INTEGER DEFAULT 0,
-            created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
-            completed_at INTEGER DEFAULT NULL,
-            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
-        );
-    `);
-    console.log('[DB] Migration: projects & project_tasks tables ready');
-} catch (e) {}
-
-// Миграция: новые поля для project_tasks
-const ptMigrations = [
-    ['description', 'TEXT DEFAULT NULL'],
-    ['due_date', 'TEXT DEFAULT NULL'],
-    ['time_start', 'TEXT DEFAULT NULL'],
-    ['time_end', 'TEXT DEFAULT NULL'],
-    ['time_spent', 'INTEGER DEFAULT 0'],
-    ['media', 'TEXT DEFAULT NULL'],
+const migrations = [
+    {
+        version: 1,
+        name: 'users.avatar',
+        up: () => { if (!columnExists('users', 'avatar')) db.exec(`ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT NULL`); }
+    },
+    {
+        version: 2,
+        name: 'team_members.sharing_time',
+        up: () => { if (!columnExists('team_members', 'sharing_time')) db.exec(`ALTER TABLE team_members ADD COLUMN sharing_time INTEGER DEFAULT 0`); }
+    },
+    {
+        version: 3,
+        name: 'team_boards table',
+        up: () => db.exec(`CREATE TABLE IF NOT EXISTS team_boards (
+            team_id INTEGER PRIMARY KEY,
+            data TEXT DEFAULT '{"cards":[],"connections":[]}',
+            updated_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+        )`)
+    },
+    {
+        version: 4,
+        name: 'personal_boards table',
+        up: () => db.exec(`CREATE TABLE IF NOT EXISTS personal_boards (
+            session_key TEXT PRIMARY KEY,
+            data TEXT DEFAULT '{"cards":[],"connections":[]}',
+            updated_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+        )`)
+    },
+    {
+        version: 5,
+        name: 'projects + project_tasks tables',
+        up: () => db.exec(`
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_key TEXT NOT NULL,
+                name TEXT NOT NULL,
+                color TEXT DEFAULT '#ff6b1f',
+                icon TEXT DEFAULT '📁',
+                sort_order INTEGER DEFAULT 0,
+                created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+            );
+            CREATE TABLE IF NOT EXISTS project_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_key TEXT NOT NULL,
+                project_id INTEGER DEFAULT NULL,
+                text TEXT NOT NULL,
+                completed INTEGER DEFAULT 0,
+                sort_order INTEGER DEFAULT 0,
+                created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+                completed_at INTEGER DEFAULT NULL,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+            );
+        `)
+    },
+    {
+        version: 6,
+        name: 'project_tasks extra columns',
+        up: () => {
+            const cols = [
+                ['description', 'TEXT DEFAULT NULL'],
+                ['due_date', 'TEXT DEFAULT NULL'],
+                ['time_start', 'TEXT DEFAULT NULL'],
+                ['time_end', 'TEXT DEFAULT NULL'],
+                ['time_spent', 'INTEGER DEFAULT 0'],
+                ['media', 'TEXT DEFAULT NULL'],
+            ];
+            for (const [col, def] of cols) {
+                if (!columnExists('project_tasks', col)) {
+                    db.exec(`ALTER TABLE project_tasks ADD COLUMN ${col} ${def}`);
+                }
+            }
+        }
+    },
+    {
+        version: 7,
+        name: 'performance indices',
+        up: () => db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_project_tasks_session ON project_tasks(session_key);
+            CREATE INDEX IF NOT EXISTS idx_project_tasks_project ON project_tasks(project_id);
+            CREATE INDEX IF NOT EXISTS idx_projects_session ON projects(session_key);
+            CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id);
+            CREATE INDEX IF NOT EXISTS idx_invitations_to_user ON invitations(to_user_id);
+            CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id);
+            CREATE INDEX IF NOT EXISTS idx_session_data_heartbeat ON session_data(last_heartbeat);
+        `)
+    },
+    {
+        version: 8,
+        name: 'users.avatar_url (file-backed avatars)',
+        up: () => { if (!columnExists('users', 'avatar_url')) db.exec(`ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT NULL`); }
+    },
 ];
-for (const [col, def] of ptMigrations) {
-    try { db.exec(`ALTER TABLE project_tasks ADD COLUMN ${col} ${def}`); } catch (e) {}
-}
+
+const getCurrentVersion = db.prepare('SELECT MAX(version) AS v FROM schema_versions');
+const insertVersion = db.prepare('INSERT INTO schema_versions (version, name, applied_at) VALUES (?, ?, ?)');
+
+(function runMigrations() {
+    const current = getCurrentVersion.get().v || 0;
+    const pending = migrations.filter(m => m.version > current);
+    if (!pending.length) {
+        console.log(`[DB] Schema up-to-date (v${current})`);
+        return;
+    }
+    console.log(`[DB] Running ${pending.length} pending migrations (from v${current})...`);
+    const tx = db.transaction(() => {
+        for (const m of pending) {
+            try {
+                m.up();
+                insertVersion.run(m.version, m.name, Date.now());
+                console.log(`[DB] ✓ v${m.version} — ${m.name}`);
+            } catch (e) {
+                console.error(`[DB] ✗ v${m.version} — ${m.name}: ${e.message}`);
+                throw e;
+            }
+        }
+    });
+    tx();
+})();
 
 console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
 
@@ -225,6 +350,8 @@ const stmts = {
     deleteProject: db.prepare('DELETE FROM projects WHERE id = ? AND session_key = ?'),
     // Project tasks
     getProjectTasks: db.prepare('SELECT * FROM project_tasks WHERE session_key = ? ORDER BY completed, sort_order, created_at DESC'),
+    getProjectTasksPaged: db.prepare('SELECT * FROM project_tasks WHERE session_key = ? ORDER BY completed, sort_order, created_at DESC LIMIT ? OFFSET ?'),
+    countProjectTasks: db.prepare('SELECT COUNT(*) AS cnt FROM project_tasks WHERE session_key = ?'),
     getTasksByProject: db.prepare('SELECT * FROM project_tasks WHERE project_id = ? AND session_key = ? ORDER BY completed, sort_order, created_at DESC'),
     getTasksNoProject: db.prepare('SELECT * FROM project_tasks WHERE project_id IS NULL AND session_key = ? ORDER BY completed, sort_order, created_at DESC'),
     createProjectTask: db.prepare('INSERT INTO project_tasks (session_key, project_id, text) VALUES (?, ?, ?)'),
@@ -235,6 +362,54 @@ const stmts = {
     updateTaskDetails: db.prepare('UPDATE project_tasks SET description = ?, due_date = ?, time_start = ?, time_end = ?, media = ? WHERE id = ? AND session_key = ?'),
     getTaskById: db.prepare('SELECT * FROM project_tasks WHERE id = ? AND session_key = ?'),
 };
+
+// === ВАЛИДАЦИЯ INPUT ===
+
+// sessionKey accepts both legacy (session_xxx_NNN) and new (sk_<hex>) shapes
+const SESSION_KEY_RE = /^(?:sk_[a-f0-9]{8,128}|session_[a-z0-9]{4,32}_\d{6,20})$/i;
+function isValidSessionKey(k) {
+    return typeof k === 'string' && SESSION_KEY_RE.test(k);
+}
+
+// XSS sanitizer: strip control chars, cap length, escape angle brackets so anything
+// that ends up in innerHTML on the client is harmless. The client also escapes —
+// belt-and-braces.
+function sanitizeText(s, maxLen) {
+    if (typeof s !== 'string') return '';
+    // Drop NULs and other low control chars except tab/newline
+    let out = s.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '');
+    if (out.length > maxLen) out = out.slice(0, maxLen);
+    return out.trim();
+}
+
+// Cheap object-shape validator. Returns array of issues; empty = OK.
+function validateShape(obj, schema) {
+    const issues = [];
+    if (typeof obj !== 'object' || obj === null) return ['payload must be object'];
+    for (const [key, rule] of Object.entries(schema)) {
+        const v = obj[key];
+        if (rule.required && (v === undefined || v === null)) {
+            issues.push(`${key} required`); continue;
+        }
+        if (v === undefined || v === null) continue;
+        if (rule.type === 'string' && typeof v !== 'string') issues.push(`${key} must be string`);
+        if (rule.type === 'number' && typeof v !== 'number') issues.push(`${key} must be number`);
+        if (rule.type === 'array'  && !Array.isArray(v)) issues.push(`${key} must be array`);
+        if (rule.type === 'object' && (typeof v !== 'object' || Array.isArray(v))) issues.push(`${key} must be object`);
+        if (rule.maxLen != null && typeof v === 'string' && v.length > rule.maxLen) issues.push(`${key} too long (max ${rule.maxLen})`);
+        if (rule.maxItems != null && Array.isArray(v) && v.length > rule.maxItems) issues.push(`${key} too many items (max ${rule.maxItems})`);
+        if (rule.regex && typeof v === 'string' && !rule.regex.test(v)) issues.push(`${key} bad format`);
+    }
+    return issues;
+}
+
+// Express middleware to guard :sessionKey param
+function requireValidSessionKey(req, res, next) {
+    if (!isValidSessionKey(req.params.sessionKey)) {
+        return res.status(400).json({ error: 'invalid sessionKey' });
+    }
+    next();
+}
 
 // === ХЕЛПЕРЫ ДЛЯ БД ===
 
@@ -304,6 +479,113 @@ function ensureUser(sessionKey) {
 // === EXPRESS СЕРВЕР ===
 const app = express();
 
+// Security headers — proper CSP (replaces "off" mode).
+// Inline scripts are still permitted via 'unsafe-inline' because index.html has them;
+// proper nonces are a Phase 4 refactor. Until then, this is a meaningful net positive:
+// frame-ancestors, base-uri, object-src, plus origin-restricted third-party allowlist.
+app.use(helmet({
+    contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+            'default-src': ["'self'"],
+            'script-src': [
+                "'self'",
+                // unsafe-inline удалён — все inline-IIFE вынесены в dashboard-init.js
+                'https://cdn.jsdelivr.net',
+                'https://cdnjs.cloudflare.com',
+            ],
+            // CSP3: inline event handlers (onclick="...") тоже требуют отдельной директивы
+            // Мы их все убрали через event delegation, так что разрешаем только nonce.
+            'script-src-attr': ["'none'"],
+            'style-src': [
+                "'self'",
+                "'unsafe-inline'",
+                'https://fonts.googleapis.com',
+            ],
+            'font-src': [
+                "'self'",
+                'https://fonts.gstatic.com',
+                'data:',
+            ],
+            'img-src': [
+                "'self'",
+                'data:',
+                'blob:',
+                'https:',
+            ],
+            'connect-src': [
+                "'self'",
+                'ws:',
+                'wss:',
+                'https://api.github.com',                // agent update check
+                'https://fonts.googleapis.com',          // SW fetches Google Fonts CSS
+                'https://fonts.gstatic.com',             // SW fetches font files
+                'https://cdn.jsdelivr.net',              // QR lib source maps in devtools
+                'https://cdnjs.cloudflare.com',          // QR lib source maps in devtools
+            ],
+            'media-src': ["'self'", 'data:', 'blob:'],
+            'worker-src': ["'self'", 'blob:'],
+            'frame-src':  ["'self'"],                     // allow our own iframe overlay (board)
+            'frame-ancestors': ["'self'"],                // anti-clickjacking, but own-origin OK
+            'object-src': ["'none'"],
+            'base-uri': ["'self'"],
+            'form-action': ["'self'"],
+            'upgrade-insecure-requests': [],
+        },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+}));
+
+// Optional HTTPS-only redirect — enable via env FORCE_HTTPS=1 when behind a TLS terminator.
+if (process.env.FORCE_HTTPS === '1') {
+    app.use((req, res, next) => {
+        const proto = req.headers['x-forwarded-proto'] || req.protocol;
+        if (proto !== 'https') {
+            return res.redirect(308, 'https://' + req.headers.host + req.url);
+        }
+        next();
+    });
+}
+
+// Rate limiting для API — key = IP + sessionKey, чтобы юзеры за общим NAT
+// не делили лимит, и наоборот один юзер не флудил с нескольких IP.
+function ipKey(req) {
+    return req.headers['x-forwarded-for']
+        ? String(req.headers['x-forwarded-for']).split(',')[0].trim()
+        : req.ip;
+}
+function rateKey(req) {
+    const sk = req.params.sessionKey
+        || (req.body && req.body.sessionKey)
+        || (req.body && req.body.fromSessionKey)
+        || '';
+    return ipKey(req) + ':' + (sk ? sk.slice(0, 16) : 'anon');
+}
+
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 минут
+    max: 600,                  // 40 req/min — реалистично с учётом синков
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: rateKey,
+    message: { error: 'Слишком много запросов, попробуйте позже' },
+});
+app.use('/api/', apiLimiter);
+
+// Жёсткий лимит на чувствительные эндпоинты (приглашения, удаление аккаунта, аватар)
+const sensitiveLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: rateKey,
+    message: { error: 'Слишком часто — подождите минуту' },
+});
+app.use('/api/invite', sensitiveLimiter);
+app.use('/api/account', sensitiveLimiter);
+app.use('/api/user/:sessionKey/avatar', sensitiveLimiter);
+
 // CORS
 app.use((req, res, next) => {
     const allowedOrigins = [
@@ -315,11 +597,25 @@ app.use((req, res, next) => {
     if (!origin || allowedOrigins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin || '*');
     }
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-LinkTime-Key');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     next();
 });
+
+// Avatars storage on disk
+const UPLOADS_DIR = path.join(__dirname, 'data', 'uploads');
+const AVATARS_DIR = path.join(UPLOADS_DIR, 'avatars');
+if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
+
+// Сервинг загруженных файлов
+app.use('/uploads', express.static(UPLOADS_DIR, {
+    maxAge: '7d',
+    fallthrough: true,
+    setHeaders: (res) => {
+        res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    }
+}));
 
 // Статические файлы
 app.use(express.static(path.join(__dirname, 'public')));
@@ -327,14 +623,76 @@ app.use(express.static(path.join(__dirname, 'public')));
 // JSON body parser
 app.use(express.json({ limit: '10mb' }));
 
-// Health check
+// Validate every :sessionKey route param in one shot
+app.param('sessionKey', (req, res, next, value) => {
+    if (!isValidSessionKey(value)) {
+        return res.status(400).json({ error: 'Invalid sessionKey format' });
+    }
+    next();
+});
+
+// === AUTH HEADER (preferred over URL path) ==================================
+// Клиенты могут слать `Authorization: Bearer sk_xxx` вместо ?sessionKey в URL.
+// Это убирает утечку через access-logs / referrer / browser history.
+// Если ключ в header — он переопределяет path-param (плавная миграция).
+// CORS уже allowlist'нут, поэтому добавляем заголовок в Access-Control-Allow-Headers выше.
+function extractAuthKey(req) {
+    const h = req.headers.authorization || req.headers['x-linktime-key'];
+    if (!h) return null;
+    const m = /^Bearer\s+([\w-]+)$/i.exec(h);
+    const key = m ? m[1] : h;
+    return isValidSessionKey(key) ? key : null;
+}
+// Middleware: если есть header — подставляем в req.params.sessionKey для backwards-compat.
+app.use('/api/', (req, res, next) => {
+    const k = extractAuthKey(req);
+    if (k) {
+        req.authSessionKey = k;
+        // Только если в роуте есть placeholder и сейчас он пустой — заполняем
+        if (req.params && !req.params.sessionKey) {
+            req.params.sessionKey = k;
+        }
+    }
+    next();
+});
+
+// Health check — extended for monitoring
+const healthCountStmts = {
+    sessions: db.prepare('SELECT COUNT(*) AS c FROM session_data'),
+    users: db.prepare('SELECT COUNT(*) AS c FROM users'),
+    projectTasks: db.prepare('SELECT COUNT(*) AS c FROM project_tasks'),
+    schemaVersion: db.prepare('SELECT MAX(version) AS v FROM schema_versions'),
+};
+function dbFileSize() {
+    try { return fs.statSync(DB_PATH).size; } catch (_) { return null; }
+}
 app.get('/api/health', (req, res) => {
+    const mem = process.memoryUsage();
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        uptime: Math.round(process.uptime()),
-        connections: wss.clients.size,
+        uptime_seconds: Math.round(process.uptime()),
         env: NODE_ENV,
+        version: require('./package.json').version,
+        connections: {
+            total: wss.clients.size,
+            sessions: connections.size,
+            board_teams: boardSessions.size,
+        },
+        db: {
+            schema_version: healthCountStmts.schemaVersion.get().v,
+            file_bytes: dbFileSize(),
+            sessions: healthCountStmts.sessions.get().c,
+            users: healthCountStmts.users.get().c,
+            project_tasks: healthCountStmts.projectTasks.get().c,
+        },
+        memory: {
+            rss_mb: Math.round(mem.rss / 1024 / 1024),
+            heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024),
+            heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024),
+        },
+        apps_cache: { sessions: appsCache.size },
+        lists_cache: { sessions: listsCache.size },
     });
 });
 
@@ -352,18 +710,34 @@ app.get('/api/data/:sessionKey', (req, res) => {
 // === API: Сохранить данные сессии (прямая запись) ===
 app.post('/api/data/:sessionKey', (req, res) => {
     const { sessionKey } = req.params;
-    const { tasks, sessions } = req.body;
-    if (!sessionKey) return res.status(400).json({ error: 'sessionKey required' });
-    ensureSession(sessionKey);
+    const { tasks, sessions } = req.body || {};
 
+    // Shape checks — abort early on bad payload
+    if (tasks !== undefined && !Array.isArray(tasks)) return res.status(400).json({ error: 'tasks must be array' });
+    if (sessions !== undefined && (typeof sessions !== 'object' || Array.isArray(sessions) || sessions === null))
+        return res.status(400).json({ error: 'sessions must be object' });
+    if (Array.isArray(tasks) && tasks.length > 10000) return res.status(413).json({ error: 'too many tasks (max 10000)' });
+
+    // Sanitize task texts — these get broadcast via WS to other devices
+    const safeTasks = Array.isArray(tasks) ? tasks.map(t => {
+        if (typeof t !== 'object' || t === null) return null;
+        return {
+            ...t,
+            text: typeof t.text === 'string' ? sanitizeText(t.text, 1000) : '',
+            date: typeof t.date === 'string' ? sanitizeText(t.date, 32) : '',
+            completed: !!t.completed,
+        };
+    }).filter(Boolean) : [];
+
+    ensureSession(sessionKey);
     stmts.updateSync.run(
-        JSON.stringify(tasks || []),
+        JSON.stringify(safeTasks),
         JSON.stringify(sessions || {}),
         Date.now(),
         sessionKey
     );
 
-    res.json({ ok: true, totalTasks: (tasks || []).length, totalDays: Object.keys(sessions || {}).length });
+    res.json({ ok: true, totalTasks: safeTasks.length, totalDays: Object.keys(sessions || {}).length });
 });
 
 // === API: Пользователь — получить/создать профиль ===
@@ -385,18 +759,71 @@ app.post('/api/user/:sessionKey/username', (req, res) => {
 });
 
 // === API: Обновить email ===
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 app.post('/api/user/:sessionKey/email', (req, res) => {
-    const { email } = req.body;
+    const { email } = req.body || {};
+    if (email !== null && email !== undefined && email !== '') {
+        if (typeof email !== 'string' || email.length > 254 || !EMAIL_RE.test(email)) {
+            return res.status(400).json({ error: 'Некорректный email' });
+        }
+    }
     stmts.updateEmail.run(email || null, req.params.sessionKey);
     res.json({ ok: true });
 });
 
 // === API: Обновить аватар ===
+// Decodes the base64 data URL on server, writes to disk, stores only the URL in DB.
+// Backwards compatible: clients still POST { avatar: 'data:image/...' } as before.
+const AVATAR_MAX_BYTES = 500 * 1024;       // 500 KB
+const AVATAR_MIME_RE = /^data:image\/(png|jpe?g|webp|gif);base64,([A-Za-z0-9+/=]+)$/;
+const cleanupOldAvatar = (sessionKey) => {
+    const row = stmts.getUserBySession.get(sessionKey);
+    if (!row) return;
+    const old = row.avatar || '';
+    if (old && old.startsWith('/uploads/avatars/')) {
+        const abs = path.join(UPLOADS_DIR, old.replace(/^\/uploads\//, ''));
+        if (abs.startsWith(AVATARS_DIR) && fs.existsSync(abs)) {
+            try { fs.unlinkSync(abs); } catch (_) {}
+        }
+    }
+};
+
 app.post('/api/user/:sessionKey/avatar', (req, res) => {
-    const { avatar } = req.body; // base64 data URL
-    if (avatar && avatar.length > 500000) return res.status(400).json({ error: 'Аватар слишком большой (макс 500 КБ)' });
-    stmts.updateAvatar.run(avatar || null, req.params.sessionKey);
-    // Уведомляем команду
+    const { avatar } = req.body || {};
+
+    // Removal — null or empty string
+    if (avatar === null || avatar === '') {
+        cleanupOldAvatar(req.params.sessionKey);
+        stmts.updateAvatar.run(null, req.params.sessionKey);
+        return res.json({ ok: true, avatar: null });
+    }
+
+    if (typeof avatar !== 'string') return res.status(400).json({ error: 'avatar must be data URL or null' });
+    if (avatar.length > AVATAR_MAX_BYTES * 2) return res.status(413).json({ error: 'Аватар слишком большой (макс 500 КБ)' });
+
+    const m = AVATAR_MIME_RE.exec(avatar);
+    if (!m) return res.status(400).json({ error: 'Неверный формат изображения (поддерживаются PNG/JPEG/WebP/GIF)' });
+
+    const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+    const b64 = m[2];
+    let buf;
+    try { buf = Buffer.from(b64, 'base64'); } catch (_) { return res.status(400).json({ error: 'bad base64' }); }
+    if (buf.length > AVATAR_MAX_BYTES) return res.status(413).json({ error: 'Аватар слишком большой (макс 500 КБ)' });
+
+    // Unguessable filename — нельзя угадать чужой аватар по sessionKey
+    const filename = crypto.randomBytes(16).toString('hex') + '.' + ext;
+    const abs = path.join(AVATARS_DIR, filename);
+    cleanupOldAvatar(req.params.sessionKey);
+    try {
+        fs.writeFileSync(abs, buf);
+    } catch (e) {
+        console.error('[Avatar] write failed:', e.message);
+        return res.status(500).json({ error: 'storage failed' });
+    }
+    const url = `/uploads/avatars/${filename}`;
+    stmts.updateAvatar.run(url, req.params.sessionKey);
+
+    // Notify team
     const user = stmts.getUserBySession.get(req.params.sessionKey);
     if (user) {
         const team = stmts.getUserTeam.get(user.user_id);
@@ -404,11 +831,11 @@ app.post('/api/user/:sessionKey/avatar', (req, res) => {
             const members = stmts.getTeamMembers.all(team.id);
             members.forEach(m => {
                 const memberUser = stmts.getUserByUserId.get(m.user_id);
-                notifyUser(memberUser.session_key, { type: 'team_updated', teamId: team.id });
+                if (memberUser) notifyUser(memberUser.session_key, { type: 'team_updated', teamId: team.id });
             });
         }
     }
-    res.json({ ok: true });
+    res.json({ ok: true, avatar: url });
 });
 
 // === API: Найти пользователя по userId или username ===
@@ -512,6 +939,20 @@ app.post('/api/team/kick', (req, res) => {
 
     db.prepare('DELETE FROM team_members WHERE team_id = ? AND user_id = ?').run(team.id, targetUserId);
 
+    // Cut off any board WS this user has — prevent malicious clients from continuing
+    if (boardSessions.has(team.id)) {
+        const members = boardSessions.get(team.id);
+        for (const [bws, info] of members) {
+            if (info.userId === targetUserId) {
+                members.delete(bws);
+                bws._boardTeamId = null;
+                if (bws.readyState === WebSocket.OPEN) {
+                    bws.send(JSON.stringify({ type: 'kicked_from_team' }));
+                }
+            }
+        }
+    }
+
     // Уведомляем выгнанного
     const targetUser = stmts.getUserByUserId.get(targetUserId);
     if (targetUser) notifyUser(targetUser.session_key, { type: 'kicked_from_team' });
@@ -557,13 +998,6 @@ app.post('/api/team/sharing', (req, res) => {
     res.json({ ok: true });
 });
 
-// === API: Получить профиль пользователя по sessionKey ===
-app.get('/api/user/:sessionKey', (req, res) => {
-    const user = stmts.getUserBySession.get(req.params.sessionKey);
-    if (!user) return res.status(404).json({ error: 'Not found' });
-    res.json({ username: user.username, user_id: user.user_id });
-});
-
 // === API: Получить личную доску ===
 app.get('/api/board/personal/:sessionKey', (req, res) => {
     const { sessionKey } = req.params;
@@ -576,8 +1010,9 @@ app.get('/api/board/personal/:sessionKey', (req, res) => {
 app.post('/api/board/personal/:sessionKey', (req, res) => {
     const { sessionKey } = req.params;
     const data = req.body;
-    if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Invalid data' });
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return res.status(400).json({ error: 'Invalid data' });
     const json = JSON.stringify(data);
+    if (json.length > 4_000_000) return res.status(413).json({ error: 'Board too large (max 4MB)' });
     const now = Date.now();
     stmts.upsertPersonalBoard.run(sessionKey, json, now, json, now);
     res.json({ ok: true });
@@ -595,18 +1030,31 @@ app.get('/api/board/team/:sessionKey', (req, res) => {
 });
 
 // === API: Проекты ===
+// Pagination: ?limit (default 500, max 5000) + ?offset (default 0).
+// Without params behavior is backwards-compatible: returns up to 500 tasks.
 app.get('/api/projects/:sessionKey', (req, res) => {
     const projects = stmts.getProjects.all(req.params.sessionKey);
-    const tasks = stmts.getProjectTasks.all(req.params.sessionKey);
-    res.json({ projects, tasks });
+    let limit = parseInt(req.query.limit, 10);
+    let offset = parseInt(req.query.offset, 10);
+    if (!Number.isFinite(limit) || limit <= 0) limit = 500;
+    if (limit > 5000) limit = 5000;
+    if (!Number.isFinite(offset) || offset < 0) offset = 0;
+
+    const tasks = stmts.getProjectTasksPaged.all(req.params.sessionKey, limit + 1, offset);
+    const hasMore = tasks.length > limit;
+    if (hasMore) tasks.pop();
+    const total = stmts.countProjectTasks.get(req.params.sessionKey).cnt;
+    res.json({ projects, tasks, pagination: { limit, offset, total, hasMore } });
 });
 
 app.post('/api/projects/:sessionKey', (req, res) => {
-    const { name, color, icon } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
-    const result = stmts.createProject.run(req.params.sessionKey, name.trim(), color || '#6366f1', icon || '📁');
-    const project = { id: result.lastInsertRowid, session_key: req.params.sessionKey, name: name.trim(), color: color || '#6366f1', icon: icon || '📁', sort_order: 0, created_at: Date.now() };
-    res.json(project);
+    const { name, color, icon } = req.body || {};
+    const safeName = sanitizeText(name || '', 80);
+    if (!safeName) return res.status(400).json({ error: 'Name required (max 80 chars)' });
+    const safeColor = (typeof color === 'string' && /^#[0-9a-f]{3,8}$/i.test(color)) ? color : '#ff6b1f';
+    const safeIcon = sanitizeText(icon || '📁', 16);
+    const result = stmts.createProject.run(req.params.sessionKey, safeName, safeColor, safeIcon);
+    res.json({ id: result.lastInsertRowid, session_key: req.params.sessionKey, name: safeName, color: safeColor, icon: safeIcon, sort_order: 0, created_at: Date.now() });
 });
 
 app.put('/api/projects/:sessionKey/:id', (req, res) => {
@@ -622,16 +1070,20 @@ app.delete('/api/projects/:sessionKey/:id', (req, res) => {
 
 // === API: Задачи проектов ===
 app.post('/api/tasks/:sessionKey', (req, res) => {
-    const { text, projectId } = req.body;
-    if (!text || !text.trim()) return res.status(400).json({ error: 'Text required' });
-    const result = stmts.createProjectTask.run(req.params.sessionKey, projectId || null, text.trim());
-    const task = { id: result.lastInsertRowid, session_key: req.params.sessionKey, project_id: projectId || null, text: text.trim(), completed: 0, sort_order: 0, created_at: Date.now(), completed_at: null };
-    res.json(task);
+    const { text, projectId } = req.body || {};
+    const safeText = sanitizeText(text || '', 1000);
+    if (!safeText) return res.status(400).json({ error: 'Text required (max 1000 chars)' });
+    const pid = (typeof projectId === 'number') ? projectId : null;
+    const result = stmts.createProjectTask.run(req.params.sessionKey, pid, safeText);
+    res.json({ id: result.lastInsertRowid, session_key: req.params.sessionKey, project_id: pid, text: safeText, completed: 0, sort_order: 0, created_at: Date.now(), completed_at: null });
 });
 
 app.put('/api/tasks/:sessionKey/:id', (req, res) => {
-    const { text, projectId } = req.body;
-    stmts.updateProjectTask.run(text, projectId !== undefined ? projectId : null, +req.params.id, req.params.sessionKey);
+    const { text, projectId } = req.body || {};
+    const safeText = sanitizeText(text || '', 1000);
+    if (!safeText) return res.status(400).json({ error: 'Text required (max 1000 chars)' });
+    const pid = (typeof projectId === 'number') ? projectId : null;
+    stmts.updateProjectTask.run(safeText, pid, +req.params.id, req.params.sessionKey);
     res.json({ ok: true });
 });
 
@@ -659,12 +1111,104 @@ app.get('/api/tasks/:sessionKey/:id', (req, res) => {
 });
 
 app.patch('/api/tasks/:sessionKey/:id/details', (req, res) => {
-    const { description, dueDate, timeStart, timeEnd, media } = req.body;
-    stmts.updateTaskDetails.run(
-        description || null, dueDate || null, timeStart || null, timeEnd || null,
-        media ? JSON.stringify(media) : null,
-        +req.params.id, req.params.sessionKey
-    );
+    const { description, dueDate, timeStart, timeEnd, media } = req.body || {};
+    const safeDesc = description ? sanitizeText(description, 5000) : null;
+    const safeDue = typeof dueDate === 'string' ? sanitizeText(dueDate, 32) : null;
+    const safeTs  = typeof timeStart === 'string' ? sanitizeText(timeStart, 16) : null;
+    const safeTe  = typeof timeEnd === 'string' ? sanitizeText(timeEnd, 16) : null;
+    // Media: limit to 20 items, each name/data within reason
+    let mediaJson = null;
+    if (Array.isArray(media)) {
+        const safeMedia = media.slice(0, 20).map(m => ({
+            name: typeof m?.name === 'string' ? sanitizeText(m.name, 200) : '',
+            type: m?.type === 'video' ? 'video' : 'image',
+            data: typeof m?.data === 'string' && m.data.length < 2_000_000 ? m.data : ''
+        })).filter(m => m.data);
+        mediaJson = safeMedia.length ? JSON.stringify(safeMedia) : null;
+    }
+    stmts.updateTaskDetails.run(safeDesc, safeDue, safeTs, safeTe, mediaJson, +req.params.id, req.params.sessionKey);
+    res.json({ ok: true });
+});
+
+// === API: Удаление аккаунта (GDPR-style "right to be forgotten") =============
+// Полностью затирает все данные пользователя: задачи, проекты, доски,
+// командные участия, приглашения, аватар-файл и сам user record.
+// После этого sessionKey становится "чистым" — повторный заход создаст новый профиль.
+const deleteAccountStmts = {
+    getUser:              db.prepare('SELECT user_id, avatar FROM users WHERE session_key = ?'),
+    deleteSessionData:    db.prepare('DELETE FROM session_data    WHERE session_key = ?'),
+    deletePersonalBoard:  db.prepare('DELETE FROM personal_boards WHERE session_key = ?'),
+    deleteProjectTasks:   db.prepare('DELETE FROM project_tasks   WHERE session_key = ?'),
+    deleteProjects:       db.prepare('DELETE FROM projects        WHERE session_key = ?'),
+    deleteUser:           db.prepare('DELETE FROM users           WHERE session_key = ?'),
+    getUserTeams:         db.prepare('SELECT team_id FROM team_members WHERE user_id = ?'),
+    deleteMyMemberships:  db.prepare('DELETE FROM team_members    WHERE user_id = ?'),
+    countTeamMembers:     db.prepare('SELECT COUNT(*) AS c FROM team_members WHERE team_id = ?'),
+    deleteTeam:           db.prepare('DELETE FROM teams           WHERE id = ?'),
+    deleteTeamBoard:      db.prepare('DELETE FROM team_boards     WHERE team_id = ?'),
+    deleteAllTeamMembers: db.prepare('DELETE FROM team_members    WHERE team_id = ?'),
+    deleteMyInvitations:  db.prepare('DELETE FROM invitations     WHERE from_user_id = ? OR to_user_id = ?'),
+};
+app.delete('/api/account/:sessionKey', (req, res) => {
+    const { sessionKey } = req.params;
+    const user = deleteAccountStmts.getUser.get(sessionKey);
+    if (!user) return res.status(404).json({ error: 'not_found' });
+
+    // Удаляем аватар-файл с диска ДО удаления записи
+    if (user.avatar && user.avatar.startsWith('/uploads/avatars/')) {
+        const abs = path.join(UPLOADS_DIR, user.avatar.replace(/^\/uploads\//, ''));
+        if (abs.startsWith(AVATARS_DIR) && fs.existsSync(abs)) {
+            try { fs.unlinkSync(abs); } catch (_) {}
+        }
+    }
+
+    // Атомарная транзакция
+    const tx = db.transaction(() => {
+        // 1. Команды: если я был единственным членом → удалить команду целиком
+        const teams = deleteAccountStmts.getUserTeams.all(user.user_id);
+        deleteAccountStmts.deleteMyMemberships.run(user.user_id);
+        for (const { team_id } of teams) {
+            const left = deleteAccountStmts.countTeamMembers.get(team_id).c;
+            if (left === 0) {
+                deleteAccountStmts.deleteAllTeamMembers.run(team_id);
+                deleteAccountStmts.deleteTeamBoard.run(team_id);
+                deleteAccountStmts.deleteTeam.run(team_id);
+            }
+        }
+        // 2. Приглашения (входящие + исходящие)
+        deleteAccountStmts.deleteMyInvitations.run(user.user_id, user.user_id);
+        // 3. Данные сессии
+        deleteAccountStmts.deletePersonalBoard.run(sessionKey);
+        deleteAccountStmts.deleteProjectTasks.run(sessionKey);
+        deleteAccountStmts.deleteProjects.run(sessionKey);
+        deleteAccountStmts.deleteSessionData.run(sessionKey);
+        // 4. Сам пользователь
+        deleteAccountStmts.deleteUser.run(sessionKey);
+    });
+
+    try {
+        tx();
+    } catch (e) {
+        log.error('Account delete failed:', e);
+        return res.status(500).json({ error: 'delete_failed' });
+    }
+
+    // Уведомить оставшихся участников команд об изменениях (после tx чтобы не подвешиваться на ws)
+    // (опускаем — clients их получат при следующем запросе)
+
+    // Закрыть все WS-соединения этого sessionKey
+    if (connections.has(sessionKey)) {
+        for (const client of connections.get(sessionKey)) {
+            try {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({ type: 'account_deleted' }));
+                    client.close(1000, 'account deleted');
+                }
+            } catch (_) {}
+        }
+        connections.delete(sessionKey);
+    }
+    log.info('Account deleted');
     res.json({ ok: true });
 });
 
@@ -713,6 +1257,18 @@ function notifyUser(sessionKey, message) {
     });
 }
 
+// === APPS DETECTION CACHE — per-session snapshot of running apps from agent ===
+// appsCache: sessionKey -> { apps: [{process,title,match,...}], ts }
+const appsCache = new Map();
+// listsCache: sessionKey -> { whiteList, blackList, ts }
+const listsCache = new Map();
+// Cleanup stale entries every 30 min
+setInterval(() => {
+    const cutoff = Date.now() - 30 * 60 * 1000;
+    for (const [k, v] of appsCache) if (v.ts < cutoff) appsCache.delete(k);
+    for (const [k, v] of listsCache) if (v.ts < cutoff) listsCache.delete(k);
+}, 30 * 60 * 1000);
+
 // === КОМАНДНАЯ ДОСКА ===
 // boardSessions: teamId -> Map<ws, {username, userId}>
 const boardSessions = new Map();
@@ -736,6 +1292,13 @@ function handleBoardJoin(ws, data) {
     if (!team) { console.log(`[Board] board_join: no team for user=${user.user_id} (${username})`); return; }
     console.log(`[Board] board_join: user=${username} teamId=${team.id}`);
 
+    // Defensive: if this ws was already in some other team, evict from there first
+    if (ws._boardTeamId && ws._boardTeamId !== team.id && boardSessions.has(ws._boardTeamId)) {
+        const prev = boardSessions.get(ws._boardTeamId);
+        prev.delete(ws);
+        if (prev.size === 0) boardSessions.delete(ws._boardTeamId);
+    }
+
     const teamId = team.id;
     ws._boardTeamId = teamId;
     ws._boardUsername = username;
@@ -756,12 +1319,30 @@ function handleBoardJoin(ws, data) {
     boardBroadcast(teamId, { type: 'board_online', users: online });
 }
 
+// Cheap membership re-check — guards against ws hijack / kicked-while-connected
+const checkMembershipStmt = db.prepare('SELECT 1 AS ok FROM team_members WHERE team_id = ? AND user_id = ?');
+function wsStillInTeam(ws) {
+    if (!ws._boardTeamId || !ws._boardUserId) return false;
+    const row = checkMembershipStmt.get(ws._boardTeamId, ws._boardUserId);
+    return !!row;
+}
+
 function handleBoardUpdate(ws, data) {
     const teamId = ws._boardTeamId;
     if (!teamId) return;
+    // Persistence path — verify the user still belongs to this team
+    if (!wsStillInTeam(ws)) {
+        console.warn(`[Board] board_update rejected for user ${ws._boardUserId} → team ${teamId}: no longer a member`);
+        return;
+    }
+    if (!data || typeof data.data !== 'object' || data.data === null) return;
 
     const now = Date.now();
     const json = JSON.stringify(data.data);
+    if (json.length > 4_000_000) {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', message: 'Board too large' }));
+        return;
+    }
     stmts.upsertTeamBoard.run(teamId, json, now, json, now);
 
     boardBroadcast(teamId, {
@@ -828,8 +1409,8 @@ function handleBoardCursorLeave(ws) {
 
 function handleBoardCursor(ws, data) {
     const teamId = ws._boardTeamId;
-    if (!teamId) { console.log(`[Board] board_cursor: no teamId on ws (not joined?)`); return; }
-    console.log(`[Board] cursor from ${ws._boardUsername} teamId=${teamId} members=${boardSessions.get(teamId)?.size}`);
+    if (!teamId) { wsLog.debug('board_cursor without teamId (not joined)'); return; }
+    // Cursor logs were extremely noisy — gated to debug-only now
     boardBroadcast(teamId, {
         type: 'board_cursor',
         username: ws._boardUsername,
@@ -842,8 +1423,23 @@ function handleBoardCursor(ws, data) {
 
 // Очищаем при отключении — см. ws.on('close') ниже
 
-// Обработка upgrade
+// Обработка upgrade — с проверкой Origin (anti-CSWSH)
+// Allowlist совпадает с CORS-ом плюс null/undefined для Electron/desktop клиентов
+const WS_ALLOWED_ORIGINS = new Set([
+    'https://linktime.go-tit.ru',
+    'http://localhost:3002',
+    'http://127.0.0.1:3002',
+]);
 server.on('upgrade', (request, socket, head) => {
+    const origin = request.headers.origin;
+    // Electron renderers и desktop-agent — без Origin header. Разрешаем.
+    // Browser — origin обязательно должен быть в allowlist.
+    if (origin && !WS_ALLOWED_ORIGINS.has(origin)) {
+        wsLog.warn('WS rejected — bad origin:', origin, 'ip:', request.socket.remoteAddress);
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+    }
     wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
     });
@@ -918,9 +1514,27 @@ wss.on('connection', (ws, request) => {
                 case 'board_conn_preview':
                     handleBoardConnPreview(ws, data);
                     break;
+                case 'apps_snapshot':
+                    handleAppsSnapshot(ws, data);
+                    break;
+                case 'apps_lists_update':
+                    handleAppsListsUpdate(ws, data);
+                    break;
+                case 'apps_lists':
+                    handleAppsLists(ws, data);
+                    break;
+                case 'request_apps_state':
+                    handleRequestAppsState(ws, data);
+                    break;
+                case 'request_all_processes':
+                    handleRequestAllProcesses(ws, data);
+                    break;
+                case 'all_processes':
+                    handleAllProcesses(ws, data);
+                    break;
             }
         } catch (error) {
-            console.error('[WS] Error processing message:', error);
+            wsLog.error('Error processing message:', error);
         }
     });
 
@@ -938,7 +1552,7 @@ wss.on('connection', (ws, request) => {
     });
 
     ws.on('error', (error) => {
-        console.error('[WS] Connection error:', error.message);
+        wsLog.warn('connection error:', error.message);
     });
 
     // --- Проверка живого агента ---
@@ -1164,6 +1778,92 @@ wss.on('connection', (ws, request) => {
         broadcast(sessionKey, { type: 'agent_status', connected: true });
 
         console.log(`[WS] Desktop Agent connected for session ${sessionKey}`);
+    }
+
+    // === APPS PROTOCOL — relay between agent and browsers in the same session ===
+    // Cache last snapshot per session so a fresh browser can ask for state.
+    function handleAppsSnapshot(ws, data) {
+        const { sessionKey, apps } = data;
+        if (!sessionKey || !Array.isArray(apps)) return;
+        appsCache.set(sessionKey, { apps, ts: Date.now() });
+        // Broadcast to all clients in session except the sender (agent)
+        broadcast(sessionKey, { type: 'apps_snapshot', apps, from: 'agent' }, ws);
+    }
+
+    function handleAppsLists(ws, data) {
+        const { sessionKey, whiteList, blackList } = data;
+        if (!sessionKey) return;
+        // Cache + broadcast to all browsers (agent sends this on connect)
+        listsCache.set(sessionKey, {
+            whiteList: Array.isArray(whiteList) ? whiteList : [],
+            blackList: Array.isArray(blackList) ? blackList : [],
+            ts: Date.now()
+        });
+        broadcast(sessionKey, {
+            type: 'apps_lists',
+            whiteList: listsCache.get(sessionKey).whiteList,
+            blackList: listsCache.get(sessionKey).blackList,
+            from: 'agent'
+        }, ws);
+    }
+
+    function handleAppsListsUpdate(ws, data) {
+        const { sessionKey, whiteList, blackList } = data;
+        if (!sessionKey) return;
+        listsCache.set(sessionKey, {
+            whiteList: Array.isArray(whiteList) ? whiteList : [],
+            blackList: Array.isArray(blackList) ? blackList : [],
+            ts: Date.now()
+        });
+        // Broadcast to all clients in session (including agent, who persists to disk)
+        broadcast(sessionKey, {
+            type: 'apps_lists_update',
+            whiteList: listsCache.get(sessionKey).whiteList,
+            blackList: listsCache.get(sessionKey).blackList,
+            from: 'browser'
+        }, ws);
+    }
+
+    // Browser → forwarded to agent (asking it to enumerate processes)
+    function handleRequestAllProcesses(ws, data) {
+        const { sessionKey } = data;
+        if (!sessionKey || !connections.has(sessionKey)) return;
+        for (const client of connections.get(sessionKey)) {
+            if (client.isAgent && client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({ type: 'request_all_processes' }));
+                return;
+            }
+        }
+        // No agent online — let browser know
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'all_processes', processes: [], offline: true }));
+        }
+    }
+
+    // Agent → relay to browsers
+    function handleAllProcesses(ws, data) {
+        const { sessionKey, processes } = data;
+        if (!sessionKey || !Array.isArray(processes)) return;
+        broadcast(sessionKey, { type: 'all_processes', processes }, ws);
+    }
+
+    function handleRequestAppsState(ws, data) {
+        const { sessionKey } = data;
+        if (!sessionKey) return;
+        // Send cached snapshot + lists if we have them
+        const snap = appsCache.get(sessionKey);
+        if (snap) ws.send(JSON.stringify({ type: 'apps_snapshot', apps: snap.apps, cached: true }));
+        const lists = listsCache.get(sessionKey);
+        if (lists) ws.send(JSON.stringify({ type: 'apps_lists', whiteList: lists.whiteList, blackList: lists.blackList, cached: true }));
+        // Also ask the agent (if connected) to push a fresh snapshot
+        if (connections.has(sessionKey)) {
+            for (const client of connections.get(sessionKey)) {
+                if (client.isAgent && client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({ type: 'request_apps_snapshot' }));
+                    break;
+                }
+            }
+        }
     }
 
     function handleDisconnect(ws) {

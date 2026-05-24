@@ -19,7 +19,7 @@ let teamTimers = {}; // { userId: { action, sessionStart, totalPausedTime, ... }
 let ws = null;
 let reconnectInterval = null;
 let heartbeatInterval = null;
-const WS_URL = 'wss://linktime.go-tit.ru';
+const WS_URL = window._config?.wsUrl || 'wss://linktime.go-tit.ru';
 
 // XSS защита
 function escapeHTML(str) {
@@ -27,6 +27,123 @@ const div = document.createElement('div');
 div.appendChild(document.createTextNode(str));
 return div.innerHTML;
 }
+
+// === LOGGER — debug-gated via ?debug=1 URL param =============================
+const LT_DEBUG = (() => {
+    try { return new URLSearchParams(location.search).get('debug') === '1'; } catch (_) { return false; }
+})();
+window.ltLog = {
+    debug: (...a) => { if (LT_DEBUG) console.debug('[LT]', ...a); },
+    info:  (...a) => { if (LT_DEBUG) console.log('[LT]', ...a); },
+    warn:  (...a) => console.warn('[LT]', ...a),
+    error: (...a) => console.error('[LT]', ...a),
+};
+
+// === APPS DETECTION STATE (Phase 2) — bridges agent → settings UI ===
+window.LinkTimeApps = {
+    snapshot: [],            // live apps from agent (rolling 10-min window)
+    allProcesses: [],        // полный список процессов системы (по запросу)
+    allProcessesOffline: false,
+    lists: {                 // categorization (mirror of agent config.json)
+        white: (() => { try { return JSON.parse(localStorage.getItem('whiteList') || '[]'); } catch { return []; } })(),
+        black: (() => { try { return JSON.parse(localStorage.getItem('blackList') || '[]'); } catch { return []; } })()
+    },
+    agentOnline: false,
+    onChange: null,            // settings UI sets this for re-renders
+    onProcessesChange: null    // ditto, but for the full process list
+};
+
+function fireAppsChange() {
+    try {
+        localStorage.setItem('whiteList', JSON.stringify(window.LinkTimeApps.lists.white));
+        localStorage.setItem('blackList', JSON.stringify(window.LinkTimeApps.lists.black));
+    } catch (_) {}
+    if (typeof window.LinkTimeApps.onChange === 'function') {
+        try { window.LinkTimeApps.onChange(); } catch (_) {}
+    }
+}
+
+// Categorize app: kind = 'white' | 'black' | 'ignore'
+window.categorizeApp = function(appName, kind) {
+    if (!appName || !String(appName).trim()) return;
+    const name = String(appName).trim();
+    const w = window.LinkTimeApps.lists.white;
+    const b = window.LinkTimeApps.lists.black;
+    const wIdx = w.findIndex(a => a && a.toLowerCase() === name.toLowerCase());
+    const bIdx = b.findIndex(a => a && a.toLowerCase() === name.toLowerCase());
+    if (wIdx !== -1) w.splice(wIdx, 1);
+    if (bIdx !== -1) b.splice(bIdx, 1);
+    if (kind === 'white') w.push(name);
+    else if (kind === 'black') b.push(name);
+    // 'ignore' leaves both lists without entry
+    fireAppsChange();
+    // Push to agent via WS (broadcast in session)
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+            ws.send(JSON.stringify({
+                type: 'apps_lists_update',
+                sessionKey: state.sessionKey,
+                whiteList: w,
+                blackList: b
+            }));
+        } catch (_) {}
+    }
+};
+
+window.requestAppsState = function() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+            ws.send(JSON.stringify({
+                type: 'request_apps_state',
+                sessionKey: state.sessionKey
+            }));
+        } catch (_) {}
+    }
+};
+
+// Запросить ВЕСЬ список запущенных процессов (агент соберёт через PowerShell)
+window.requestAllProcesses = function() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+            ws.send(JSON.stringify({
+                type: 'request_all_processes',
+                sessionKey: state.sessionKey
+            }));
+        } catch (_) {}
+    }
+};
+
+// Добавить правило с путем к exe (объектный формат: {match, path, label})
+window.addAppRule = function(rule, kind) {
+    if (!rule || !rule.match) return;
+    const list = kind === 'black' ? window.LinkTimeApps.lists.black : window.LinkTimeApps.lists.white;
+    const other = kind === 'black' ? window.LinkTimeApps.lists.white : window.LinkTimeApps.lists.black;
+
+    // Удалить из обоих если уже было (по match name или path)
+    function isSame(r) {
+        if (!r) return false;
+        if (typeof r === 'string') return r.toLowerCase() === rule.match.toLowerCase();
+        if (rule.path && r.path) return r.path.toLowerCase() === rule.path.toLowerCase();
+        if (r.match) return r.match.toLowerCase() === rule.match.toLowerCase();
+        return false;
+    }
+    for (let i = list.length - 1; i >= 0; i--) if (isSame(list[i])) list.splice(i, 1);
+    for (let i = other.length - 1; i >= 0; i--) if (isSame(other[i])) other.splice(i, 1);
+
+    // Добавить новое
+    if (kind !== 'ignore') list.push(rule);
+    fireAppsChange();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+            ws.send(JSON.stringify({
+                type: 'apps_lists_update',
+                sessionKey: state.sessionKey,
+                whiteList: window.LinkTimeApps.lists.white,
+                blackList: window.LinkTimeApps.lists.black
+            }));
+        } catch (_) {}
+    }
+};
 
 // Состояние видимости и фокуса
 let isTabVisible = true;
@@ -74,7 +191,9 @@ initUserProfile();
 
 // Генерация уникального ключа сессии
 function generateSessionKey() {
-return 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    const arr = new Uint8Array(24);
+    crypto.getRandomValues(arr);
+    return 'sk_' + Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Настройка обработчиков событий
@@ -685,13 +804,14 @@ function exportCSV() {
             .join('; ');
 
         for (const s of daySessions) {
-            const start = new Date(s.startTime);
-            const end = s.endTime ? new Date(s.endTime) : new Date();
-            const dur = Math.round((end - start - (s.totalPausedTime || 0)) / 60000);
+            const start = new Date(s.start || s.startTime);
+            const end = (s.end || s.endTime) ? new Date(s.end || s.endTime) : new Date();
+            const totalPaused = s.totalPausedTime || (s.pauses || []).reduce((acc, p) => acc + (p.duration || 0), 0);
+            const dur = Math.round((end - start - totalPaused) / 60000);
             rows.push([
                 date,
                 start.toLocaleTimeString('ru'),
-                s.endTime ? end.toLocaleTimeString('ru') : '',
+                (s.end || s.endTime) ? end.toLocaleTimeString('ru') : '',
                 dur,
                 tasks
             ]);
@@ -923,6 +1043,19 @@ return cache.sessions[`sessions_${dateStr}`] || [];
 
 // === WEBSOCKET СИНХРОНИЗАЦИЯ ===
 
+function setSyncStatus(state) {
+    const dot = document.getElementById('syncDot');
+    if (!dot) return;
+    dot.classList.remove('connected', 'disconnected', 'connecting');
+    if (state) dot.classList.add(state);
+    // Tooltip + ARIA для скринридеров
+    const label = state === 'connected' ? 'Подключено к серверу'
+                : state === 'connecting' ? 'Подключение…'
+                : 'Нет связи с сервером';
+    dot.title = label;
+    dot.setAttribute('aria-label', label);
+}
+
 function connectWebSocket() {
 try {
 // Закрываем старое соединение если оно ещё открыто/подключается
@@ -930,10 +1063,12 @@ if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNE
 ws.onclose = null; // Не триггерим reconnect от старого сокета
 ws.close();
 }
+setSyncStatus('connecting');
 ws = new WebSocket(WS_URL);
 
 ws.onopen = () => {
 console.log('WebSocket connected');
+setSyncStatus('connected');
 // Присоединяемся к сессии
 ws.send(JSON.stringify({
 type: 'join',
@@ -954,7 +1089,13 @@ setTimeout(() => syncData(), 500);
 };
 
 ws.onmessage = (event) => {
-const message = JSON.parse(event.data);
+    let message;
+    try {
+        message = JSON.parse(event.data);
+    } catch (e) {
+        console.error('[WS] Invalid JSON from server:', e);
+        return;
+    }
 
 switch (message.type) {
 case 'init':
@@ -1007,15 +1148,50 @@ break;
 case 'team_timer_update':
 handleTeamTimerUpdate(message);
 break;
+case 'apps_snapshot':
+    if (window.LinkTimeApps) {
+        window.LinkTimeApps.snapshot = Array.isArray(message.apps) ? message.apps : [];
+        window.LinkTimeApps.agentOnline = true;
+        fireAppsChange();
+    }
+    break;
+case 'apps_lists':
+case 'apps_lists_update':
+    if (window.LinkTimeApps) {
+        if (Array.isArray(message.whiteList)) window.LinkTimeApps.lists.white = message.whiteList;
+        if (Array.isArray(message.blackList)) window.LinkTimeApps.lists.black = message.blackList;
+        fireAppsChange();
+    }
+    break;
+case 'account_deleted':
+    // Аккаунт удалён с другого устройства — чистим локально и предупреждаем
+    try {
+        localStorage.clear();
+        sessionStorage.clear();
+    } catch (_) {}
+    alert('Аккаунт удалён с другого устройства. Будет создан новый профиль.');
+    location.reload();
+    break;
+case 'all_processes':
+    if (window.LinkTimeApps) {
+        window.LinkTimeApps.allProcesses = Array.isArray(message.processes) ? message.processes : [];
+        window.LinkTimeApps.allProcessesOffline = !!message.offline;
+        if (typeof window.LinkTimeApps.onProcessesChange === 'function') {
+            try { window.LinkTimeApps.onProcessesChange(); } catch (_) {}
+        }
+    }
+    break;
 }
 };
 
 ws.onerror = (error) => {
 console.error('WebSocket error:', error);
+setSyncStatus('disconnected');
 };
 
 ws.onclose = () => {
 console.log('WebSocket disconnected');
+setSyncStatus('disconnected');
 
 // Останавливаем heartbeat
 stopHeartbeat();
@@ -1257,6 +1433,16 @@ heartbeatInterval = null;
 function handleAgentStatus(connected) {
 console.log(`Desktop Agent ${connected ? 'connected' : 'disconnected'}`);
 agentConnected = connected;
+if (window.LinkTimeApps) {
+    window.LinkTimeApps.agentOnline = connected;
+    if (connected) {
+        // Ask the server (and through it, the agent) for fresh state
+        try { window.requestAppsState(); } catch (_) {}
+    } else {
+        window.LinkTimeApps.snapshot = [];
+    }
+    fireAppsChange();
+}
 
 const indicator = document.getElementById('activityIndicator');
 if (connected) {
@@ -1414,10 +1600,11 @@ toast.classList.remove('show');
 }, 3000);
 }
 
-// Экспорт функций для глобального доступа (для onclick в HTML)
+// Экспорт функций для глобального доступа (для onclick в HTML и inline-скриптов)
 window.exportCSV = exportCSV;
 window.exportJSON = exportJSON;
 window.importJSON = importJSON;
+window.showToast = showToast;
 
 // === УПРАВЛЕНИЕ СПИСКАМИ ПРИЛОЖЕНИЙ (white/black) ===
 
@@ -1475,12 +1662,30 @@ function renderListItems(type) {
 const container = document.getElementById(type + 'ListItems');
 if (!container) return;
 const items = getAppList(type);
-container.innerHTML = items.map((item, i) => `
-       <span class="list-tag ${type}">
-           ${item}
-           <button class="remove-tag" onclick="removeListItem('${type}', ${i})">×</button>
-       </span>
-   `).join('');
+container.innerHTML = items.map((item, i) => {
+    let label, tooltip;
+    if (typeof item === 'object' && item) {
+        label = escapeHTML(item.label || item.match || '?');
+        tooltip = item.path ? `Путь: ${item.path}` : (item.match || '');
+    } else {
+        label = escapeHTML(String(item));
+        tooltip = '';
+    }
+    return `<span class="list-tag ${type}" title="${escapeHTML(tooltip)}">
+        ${label}
+        <button class="remove-tag" data-action="remove-list" data-list-type="${type}" data-list-index="${i}">×</button>
+    </span>`;
+}).join('');
+
+// Event delegation — подписываемся один раз на контейнер
+if (!container._ltDelegated) {
+    container._ltDelegated = true;
+    container.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action="remove-list"]');
+        if (!btn) return;
+        removeListItem(btn.dataset.listType, parseInt(btn.dataset.listIndex, 10));
+    });
+}
 }
 
 function addListItem(type) {
@@ -1545,6 +1750,8 @@ migrateBtn.textContent = 'Перенести данные из браузера 
 // userProfile, userTeam, teamTimers — объявлены вверху файла
 
 function getApiBase() {
+  // Prefer explicit apiBase (set by Electron preload). Fallback to deriving from WS_URL.
+  if (window._config && window._config.apiBase) return window._config.apiBase;
   return WS_URL.replace('wss://', 'https://').replace('ws://', 'http://');
 }
 
@@ -1645,7 +1852,9 @@ function renderTeam() {
 
       const dot = (m.sharing_time && hasTimer) ? `<div class="member-sharing-dot"></div>` : '';
       const roleLabel = m.role === 'owner' ? `<span class="tooltip-role-owner">👑 Глава</span>` : '';
-      const kickBtn = (me && me.role === 'owner') ? `<button class="tooltip-kick-btn" onclick="kickMember('${m.user_id}')">Выгнать</button>` : '';
+      const kickBtn = (me && me.role === 'owner')
+        ? `<button class="tooltip-kick-btn" data-action="kick" data-user-id="${m.user_id}">Выгнать</button>`
+        : '';
 
       html += `
         <div class="team-member-avatar" data-user-id="${m.user_id}">
@@ -1660,13 +1869,25 @@ function renderTeam() {
       `;
     });
   }
-  
+
   // Слот + показываем ВСЕГДА
   html += `
-    <div class="team-add-slot" onclick="openInviteModal()" title="Пригласить в команду">+</div>
+    <div class="team-add-slot" data-action="invite" title="Пригласить в команду">+</div>
   `;
-  
+
   container.innerHTML = html;
+
+  // Event delegation — подписываемся один раз
+  if (!container._ltDelegated) {
+    container._ltDelegated = true;
+    container.addEventListener('click', (e) => {
+      const inviteSlot = e.target.closest('[data-action="invite"]');
+      if (inviteSlot) { openInviteModal(); return; }
+      const kickBtn = e.target.closest('[data-action="kick"]');
+      if (kickBtn) { kickMember(kickBtn.dataset.userId); return; }
+    });
+  }
+
   startTeamTimerUpdates();
 }
 
@@ -1690,7 +1911,7 @@ async function kickMember(targetUserId) {
     async function onYes() {
       close(true);
       try {
-        const res = await fetch('/api/team/kick', {
+        const res = await fetch(getApiBase() + '/api/team/kick', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionKey: state.sessionKey, targetUserId })
@@ -1826,13 +2047,24 @@ function renderNotifications(invitations) {
   }
   panel.innerHTML = invitations.map(inv => `
     <div class="notif-item">
-      <strong>${inv.from_username}</strong> приглашает вас в команду
+      <strong>${escapeHTML(inv.from_username)}</strong> приглашает вас в команду
       <div class="notif-actions">
-        <button class="notif-accept" onclick="respondInvite(${inv.id}, 'accept')">Принять</button>
-        <button class="notif-decline" onclick="respondInvite(${inv.id}, 'decline')">Отклонить</button>
+        <button class="notif-accept"  data-action="invite-accept"  data-inv-id="${inv.id}">Принять</button>
+        <button class="notif-decline" data-action="invite-decline" data-inv-id="${inv.id}">Отклонить</button>
       </div>
     </div>
   `).join('');
+
+  if (!panel._ltDelegated) {
+    panel._ltDelegated = true;
+    panel.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action^="invite-"]');
+      if (!btn) return;
+      const id = parseInt(btn.dataset.invId, 10);
+      const action = btn.dataset.action === 'invite-accept' ? 'accept' : 'decline';
+      respondInvite(id, action);
+    });
+  }
 }
 
 async function respondInvite(id, action) {
@@ -1860,26 +2092,61 @@ window.openInviteModal = openInviteModal;
 
 function openProfile() {
   if (!userProfile) return;
+
+  // ID + display-имя + email (view-режим)
   document.getElementById('profileUserId').textContent = userProfile.userId;
+  const usernameDisp = document.getElementById('profileUsernameDisplay');
+  if (usernameDisp) usernameDisp.textContent = userProfile.username || '—';
+  const emailDisp = document.getElementById('profileEmailDisplay');
+  if (emailDisp) {
+    if (userProfile.email) {
+      emailDisp.textContent = userProfile.email;
+      emailDisp.classList.remove('profile-field-text-empty');
+    } else {
+      emailDisp.textContent = 'не указан';
+      emailDisp.classList.add('profile-field-text-empty');
+    }
+  }
+  // Сами input'ы заполняем (если юзер потом нажмёт «изменить»)
   document.getElementById('profileUsername').value = userProfile.username || '';
   document.getElementById('profileEmail').value = userProfile.email || '';
   document.getElementById('usernameHint').textContent = '';
-  
+
+  // Скрыть edit-режим (на случай если был открыт)
+  document.querySelectorAll('#profileModal .profile-field-edit').forEach(el => el.hidden = true);
+  document.querySelectorAll('#profileModal .profile-field-view').forEach(el => el.hidden = false);
+
   // Аватар
   const preview = document.getElementById('profileAvatarPreview');
-  const letter = document.getElementById('profileAvatarLetter');
   const removeBtn = document.getElementById('removeAvatar');
-  
   if (userProfile.avatar) {
     preview.innerHTML = `<img src="${userProfile.avatar}" alt="Avatar">`;
-    removeBtn.style.display = 'inline-block';
+    removeBtn.style.display = '';
   } else {
     preview.innerHTML = `<span id="profileAvatarLetter">${(userProfile.username||'?')[0].toUpperCase()}</span>`;
     removeBtn.style.display = 'none';
   }
-  
+
   document.getElementById('profileModal').classList.add('active');
 }
+
+// Toggle inline-edit для username/email
+function toggleProfileEdit(field, editMode) {
+  const wrap = document.querySelector(`#profileModal .profile-field[data-field="${field}"]`);
+  if (!wrap) return;
+  const view = wrap.querySelector('.profile-field-view');
+  const edit = wrap.querySelector('.profile-field-edit');
+  if (editMode) {
+    view.hidden = true;
+    edit.hidden = false;
+    const input = edit.querySelector('input');
+    if (input) { input.focus(); input.select(); }
+  } else {
+    view.hidden = false;
+    edit.hidden = true;
+  }
+}
+window.toggleProfileEdit = toggleProfileEdit;
 function closeProfile() {
   document.getElementById('profileModal').classList.remove('active');
 }
@@ -1897,14 +2164,19 @@ async function saveUsername() {
     if (data.ok) {
       userProfile.username = username;
       updateAvatarLetter();
-      hint.style.color = '#10b981';
-      hint.textContent = 'Имя сохранено!';
+      hint.className = 'profile-field-hint ok';
+      hint.textContent = 'Имя сохранено';
+      // Обновить display + вернуть view-режим
+      const disp = document.getElementById('profileUsernameDisplay');
+      if (disp) disp.textContent = username;
+      toggleProfileEdit('username', false);
+      setTimeout(() => { hint.textContent = ''; hint.className = 'profile-field-hint'; }, 2000);
     } else {
-      hint.style.color = '#ef4444';
+      hint.className = 'profile-field-hint error';
       hint.textContent = data.error || 'Ошибка';
     }
   } catch (e) {
-    hint.style.color = '#ef4444';
+    hint.className = 'profile-field-hint error';
     hint.textContent = 'Ошибка соединения';
   }
 }
@@ -1912,26 +2184,46 @@ async function saveUsername() {
 async function saveEmail() {
   const email = document.getElementById('profileEmail').value.trim();
   try {
-    await fetch(`${getApiBase()}/api/user/${state.sessionKey}/email`, {
+    const res = await fetch(`${getApiBase()}/api/user/${state.sessionKey}/email`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email })
     });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Некорректный email', 'error'); return; }
     userProfile.email = email;
+    // Обновить display + вернуть view-режим
+    const disp = document.getElementById('profileEmailDisplay');
+    if (disp) {
+      if (email) {
+        disp.textContent = email;
+        disp.classList.remove('profile-field-text-empty');
+      } else {
+        disp.textContent = 'не указан';
+        disp.classList.add('profile-field-text-empty');
+      }
+    }
+    toggleProfileEdit('email', false);
     showToast('Email сохранён', 'success');
   } catch (e) {
-    showToast('Ошибка', 'error');
+    showToast('Ошибка соединения', 'error');
   }
 }
 
 async function handleAvatarUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
-  if (file.size > 500000) {
-    showToast('Файл слишком большой (макс 500 КБ)', 'error');
+  // Server stores up to 500 KB binary. Base64 inflates by ~33%, so cap binary at ~375 KB.
+  if (file.size > 375 * 1024) {
+    showToast('Файл слишком большой (макс ~370 КБ)', 'error');
     return;
   }
-  
+  const allowed = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+  if (!allowed.includes(file.type)) {
+    showToast('Поддерживаются: PNG, JPEG, WebP, GIF', 'error');
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = async (ev) => {
     const base64 = ev.target.result;
@@ -1943,9 +2235,11 @@ async function handleAvatarUpload(e) {
       });
       const data = await res.json();
       if (data.ok) {
-        userProfile.avatar = base64;
+        // Server returns the canonical URL (file-backed). Fall back to base64 for older servers.
+        const finalUrl = data.avatar || base64;
+        userProfile.avatar = finalUrl;
         updateAvatarDisplay();
-        document.getElementById('profileAvatarPreview').innerHTML = `<img src="${base64}" alt="Avatar">`;
+        document.getElementById('profileAvatarPreview').innerHTML = `<img src="${finalUrl}" alt="Avatar">`;
         document.getElementById('removeAvatar').style.display = 'inline-block';
         showToast('Аватар обновлён!', 'success');
       } else {
@@ -1979,36 +2273,144 @@ async function removeAvatar() {
 // === ПРИГЛАШЕНИЯ ===
 
 function openInviteModal() {
-  document.getElementById('inviteQuery').value = '';
-  document.getElementById('inviteHint').textContent = '';
+  // Сбросить состояние
+  const q = document.getElementById('inviteQuery');
+  const hint = document.getElementById('inviteHint');
+  const preview = document.getElementById('invitePreview');
+  const sendBtn = document.getElementById('sendInviteBtn');
+  if (q) q.value = '';
+  if (hint) { hint.textContent = ''; hint.className = 'invite-hint'; }
+  if (preview) preview.hidden = true;
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Отправить приглашение'; }
+  _inviteFoundUser = null;
+
+  // Заполнить мой ID (для шеринга)
+  const shareId = document.getElementById('inviteShareId');
+  if (shareId && userProfile && userProfile.userId) {
+    shareId.textContent = userProfile.userId;
+  }
+
   document.getElementById('inviteModal').classList.add('active');
 }
 function closeInviteModal() {
   document.getElementById('inviteModal').classList.remove('active');
 }
 
-async function sendInvite() {
-  const query = document.getElementById('inviteQuery').value.trim();
+// Live lookup state
+let _inviteFoundUser = null;
+let _inviteLookupTimer = null;
+
+function setInviteHint(text, kind) {
   const hint = document.getElementById('inviteHint');
-  if (!query) { hint.style.color = '#ef4444'; hint.textContent = 'Введите ID или имя'; return; }
+  if (!hint) return;
+  hint.textContent = text || '';
+  hint.className = 'invite-hint' + (kind ? ' ' + kind : '');
+}
+
+async function lookupInviteUser(query) {
+  const preview = document.getElementById('invitePreview');
+  const spin = document.getElementById('inviteLookupSpinner');
+  const sendBtn = document.getElementById('sendInviteBtn');
+  const q = query.trim().replace(/^@/, '');
+  if (!q || q.length < 2) {
+    if (preview) preview.hidden = true;
+    setInviteHint('', '');
+    if (sendBtn) sendBtn.disabled = true;
+    _inviteFoundUser = null;
+    return;
+  }
+  if (spin) spin.hidden = false;
+  try {
+    const res = await fetch(`${getApiBase()}/api/user/find/${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (spin) spin.hidden = true;
+    if (!res.ok) {
+      if (preview) preview.hidden = true;
+      setInviteHint(res.status === 404 ? 'Пользователь не найден' : (data.error || 'Ошибка'), 'error');
+      if (sendBtn) sendBtn.disabled = true;
+      _inviteFoundUser = null;
+      return;
+    }
+    if (userProfile && data.userId === userProfile.userId) {
+      if (preview) preview.hidden = true;
+      setInviteHint('Это вы сами — нельзя пригласить себя', 'error');
+      if (sendBtn) sendBtn.disabled = true;
+      _inviteFoundUser = null;
+      return;
+    }
+    // Found — заполняем preview
+    _inviteFoundUser = data;
+    if (preview) {
+      const av = document.getElementById('invitePreviewAvatar');
+      const nm = document.getElementById('invitePreviewName');
+      const idTx = document.getElementById('invitePreviewIdText');
+      if (nm) nm.textContent = data.username;
+      if (idTx) idTx.textContent = 'ID · ' + data.userId;
+      if (av) {
+        // У endpoint /api/user/find нет avatar URL, показываем букву
+        av.innerHTML = (data.username || '?')[0].toUpperCase();
+      }
+      preview.hidden = false;
+    }
+    setInviteHint('', '');
+    if (sendBtn) {
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Пригласить ' + data.username;
+    }
+  } catch (e) {
+    if (spin) spin.hidden = true;
+    setInviteHint('Ошибка соединения', 'error');
+    if (sendBtn) sendBtn.disabled = true;
+    _inviteFoundUser = null;
+  }
+}
+
+// Хук на инпут (привязывается один раз при загрузке)
+function bindInviteLookup() {
+  const q = document.getElementById('inviteQuery');
+  if (!q || q._ltBound) return;
+  q._ltBound = true;
+  q.addEventListener('input', (e) => {
+    clearTimeout(_inviteLookupTimer);
+    _inviteLookupTimer = setTimeout(() => lookupInviteUser(e.target.value), 350);
+  });
+}
+
+async function sendInvite() {
+  // Если не было lookup'а — попробуем по тому что в input
+  const q = document.getElementById('inviteQuery').value.trim().replace(/^@/, '');
+  const target = _inviteFoundUser ? (_inviteFoundUser.userId || _inviteFoundUser.username) : q;
+  if (!target) { setInviteHint('Введите ID или имя', 'error'); return; }
+
+  const sendBtn = document.getElementById('sendInviteBtn');
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Отправка…'; }
+
   try {
     const res = await fetch(`${getApiBase()}/api/invite`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromSessionKey: state.sessionKey, toQuery: query })
+      body: JSON.stringify({ fromSessionKey: state.sessionKey, toQuery: target })
     });
     const data = await res.json();
-    if (data.ok) {
-      hint.style.color = '#10b981';
-      hint.textContent = 'Приглашение отправлено!';
+    if (res.ok && data.ok) {
+      setInviteHint('Приглашение отправлено ✓', 'ok');
+      if (sendBtn) sendBtn.textContent = 'Отправлено';
+      setTimeout(() => closeInviteModal(), 1200);
     } else {
-      hint.style.color = '#ef4444';
-      hint.textContent = data.error || 'Ошибка';
+      setInviteHint(data.error || 'Ошибка', 'error');
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Повторить'; }
     }
   } catch (e) {
-    hint.style.color = '#ef4444';
-    hint.textContent = 'Ошибка соединения';
+    setInviteHint('Ошибка соединения', 'error');
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Повторить'; }
   }
+}
+
+// Привязать listener на load — input в модалке существует с начала
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bindInviteLookup);
+} else {
+  bindInviteLookup();
 }
 
 // === ШЕРИНГ ВРЕМЕНИ ===
@@ -2115,13 +2517,29 @@ switchTab('timer');
 function openBoardOverlay() {
   const overlay = document.getElementById('board-overlay');
   const iframe  = document.getElementById('board-iframe');
-  const url = `board.html?sessionKey=${encodeURIComponent(state.sessionKey)}&date=${state.selectedDate}`;
-  iframe.src = url;
-  overlay.style.display = 'block';
+  if (!overlay || !iframe) return;
+  const base = getApiBase();
+  const url = `${base}/board.html?sessionKey=${encodeURIComponent(state.sessionKey)}&date=${state.selectedDate}`;
+
+  fetch(base + '/api/health', { method: 'GET', cache: 'no-store' })
+    .then(r => {
+      if (!r.ok && r.status !== 503) throw new Error('bad-health');
+      iframe.src = url;
+      overlay.style.display = 'block';
+      document.body.classList.add('board-open');  // Скрывает main header в Electron
+    })
+    .catch(() => {
+      if (window.showToast) {
+        window.showToast('Не удалось открыть доску — сервер недоступен', 'error');
+      } else {
+        alert('Сервер недоступен. Запустите node server.js и попробуйте снова.');
+      }
+    });
 }
 
 function closeBoardOverlay() {
   const overlay = document.getElementById('board-overlay');
+  if (!overlay) return;
   overlay.style.animation = 'none';
   overlay.style.opacity = '0';
   overlay.style.transform = 'scale(0.98)';
@@ -2131,9 +2549,14 @@ function closeBoardOverlay() {
     overlay.style.opacity = '';
     overlay.style.transform = '';
     overlay.style.transition = '';
-    document.getElementById('board-iframe').src = 'about:blank';
+    document.body.classList.remove('board-open');  // Возвращает main header
+    const iframe = document.getElementById('board-iframe');
+    if (iframe) iframe.src = 'about:blank';
   }, 260);
 }
+
+// Expose so the keyboard handler can call it
+window.closeBoardOverlay = closeBoardOverlay;
 
 function getBoardTasks() {
   return cache.tasks.filter(t => t.date === state.selectedDate);
@@ -2167,16 +2590,25 @@ function renderBoard() {
     counter.textContent = tasks.length;
     container.innerHTML = tasks.map(t => renderCard(t)).join('');
 
-    // Drag events на карточки
     container.querySelectorAll('.board-card').forEach(card => {
       card.addEventListener('dragstart', onCardDragStart);
       card.addEventListener('dragend',   onCardDragEnd);
     });
 
-    // Drop zone на колонку
-    container.addEventListener('dragover', onColDragOver);
-    container.addEventListener('dragleave', onColDragLeave);
-    container.addEventListener('drop', onColDrop);
+    // Event delegation для edit/delete (вместо inline onclick)
+    if (!container._ltCardActions) {
+      container._ltCardActions = true;
+      container.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action="card-edit"], [data-action="card-delete"]');
+        if (!btn) return;
+        const id = parseInt(btn.dataset.cardId, 10);
+        if (btn.dataset.action === 'card-edit') editCard(id);
+        else deleteCard(id);
+      });
+      container.addEventListener('dragover', onColDragOver);
+      container.addEventListener('dragleave', onColDragLeave);
+      container.addEventListener('drop', onColDrop);
+    }
   });
 }
 
@@ -2194,8 +2626,8 @@ function renderCard(task) {
       <div class="card-top">
         <div class="card-title">${escapeHTML(task.text)}</div>
         <div class="card-actions">
-          <button class="card-action-btn" onclick="editCard(${task.id})" title="Редактировать">✏️</button>
-          <button class="card-action-btn delete" onclick="deleteCard(${task.id})" title="Удалить">🗑</button>
+          <button class="card-action-btn" data-action="card-edit"   data-card-id="${task.id}" title="Редактировать">✏️</button>
+          <button class="card-action-btn delete" data-action="card-delete" data-card-id="${task.id}" title="Удалить">🗑</button>
         </div>
       </div>
       ${desc ? `<div class="card-desc">${escapeHTML(desc)}</div>` : ''}
