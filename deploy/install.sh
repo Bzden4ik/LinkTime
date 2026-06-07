@@ -178,6 +178,20 @@ ok "Зависимости установлены (better-sqlite3 ок)"
 # ============================================================================
 step "4/8 · Systemd unit"
 
+# ADMIN_TOKEN — генерируем один раз, храним в /var/lib/linktime/admin-token,
+# чтобы он был стабильным между перезапусками и переустановками.
+ADMIN_TOKEN_FILE="$DATA_DIR/admin-token"
+if [ -f "$ADMIN_TOKEN_FILE" ]; then
+    ADMIN_TOKEN="$(cat "$ADMIN_TOKEN_FILE")"
+    ok "ADMIN_TOKEN загружен из $ADMIN_TOKEN_FILE"
+else
+    ADMIN_TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    echo "$ADMIN_TOKEN" > "$ADMIN_TOKEN_FILE"
+    chmod 600 "$ADMIN_TOKEN_FILE"
+    chown "$SERVICE_USER:$SERVICE_GROUP" "$ADMIN_TOKEN_FILE"
+    ok "ADMIN_TOKEN сгенерирован и сохранён в $ADMIN_TOKEN_FILE"
+fi
+
 cat > /etc/systemd/system/linktime.service <<EOF
 [Unit]
 Description=LinkTime — рабочий хронограф
@@ -202,6 +216,9 @@ Environment=FORCE_HTTPS=1
 Environment=LOG_LEVEL=info
 Environment=LOG_JSON=1
 Environment=NODE_OPTIONS=--max-old-space-size=512
+Environment=ADMIN_TOKEN=$ADMIN_TOKEN
+Environment=BACKUP_KEEP=24
+Environment=BACKUP_INTERVAL_H=6
 
 # Logging
 StandardOutput=journal
@@ -476,7 +493,11 @@ echo
 echo -e "  ${B}Сайт:${N}     https://$DOMAIN"
 echo -e "  ${B}Локально:${N} http://127.0.0.1:$PORT/api/health"
 echo -e "  ${B}Код:${N}      $DEPLOY_DIR"
-echo -e "  ${B}Данные:${N}   $DATA_DIR  (БД + uploads/)"
+echo -e "  ${B}Данные:${N}   $DATA_DIR  (БД + uploads/ + backups/)"
+echo
+echo -e "  ${B}Админ-панель:${N} https://$DOMAIN/admin"
+echo -e "  ${B}Admin token:${N}  ${Y}$ADMIN_TOKEN${N}"
+echo -e "  ${D}(токен также в $ADMIN_TOKEN_FILE)${N}"
 echo
 echo -e "  ${D}Команды:${N}"
 echo -e "    journalctl -u linktime -f       — логи"

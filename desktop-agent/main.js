@@ -352,9 +352,16 @@ nodeIntegration: false,
 contextIsolation: true,
 preload: path.join(__dirname, 'preload.js'),
 backgroundThrottling: false,
-// Pass server URL down to the renderer via preload
-additionalArguments: ['--linktime-ws=' + WS_URL]
+// Pass server URL + saved sessionKey down to renderer via preload.
+// sessionKey из config.json — АВТОРИТЕТНЫЙ источник: если localStorage
+// очистится (Tracking Prevention / eviction), app.js восстановит ключ
+// из config, а не сгенерирует новый пустой аккаунт.
+additionalArguments: [
+  '--linktime-ws=' + WS_URL,
+  '--linktime-session=' + (config.sessionKey || '')
+]
 },
+backgroundColor: '#15120f',
 icon: path.join(__dirname, 'icon.png'),
 skipTaskbar: false,
 title: 'LinkTime'
@@ -416,7 +423,18 @@ mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, val
     }
 });
 
+// Если сервер не ответил за 6 секунд — не висим белым окном, грузим локальную копию.
+// did-finish-load снимает таймер.
+let loadTimer = setTimeout(() => {
+    if (!usingFallback) {
+        console.warn('[App] Server slow (>6s) — switching to local fallback');
+        loadLocalFallback('timeout 6s');
+    }
+}, 6000);
+mainWindow.webContents.once('did-finish-load', () => { clearTimeout(loadTimer); });
+
 mainWindow.loadURL(APP_URL).catch((err) => {
+    clearTimeout(loadTimer);
     loadLocalFallback(err.message || 'loadURL rejected');
 });
 
@@ -495,21 +513,29 @@ const webSessionKey = await mainWindow.webContents.executeJavaScript(
 "localStorage.getItem('sessionKey')"
 );
 
-if (webSessionKey && webSessionKey !== config.sessionKey) {
-console.log(`Session key synced from web: ${webSessionKey}`);
+// ВАЖНО: config.json — авторитетный источник. Мы НЕ перенимаем ключ из web
+// автоматически, иначе при очистке localStorage (Tracking Prevention) и
+// генерации нового ключа в app.js мы бы перезаписали config мусором и
+// потеряли реальный аккаунт. Перенимаем web-ключ ТОЛЬКО если у агента
+// ключа ещё нет вообще (самый первый запуск, профиль создан в браузере).
+if (webSessionKey && !config.sessionKey) {
+console.log('Adopting sessionKey from web (agent had none)');
 config.sessionKey = webSessionKey;
 saveConfig();
-
-// Переподключаем WebSocket агента с новым ключом
-if (ws) {
-ws.close();
-}
+if (ws) ws.close();
 connectWebSocket();
-
-// Обновляем settings window если открыто
 if (settingsWindow && !settingsWindow.isDestroyed()) {
 settingsWindow.webContents.send('config-data', config);
 }
+}
+// Если в web ключ ОТЛИЧАЕТСЯ от config (например localStorage вайпнули и
+// app.js успел сгенерировать новый до инжекта) — НЕ трогаем config,
+// а наоборот восстанавливаем правильный ключ в web.
+else if (config.sessionKey && webSessionKey && webSessionKey !== config.sessionKey) {
+console.warn('Web sessionKey differs from config — restoring config key to web');
+mainWindow.webContents.executeJavaScript(
+  `localStorage.setItem('sessionKey', ${JSON.stringify(config.sessionKey)});`
+).catch(() => {});
 }
 
 // Списки приложений теперь синхронизируются через WebSocket (apps_lists_update),
@@ -989,6 +1015,21 @@ connectWebSocket();
 event.reply('config-saved');
 });
 
+// ===== IPC: явная смена sessionKey из web (пользователь ввёл ключ) =====
+// Это единственный легитимный путь обновить config.sessionKey из renderer.
+ipcMain.on('set-session-key', (event, newKey) => {
+    if (!newKey || typeof newKey !== 'string') return;
+    if (newKey === config.sessionKey) return;
+    console.log('[CONFIG] sessionKey updated via explicit user action');
+    config.sessionKey = newKey;
+    saveConfig();
+    if (ws) ws.close();
+    connectWebSocket();
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+        settingsWindow.webContents.send('config-data', config);
+    }
+});
+
 // ===== IPC: запрос полного списка процессов из браузера через preload =====
 ipcMain.handle('list-all-processes', async () => {
     try { return await listAllProcesses(); } catch (e) { return []; }
@@ -1148,13 +1189,10 @@ if (config.autoUpdate !== false) {
   setTimeout(() => checkForUpdates(true), 5000);
 }
 
-// Если есть сохранённый ключ — инжектим его в веб-страницу при загрузке
+// sessionKey теперь передаётся в renderer через preload (_linkTimeConfig.sessionKey),
+// и app.js использует его авторитетно ДО генерации нового ключа. Инжект+reload
+// больше не нужен (он создавал гонку при очистке localStorage). Просто коннектимся.
 if (config.sessionKey) {
-mainWindow.webContents.on('did-finish-load', () => {
-mainWindow.webContents.executeJavaScript(
-`if (!localStorage.getItem('sessionKey')) { localStorage.setItem('sessionKey', ${JSON.stringify(config.sessionKey)}); location.reload(); }`
-).catch(() => {});
-});
 connectWebSocket();
 }
 

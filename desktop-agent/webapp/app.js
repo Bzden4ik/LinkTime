@@ -166,27 +166,76 @@ renderCalendar();
 
 // Инициализация приложения
 function initializeApp() {
-// Check URL for sessionKey (from Electron app or shared link)
+// === ПОРЯДОК ПРИОРИТЕТА ИСТОЧНИКОВ КЛЮЧА (критично против потери аккаунта) ===
+// 1. URL ?sessionKey=  — явный шеринг/Electron-инжект (highest)
+// 2. window._linkTimeConfig.sessionKey — config.json агента (АВТОРИТЕТ в Electron)
+// 3. localStorage — обычный веб-кэш
+// 4. cookie-mirror — резерв если localStorage очистили (Tracking Prevention)
+// 5. генерация нового — только если НИГДЕ ничего нет (реально первый запуск)
 const urlParams = new URLSearchParams(window.location.search);
 const urlKey = urlParams.get('sessionKey');
+const cfgKey = (window._linkTimeConfig && window._linkTimeConfig.sessionKey) || null;
+const lsKey = localStorage.getItem('sessionKey');
+const cookieKey = getCookie('lt_sk');
+
+let chosen = null;
 if (urlKey) {
-localStorage.setItem('sessionKey', urlKey);
-state.sessionKey = urlKey;
-// Clean URL
-window.history.replaceState({}, '', window.location.pathname);
+    chosen = urlKey;
+    window.history.replaceState({}, '', window.location.pathname);
+} else if (cfgKey) {
+    // Агент знает реальный ключ — он главный. Восстанавливает аккаунт даже если
+    // localStorage вайпнули. Если в localStorage другой ключ — config побеждает.
+    chosen = cfgKey;
+} else if (lsKey) {
+    chosen = lsKey;
+} else if (cookieKey) {
+    // localStorage очищен, но cookie выжил — восстанавливаем аккаунт
+    chosen = cookieKey;
+    if (window.ltLog) window.ltLog.warn('sessionKey восстановлен из cookie-резерва');
 } else {
-// Получаем или создаём ключ сессии
-state.sessionKey = localStorage.getItem('sessionKey');
-if (!state.sessionKey) {
-state.sessionKey = generateSessionKey();
-localStorage.setItem('sessionKey', state.sessionKey);
+    chosen = generateSessionKey();
 }
-}
+
+state.sessionKey = chosen;
+// Сохраняем во все хранилища сразу (избыточность = защита от потери)
+persistSessionKey(chosen);
+
+// Просим браузер сделать хранилище persistent (против eviction)
+requestPersistentStorage();
 
 // Подключаемся к WebSocket серверу
 connectWebSocket();
 // Загружаем профиль пользователя
 initUserProfile();
+}
+
+// Записать ключ во все доступные хранилища (localStorage + cookie)
+function persistSessionKey(key) {
+    if (!key) return;
+    try { localStorage.setItem('sessionKey', key); } catch (_) {}
+    // Cookie на 1 год, SameSite=Lax. Резерв если localStorage очистят.
+    try {
+        const oneYear = 365 * 24 * 60 * 60;
+        document.cookie = 'lt_sk=' + encodeURIComponent(key) +
+            '; max-age=' + oneYear + '; path=/; SameSite=Lax' +
+            (location.protocol === 'https:' ? '; Secure' : '');
+    } catch (_) {}
+}
+
+function getCookie(name) {
+    try {
+        const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+        return m ? decodeURIComponent(m[1]) : null;
+    } catch (_) { return null; }
+}
+
+async function requestPersistentStorage() {
+    try {
+        if (navigator.storage && navigator.storage.persist) {
+            const already = await navigator.storage.persisted();
+            if (!already) await navigator.storage.persist();
+        }
+    } catch (_) {}
 }
 
 // Генерация уникального ключа сессии
@@ -992,17 +1041,24 @@ document.getElementById('scanQRSection').style.display = 'none';
 
 function connectWithKey() {
 const key = document.getElementById('keyInput').value.trim();
-if (key) {
+if (!key) return;
+// Базовая валидация формата
+if (!/^(sk_[a-f0-9]{8,}|session_[a-z0-9]+_\d+)$/i.test(key)) {
+  showToast('Неверный формат ключа', 'error');
+  return;
+}
 state.sessionKey = key;
-localStorage.setItem('sessionKey', key);
+persistSessionKey(key);
+// В Electron — это явная смена аккаунта пользователем: обновляем config.json агента
+if (window.electronAPI && typeof window.electronAPI.setSessionKey === 'function') {
+  try { window.electronAPI.setSessionKey(key); } catch (_) {}
+}
 showToast('Устройство успешно подключено!', 'success');
 closeSettings();
-// Переподключаемся к WebSocket с новым ключом
-if (ws) {
-ws.close();
-}
+if (ws) ws.close();
 connectWebSocket();
-}
+// Перезагружаем данные под новым ключом
+setTimeout(() => location.reload(), 600);
 }
 
 // === ХРАНИЛИЩЕ (сервер — единственный источник правды) ===

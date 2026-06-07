@@ -836,6 +836,7 @@ main > section:nth-child(3) { animation-delay: 140ms; }
   position: relative;
   overflow: hidden;
   min-height: 320px;
+  min-width: 0;
 }
 
 .tasks-header {
@@ -1376,6 +1377,8 @@ main > section:nth-child(3) { animation-delay: 140ms; }
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: 22px 24px 20px;
+  min-width: 0;        /* не распирает грид-колонку, ячейки считаются от реальной ширины */
+  overflow: hidden;
 }
 
 .calendar-header {
@@ -1408,22 +1411,36 @@ main > section:nth-child(3) { animation-delay: 140ms; }
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
+  min-width: 0;            /* грид-трек может ужиматься, не распирает контейнер */
 }
 
 .calendar-day-header, .calendar-weekday {
-  padding: 10px 6px;
+  padding: 8px 4px;
   font: 500 10px/1 var(--font-mono);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--txt-mute);
   text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.calendar > div:not([class]) { aspect-ratio: 1; background: transparent; }
+.calendar > div:not([class]) {
+  aspect-ratio: 1;
+  max-height: 76px;        /* предохранитель против "раздувания" при reflow */
+  background: transparent;
+}
 
 .day, .calendar-day {
+  /* aspect-ratio даёт квадрат, но max-height не даёт ячейке "вылезти" пока
+     grid-треки и шрифты ещё не устаканились при открытии приложения. */
   aspect-ratio: 1;
-  padding: 8px;
+  min-height: 42px;
+  max-height: 76px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 7px;
   background: var(--ink-1);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
@@ -1445,12 +1462,18 @@ main > section:nth-child(3) { animation-delay: 140ms; }
   font-size: 13px;
   font-weight: 500;
   color: var(--txt-dim);
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .day-time {
-  font: 500 10px/1 var(--font-mono);
+  font: 500 9px/1 var(--font-mono);
   color: var(--work);
   align-self: flex-end;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .day.has-data, .calendar-day.has-data {

@@ -1,6 +1,6 @@
 {
   "name": "linktime-desktop-agent",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "LinkTime Desktop Activity Tracker",
   "main": "main.js",
   "scripts": {

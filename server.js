@@ -71,6 +71,10 @@ const wsLog = makeLogger('ws');
 const PORT = process.env.PORT || 3002;
 const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'linktime.db');
 const NODE_ENV = process.env.NODE_ENV || 'development';
+// Admin token для админ-панели. Если не задан в env — генерируем случайный при старте
+// и печатаем в лог (одноразово). В production обязательно задать ADMIN_TOKEN в окружении.
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || require('crypto').randomBytes(18).toString('hex');
+const ADMIN_TOKEN_FROM_ENV = !!process.env.ADMIN_TOKEN;
 
 // === БАЗА ДАННЫХ ===
 const fs = require('fs');
@@ -280,7 +284,41 @@ const insertVersion = db.prepare('INSERT INTO schema_versions (version, name, ap
     tx();
 })();
 
-console.log(`[DB] SQLite database initialized at ${DB_PATH}`);
+dbLog.info(`SQLite database initialized at ${DB_PATH}`);
+
+// === АВТОМАТИЧЕСКИЕ БЭКАПЫ БД ================================================
+// better-sqlite3 .backup() безопасно копирует БД даже при активных записях (WAL).
+// Ротация: храним последние BACKUP_KEEP файлов. Интервал BACKUP_INTERVAL_H часов.
+const BACKUP_DIR = path.join(path.dirname(DB_PATH), 'backups');
+const BACKUP_KEEP = parseInt(process.env.BACKUP_KEEP || '24', 10);
+const BACKUP_INTERVAL_H = parseFloat(process.env.BACKUP_INTERVAL_H || '6');
+if (!fs.existsSync(BACKUP_DIR)) {
+    try { fs.mkdirSync(BACKUP_DIR, { recursive: true }); } catch (_) {}
+}
+
+async function runBackup() {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const name = `linktime-${ts}.db`;
+    const dest = path.join(BACKUP_DIR, name);
+    await db.backup(dest);
+    // Ротация — оставляем последние BACKUP_KEEP
+    try {
+        const files = fs.readdirSync(BACKUP_DIR)
+            .filter(f => /^linktime-.*\.db$/.test(f))
+            .map(f => ({ f, m: fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs }))
+            .sort((a, b) => b.m - a.m);
+        for (const old of files.slice(BACKUP_KEEP)) {
+            try { fs.unlinkSync(path.join(BACKUP_DIR, old.f)); } catch (_) {}
+        }
+    } catch (_) {}
+    dbLog.info('Backup created:', name);
+    return name;
+}
+
+// Первый бэкап через 1 минуту после старта, далее по интервалу
+setTimeout(() => { runBackup().catch(e => dbLog.error('Backup failed:', e.message)); }, 60 * 1000);
+setInterval(() => { runBackup().catch(e => dbLog.error('Backup failed:', e.message)); },
+    Math.max(0.5, BACKUP_INTERVAL_H) * 60 * 60 * 1000);
 
 // Prepared statements для производительности
 const stmts = {
@@ -1212,6 +1250,163 @@ app.delete('/api/account/:sessionKey', (req, res) => {
     res.json({ ok: true });
 });
 
+// === ADMIN API — восстановление доступа, просмотр БД, удаление ==============
+// Защита: токен в заголовке X-Admin-Token или ?token=. Timing-safe сравнение.
+function adminAuth(req, res, next) {
+    const provided = req.headers['x-admin-token'] || req.query.token || '';
+    const a = Buffer.from(String(provided));
+    const b = Buffer.from(ADMIN_TOKEN);
+    const ok = a.length === b.length && crypto.timingSafeEqual(a, b);
+    if (!ok) {
+        log.warn('Admin auth failed from', req.headers['x-forwarded-for'] || req.ip);
+        return res.status(401).json({ error: 'unauthorized' });
+    }
+    next();
+}
+
+const adminStmts = {
+    listUsers: db.prepare(`
+        SELECT u.id, u.session_key, u.user_id, u.username, u.email, u.avatar, u.created_at,
+               (SELECT COUNT(*) FROM project_tasks pt WHERE pt.session_key = u.session_key) AS task_count,
+               sd.last_update AS last_update,
+               sd.work_sessions AS work_sessions
+        FROM users u
+        LEFT JOIN session_data sd ON sd.session_key = u.session_key
+        ORDER BY COALESCE(sd.last_update, u.created_at) DESC
+    `),
+    teamMemberships: db.prepare('SELECT team_id, role FROM team_members WHERE user_id = ?'),
+};
+
+// Проверка токена (для логин-формы)
+app.get('/api/admin/check', adminAuth, (req, res) => {
+    res.json({ ok: true });
+});
+
+// Список всех пользователей с метриками
+app.get('/api/admin/users', adminAuth, (req, res) => {
+    const rows = adminStmts.listUsers.all();
+    const users = rows.map(r => {
+        // Считаем суммарное рабочее время и дни из work_sessions
+        let totalMs = 0, days = 0;
+        try {
+            const ws = JSON.parse(r.work_sessions || '{}');
+            for (const key of Object.keys(ws)) {
+                const arr = ws[key] || [];
+                if (arr.length) days++;
+                for (const s of arr) {
+                    if (s.start && s.end) {
+                        let dur = s.end - s.start;
+                        (s.pauses || []).forEach(p => { if (p.duration) dur -= p.duration; });
+                        totalMs += Math.max(0, dur);
+                    }
+                }
+            }
+        } catch (_) {}
+        const teams = adminStmts.teamMemberships.all(r.user_id);
+        return {
+            id: r.id,
+            sessionKey: r.session_key,
+            userId: r.user_id,
+            username: r.username,
+            email: r.email || null,
+            hasAvatar: !!r.avatar,
+            createdAt: r.created_at,
+            lastUpdate: r.last_update || null,
+            taskCount: r.task_count || 0,
+            workDays: days,
+            totalWorkMs: totalMs,
+            teams: teams.map(t => ({ teamId: t.team_id, role: t.role })),
+        };
+    });
+    res.json({ count: users.length, users });
+});
+
+// Детали одного пользователя (включая задачи и сессии)
+app.get('/api/admin/user/:userId', adminAuth, (req, res) => {
+    const u = stmts.getUserByUserId.get(req.params.userId);
+    if (!u) return res.status(404).json({ error: 'not_found' });
+    const sd = stmts.getSession.get(u.session_key);
+    const projects = stmts.getProjects.all(u.session_key);
+    const tasks = stmts.getProjectTasks.all(u.session_key);
+    res.json({
+        user: { userId: u.user_id, username: u.username, email: u.email, sessionKey: u.session_key, createdAt: u.created_at },
+        sessions: sd ? JSON.parse(sd.work_sessions || '{}') : {},
+        projects, tasks,
+    });
+});
+
+// Удаление пользователя (тот же путь что и self-delete, но по userId)
+app.delete('/api/admin/user/:userId', adminAuth, (req, res) => {
+    const u = stmts.getUserByUserId.get(req.params.userId);
+    if (!u) return res.status(404).json({ error: 'not_found' });
+    const sk = u.session_key;
+    try {
+        const tx = db.transaction(() => {
+            const teams = deleteAccountStmts.getUserTeams.all(u.user_id);
+            deleteAccountStmts.deleteMyMemberships.run(u.user_id);
+            for (const { team_id } of teams) {
+                const left = deleteAccountStmts.countTeamMembers.get(team_id).c;
+                if (left === 0) {
+                    deleteAccountStmts.deleteAllTeamMembers.run(team_id);
+                    deleteAccountStmts.deleteTeamBoard.run(team_id);
+                    deleteAccountStmts.deleteTeam.run(team_id);
+                }
+            }
+            deleteAccountStmts.deleteMyInvitations.run(u.user_id, u.user_id);
+            deleteAccountStmts.deletePersonalBoard.run(sk);
+            deleteAccountStmts.deleteProjectTasks.run(sk);
+            deleteAccountStmts.deleteProjects.run(sk);
+            deleteAccountStmts.deleteSessionData.run(sk);
+            deleteAccountStmts.deleteUser.run(sk);
+        });
+        tx();
+    } catch (e) {
+        log.error('Admin delete failed:', e);
+        return res.status(500).json({ error: 'delete_failed' });
+    }
+    log.info('Admin deleted user', req.params.userId);
+    res.json({ ok: true });
+});
+
+// Статистика БД
+app.get('/api/admin/stats', adminAuth, (req, res) => {
+    const stat = {
+        users: db.prepare('SELECT COUNT(*) c FROM users').get().c,
+        sessions: db.prepare('SELECT COUNT(*) c FROM session_data').get().c,
+        projects: db.prepare('SELECT COUNT(*) c FROM projects').get().c,
+        tasks: db.prepare('SELECT COUNT(*) c FROM project_tasks').get().c,
+        teams: db.prepare('SELECT COUNT(*) c FROM teams').get().c,
+        invitations: db.prepare('SELECT COUNT(*) c FROM invitations').get().c,
+        dbBytes: (() => { try { return fs.statSync(DB_PATH).size; } catch { return null; } })(),
+        schemaVersion: getCurrentVersion.get().v,
+    };
+    res.json(stat);
+});
+
+// Список бэкапов
+app.get('/api/admin/backups', adminAuth, (req, res) => {
+    try {
+        const files = fs.existsSync(BACKUP_DIR)
+            ? fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db')).map(f => {
+                const st = fs.statSync(path.join(BACKUP_DIR, f));
+                return { name: f, bytes: st.size, mtime: st.mtimeMs };
+            }).sort((a, b) => b.mtime - a.mtime)
+            : [];
+        res.json({ backups: files });
+    } catch (e) { res.json({ backups: [] }); }
+});
+
+// Принудительный бэкап сейчас
+app.post('/api/admin/backup', adminAuth, (req, res) => {
+    runBackup().then(name => res.json({ ok: true, file: name }))
+               .catch(e => res.status(500).json({ error: e.message }));
+});
+
+// admin.html — отдаём напрямую (не через SPA fallback)
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
 // Fallback — отдаём index.html для SPA
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -1954,4 +2149,16 @@ server.listen(PORT, () => {
     console.log(`[Server] Static files: ${path.join(__dirname, 'public')}`);
     console.log(`[Server] Database: ${DB_PATH}`);
     console.log(`[Server] Health check: http://localhost:${PORT}/api/health`);
+    console.log(`[Server] Backups: ${BACKUP_DIR} (keep ${BACKUP_KEEP}, every ${BACKUP_INTERVAL_H}h)`);
+    if (ADMIN_TOKEN_FROM_ENV) {
+        console.log(`[Admin] Panel: /admin (token from ADMIN_TOKEN env)`);
+    } else {
+        console.log('');
+        console.log('  ╔══════════════════════════════════════════════════════════╗');
+        console.log('  ║  ADMIN TOKEN (задайте ADMIN_TOKEN в env чтобы зафиксировать) ║');
+        console.log('  ║  ' + ADMIN_TOKEN + '  ║');
+        console.log('  ║  Панель: /admin                                            ║');
+        console.log('  ╚══════════════════════════════════════════════════════════╝');
+        console.log('');
+    }
 });

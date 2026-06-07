@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>LinkTime Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,200..800,0..100&family=Geist:wght@300..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink-0:#15120f;--ink-1:#1c1814;--ink-2:#221d18;--ink-3:#2a241e;
+  --txt-strong:#ece7da;--txt-base:#c4bfb3;--txt-dim:#8c8678;--txt-mute:#5a554c;
+  --signal:#ff7038;--work:#7fb069;--rust:#c25a32;--info:#8aa7c8;
+  --line:rgba(236,231,218,0.07);--line-strong:rgba(236,231,218,0.13);--line-bright:rgba(236,231,218,0.22);
+  --r-sm:6px;--r-md:10px;
+  --ease:cubic-bezier(0.22,1,0.36,1);
+  --font-display:'Fraunces','Times New Roman',serif;
+  --font-body:'Geist','Inter',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font-body);background:var(--ink-0);color:var(--txt-base);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;min-height:100vh}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:5px;border:2px solid var(--ink-0)}
+h1{font-family:var(--font-display);font-weight:350;font-size:26px;letter-spacing:-0.02em;color:var(--txt-strong)}
+a{color:var(--signal);text-decoration:none}
+code,.mono{font-family:var(--font-mono)}
+
+/* Login gate */
+#gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--ink-0);z-index:100}
+#gate.hidden{display:none}
+.gate-box{width:min(400px,90vw);background:var(--ink-1);border:1px solid var(--line-bright);border-radius:var(--r-md);padding:28px}
+.gate-box h1{margin-bottom:6px}
+.gate-sub{color:var(--txt-dim);font-size:13px;margin-bottom:20px}
+.gate-box input{width:100%;padding:11px 14px;background:var(--ink-2);border:1px solid var(--line-strong);border-radius:var(--r-sm);color:var(--txt-strong);font-family:var(--font-mono);font-size:13px;margin-bottom:12px}
+.gate-box input:focus{outline:none;border-color:var(--signal)}
+.gate-box button{width:100%;padding:11px;background:var(--signal);color:var(--ink-0);border:none;border-radius:var(--r-sm);font:600 14px/1 var(--font-body);cursor:pointer}
+.gate-box button:hover{background:#ff8350}
+.gate-err{color:var(--rust);font-size:12.5px;margin-top:10px;min-height:1em}
+
+/* App */
+#app{display:none;max-width:1400px;margin:0 auto;padding:24px 28px 60px}
+#app.visible{display:block}
+header.top{display:flex;align-items:center;justify-content:space-between;padding-bottom:20px;border-bottom:1px solid var(--line);margin-bottom:22px}
+.top-actions{display:flex;gap:8px}
+.btn{padding:8px 14px;background:var(--ink-2);border:1px solid var(--line-strong);border-radius:var(--r-sm);color:var(--txt-base);font:500 12.5px/1 var(--font-body);cursor:pointer;transition:all 120ms var(--ease)}
+.btn:hover{background:var(--ink-3);color:var(--txt-strong);border-color:var(--line-bright)}
+.btn-danger{color:var(--rust);border-color:var(--rust)}
+.btn-danger:hover{background:var(--rust);color:#fff}
+.btn-accent{background:var(--signal);color:var(--ink-0);border-color:transparent}
+.btn-accent:hover{background:#ff8350}
+
+/* Stats row */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;margin-bottom:22px}
+.stat{background:var(--ink-1);padding:14px 16px}
+.stat-l{font:500 9.5px/1 var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--txt-mute);margin-bottom:6px}
+.stat-v{font-family:var(--font-display);font-size:22px;font-weight:350;color:var(--txt-strong)}
+.stat-v.accent{color:var(--signal)}
+
+/* Search */
+.toolbar{display:flex;gap:10px;margin-bottom:16px;align-items:center}
+.toolbar input{flex:1;padding:10px 14px;background:var(--ink-1);border:1px solid var(--line-strong);border-radius:var(--r-sm);color:var(--txt-strong);font-size:14px}
+.toolbar input:focus{outline:none;border-color:var(--signal)}
+.count-badge{font:500 11px/1 var(--font-mono);color:var(--txt-dim);white-space:nowrap}
+
+/* Table */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;padding:10px 12px;font:500 9.5px/1 var(--font-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--txt-mute);border-bottom:1px solid var(--line-strong);cursor:pointer;user-select:none;white-space:nowrap}
+.tbl th:hover{color:var(--txt-base)}
+.tbl td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr:hover td{background:var(--ink-1)}
+.u-name{font-weight:500;color:var(--txt-strong)}
+.u-id{font-family:var(--font-mono);font-size:11.5px;color:var(--txt-dim)}
+.u-email{font-size:12px;color:var(--info)}
+.u-email.none{color:var(--txt-mute);font-style:italic}
+.u-key{font-family:var(--font-mono);font-size:11px;color:var(--txt-mute);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.u-key:hover{color:var(--signal)}
+.u-num{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.u-time{color:var(--work)}
+.row-actions{display:flex;gap:5px;justify-content:flex-end}
+.icon-btn{width:28px;height:28px;background:transparent;border:1px solid var(--line-strong);border-radius:var(--r-sm);color:var(--txt-dim);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all 120ms var(--ease)}
+.icon-btn:hover{background:var(--ink-3);color:var(--txt-strong)}
+.icon-btn.danger:hover{color:var(--rust);border-color:var(--rust);background:rgba(194,90,50,.12)}
+.icon-btn.copy:hover{color:var(--signal);border-color:var(--signal)}
+
+.empty{padding:40px;text-align:center;color:var(--txt-mute)}
+
+/* Toast */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink-2);border:1px solid var(--line-bright);border-left:3px solid var(--signal);padding:12px 18px;border-radius:var(--r-sm);color:var(--txt-strong);font-size:13px;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:200}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+#toast.error{border-left-color:var(--rust)}
+#toast.ok{border-left-color:var(--work)}
+
+/* Detail modal */
+#detail{position:fixed;inset:0;background:rgba(15,12,10,.8);display:none;align-items:center;justify-content:center;padding:20px;z-index:150}
+#detail.open{display:flex}
+.detail-box{width:min(760px,94vw);max-height:88vh;background:var(--ink-1);border:1px solid var(--line-bright);border-radius:var(--r-md);display:flex;flex-direction:column;overflow:hidden}
+.detail-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.detail-body{padding:20px;overflow-y:auto}
+.detail-body pre{background:var(--ink-0);border:1px solid var(--line);border-radius:var(--r-sm);padding:14px;font-family:var(--font-mono);font-size:11.5px;color:var(--txt-base);overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+.kv{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+.kv b{min-width:120px;color:var(--txt-dim);font-weight:500;font-size:12px}
+.kv span{color:var(--txt-strong);font-family:var(--font-mono);font-size:12px;word-break:break-all}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-box">
+    <h1>LinkTime Admin</h1>
+    <p class="gate-sub">Введите admin-токен (см. лог сервера или env ADMIN_TOKEN)</p>
+    <input type="password" id="tokenInput" placeholder="admin token" autocomplete="off">
+    <button id="loginBtn">Войти</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <h1>Управление данными</h1>
+    <div class="top-actions">
+      <button class="btn" id="backupBtn">Сделать бэкап</button>
+      <button class="btn" id="refreshBtn">Обновить</button>
+      <button class="btn" id="logoutBtn">Выйти</button>
+    </div>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="toolbar">
+    <input type="text" id="search" placeholder="Поиск по имени, ID, email, ключу...">
+    <span class="count-badge" id="countBadge"></span>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th data-sort="username">Имя</th>
+        <th data-sort="userId">ID</th>
+        <th data-sort="email">Email</th>
+        <th data-sort="taskCount">Задач</th>
+        <th data-sort="workDays">Дней</th>
+        <th data-sort="totalWorkMs">Время</th>
+        <th data-sort="lastUpdate">Активность</th>
+        <th>Ключ доступа</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="emptyState" style="display:none">Нет пользователей</div>
+</div>
+
+<div id="detail">
+  <div class="detail-box">
+    <div class="detail-head">
+      <h1 style="font-size:18px" id="detailTitle">Детали</h1>
+      <button class="icon-btn" id="detailClose">✕</button>
+    </div>
+    <div class="detail-body" id="detailBody"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="admin.js"></script>
+</body>
+</html>

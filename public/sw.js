@@ -7,7 +7,7 @@
 //   • WebSocket / Range / non-GET → bypass
 // =============================================================================
 
-const VERSION = 'linktime-v6-2026-05-24-5';
+const VERSION = 'linktime-v7-2026-06-07-2';
 const SHELL_CACHE = 'shell-' + VERSION;
 const DATA_CACHE = 'data-' + VERSION;
 const FONT_CACHE = 'fonts-' + VERSION;
